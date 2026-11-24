@@ -49,7 +49,7 @@ jobs:
           projectPath: apps/desktop
           tagName: v__VERSION__
           releaseName: "T·Grid - TextGrid Editor v__VERSION__"
-          releaseBody: "桌面端安装包（Windows NSIS 安装包、macOS Apple Silicon 与 macOS Intel `.dmg`）。在线网页版与离线单文件版请访问 GitHub Pages。"
+          releaseBody: "Windows 安装包（x64 Setup）与 macOS（Apple Silicon / Intel）DMG 安装包。"
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

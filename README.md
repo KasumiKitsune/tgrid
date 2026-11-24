@@ -4,23 +4,16 @@
   <p>面向语言学与语音学研究的现代 <strong>Praat TextGrid / Collection</strong> 可视化标注编辑器与出版级插图导出工具</p>
 
   <p>
-    <a href="https://kasumikitsune.github.io/tgrid/" title="直接通过浏览器在线打开 T·Grid（本地运行不上传音频）"><img src="docs/pictures/btn-web-online.svg" alt="在线使用（网页版）" height="42" /></a>
-    &nbsp;&nbsp;
-    <a href="https://kasumikitsune.github.io/tgrid/tgrid-standalone.html" title="下载内联 WASM 的单文件离线 HTML，双击即可离线使用"><img src="docs/pictures/btn-web-singlefile.svg" alt="离线单文件 HTML" height="42" /></a>
-  </p>
-  <p>
     <a href="https://github.com/KasumiKitsune/tgrid/releases/latest" title="前往 Releases 下载 Windows 64位安装包"><img src="docs/pictures/btn-download-win.svg" alt="Windows 安装包" height="42" /></a>
     &nbsp;&nbsp;
     <a href="https://github.com/KasumiKitsune/tgrid/releases/latest" title="前往 Releases 下载 macOS Apple Silicon (M1-M4) DMG"><img src="docs/pictures/btn-download-mac-arm.svg" alt="macOS (Apple 芯片)" height="42" /></a>
     &nbsp;&nbsp;
     <a href="https://github.com/KasumiKitsune/tgrid/releases/latest" title="前往 Releases 下载 macOS Intel (x86_64) DMG"><img src="docs/pictures/btn-download-mac-intel.svg" alt="macOS (Intel 旧款)" height="42" /></a>
   </p>
+  <p>
+    <sub>也可直接通过浏览器试用 <a href="https://kasumikitsune.github.io/tgrid/">在线体验版</a>（所有音频与标注均在本地处理，不上传服务器）</sub>
+  </p>
 </div>
-
-> [!NOTE]
-> **纯本地运行 · 零数据上传**
->
-> 无论是桌面端、GitHub Pages 在线版还是单文件离线 HTML，所有音频与标注文件均通过 Rust（原生或 WebAssembly）在您的设备本地完成解析与渲染，不会上传至任何服务器。
 
 ---
 
@@ -54,11 +47,11 @@
   - 支持「自适应宽度（短音素按字宽展开、长静默自动折叠）」与「1:1 线性对齐」自由切换，多行自动折行且保留跨行续接引导。
   - 内置 Rust 声学引擎：WAV 解码、宽带语谱图、基频（$F_0$）与共振峰（$F_1\text{–}F_3$）轨迹显示、拖拽边界 `±40 ms` 声学微距放大镜、跨层磁吸对齐（`Alt` 临时跳过、`Z` 吸附过零点）以及语谱图悬停时间/频率读数。
 - **高效标注与国际音标输入**
-  - 顶栏 Chrome 风格多标签页与多会话音频缓存；Office 风格右侧可拖宽/可折叠任务窗格（属性 / 层级 / 设置），支持在「侧边栏」与「画布浮动条」间切换，只读模式严格防误改。
+  - 顶栏多标签页与多会话音频缓存；右侧可拖宽/可折叠任务窗格（属性 / 层级 / 设置），支持在「侧边栏」与「画布浮动条」间切换，只读模式严格防误改。
   - 内置双方案 IPA 输入法（**云龙国际音标 647 词条 + 五度声调**、**Praat `Longchar_database` 408 项三字符编码**）与可停靠/悬浮的 5 标签虚拟音标键盘，支持整文档 Unicode IPA ↔ Praat `\xx` 批量互转。
 - **出版级插图导出工作台**
   - 独立离屏渲染管线，支持滚轮缩放预览、层与时段筛选、论文单栏/通栏/单行版幅、暖灰原色与严格零彩色的纯黑白印刷配色。
-  - 提供 **4 种 SVG 语谱图策略**（纯矢量等值轮廓、图文分离 `.zip` 包、仅留声学曲线、单文件 `<defs>` 内嵌）与 `2× / 3× / 6×` 真实重绘高清 PNG，内置按需裁剪的中英双语学术图例栏。
+  - 提供 **4 种 SVG 语谱图策略**（纯矢量等值轮廓、图文分离 `.zip` 包、仅留声学曲线、单文件内嵌）与 `2× / 3× / 6×` 真实重绘高清 PNG，内置按需裁剪的中英双语学术图例栏。
 
 ---
 
@@ -69,18 +62,18 @@ tgrid/
 ├── crates/
 │   ├── tg-core/              # Praat 编解码、切片诊断、IPA 双方案引擎、Marching Squares 等值轮廓、ZIP 打包
 │   ├── tg-dsp/               # WAV 解码、FFT/STFT 语谱图、F0 基频、LPC 共振峰与多会话缓存
-│   └── tg-wasm/              # WebAssembly 绑定（供网页版与离线单文件 HTML 调用）
+│   └── tg-wasm/              # WebAssembly 绑定
 ├── packages/
 │   └── tgrid-icons/          # @tgrid/icons 独立微动效 SVG 图标库与硬件光标资源
 ├── apps/
-│   ├── web/                  # React 19 + TypeScript + Vite 前端（构建在线版与单文件离线 HTML）
+│   ├── web/                  # React 19 + TypeScript + Vite 界面
 │   └── desktop/              # Tauri v2 桌面端外壳（Windows NSIS / macOS DMG）
 ├── docs/
 │   ├── PRAAT_TEXTGRID_AND_COLLECTION_SPEC.md
 │   ├── TEXTGRID_VISUALIZATION_AND_EDITOR_SPEC.md
 │   └── pictures/             # README 下载与文档入口矢量按钮
 └── .github/workflows/
-    ├── pages.yml             # 推送 main 自动发布 GitHub Pages 与单文件离线版
+    ├── pages.yml             # 自动发布在线演示
     └── release.yml           # 推送 v* 标签自动打包 macOS (Apple Silicon / Intel) 与 Windows 安装包
 ```
 
@@ -97,11 +90,8 @@ npm install
 # 运行 Rust 单元测试
 npm run test:rust
 
-# 启动网页开发服务器
+# 启动界面开发服务器
 npm run dev:web
-
-# 构建网页版 + 单文件离线 HTML（产物位于 apps/web/dist 与 apps/web/dist-singlefile）
-npm run build:all-web
 
 # 编译 Windows 独立 Release 可执行文件
 npm run build:desktop-exe
@@ -111,11 +101,11 @@ npm run build:desktop-exe
 
 ## English Summary
 
-**T·Grid** is an open-source, local-first Praat `.TextGrid` and `.Collection` annotation editor and publication-grade figure exporter built with **Rust** (`tg-core`, `tg-dsp`, `tg-wasm`, Tauri v2) and **React + TypeScript**.
+**T·Grid** is an open-source, local-first Praat `.TextGrid` and `.Collection` annotation editor and publication-grade figure exporter built with **Rust** (`tg-core`, `tg-dsp`, Tauri v2) and **React + TypeScript**.
 
-- **Open Specifications for Developers**: Feel free to adopt our platform-agnostic [TextGrid Visualization & Editor Spec](docs/TEXTGRID_VISUALIZATION_AND_EDITOR_SPEC.md) and byte-accurate [Praat TextGrid & Collection Format Spec](docs/PRAAT_TEXTGRID_AND_COLLECTION_SPEC.md) in your own linguistics/speech tools.
-- **Try Online**: [kasumikitsune.github.io/tgrid](https://kasumikitsune.github.io/tgrid/) · [Offline Single-File HTML](https://kasumikitsune.github.io/tgrid/tgrid-standalone.html)
+- **Open Specifications for Developers**: Feel free to adopt our platform-agnostic [TextGrid Visualization & Editor Spec](docs/TEXTGRID_VISUALIZATION_AND_EDITOR_SPEC.md) and byte-accurate [Praat TextGrid & Collection Format Spec](docs/PRAAT_TEXTGRID_AND_COLLECTION_SPEC.md) in your own linguistics/speech software.
 - **Desktop Installers (Windows x64 & macOS Apple Silicon / Intel)**: [GitHub Releases](https://github.com/KasumiKitsune/tgrid/releases/latest)
+- **Live Demo**: [kasumikitsune.github.io/tgrid](https://kasumikitsune.github.io/tgrid/)
 
 ## License
 
