@@ -31,6 +31,7 @@ import { ScoreStage, type ScoreStageHandle } from './components/ScoreStage';
 import { RightSidebar, type RightSidebarHandle } from './components/sidebar/RightSidebar';
 import { IpaDock } from './components/IpaDock';
 import { ExportModal } from './components/ExportModal';
+import { AboutModal } from './components/AboutModal';
 import { UnsavedDialog, type UnsavedDialogState } from './components/UnsavedDialog';
 import { GlobalContextMenu } from './components/GlobalContextMenu';
 import { Toast } from './components/Toast';
@@ -85,6 +86,7 @@ export function App() {
   const setRateStore = useEditorStore((s) => s.setRate);
   const setVolumeStore = useEditorStore((s) => s.setVolume);
   const setExportOpen = useEditorStore((s) => s.setExportOpen);
+  const setAboutOpen = useEditorStore((s) => s.setAboutOpen);
   const showToast = useEditorStore((s) => s.showToast);
 
   // Initialize Web Audio controller once (with persisted volume)
@@ -1223,6 +1225,11 @@ export function App() {
           return;
         }
         const st = useEditorStore.getState();
+        if (st.aboutOpen) {
+          e.preventDefault();
+          setAboutOpen(false);
+          return;
+        }
         if (st.exportOpen) {
           e.preventDefault();
           setExportOpen(false);
@@ -1341,7 +1348,8 @@ export function App() {
     handleSwitchTab,
     handleOpenTextGridPicker,
     handleExportAction,
-    setExportOpen
+    setExportOpen,
+    setAboutOpen
   ]);
 
   return (
@@ -1433,6 +1441,8 @@ export function App() {
       <LegendDock />
 
       <ExportModal audioBuffer={audioBuffer} />
+
+      <AboutModal />
 
       <UnsavedDialog
         state={unsavedDialog}

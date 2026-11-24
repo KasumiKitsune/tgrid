@@ -323,6 +323,14 @@ export class TauriBridge implements PlatformBridge {
     return true;
   }
 
+  async openExternalUrl(url: string): Promise<void> {
+    if (hasTauriInternals()) {
+      await invoke('open_external_url', { url });
+      return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
   async getLaunchFileArg(): Promise<string | null> {
     if (!hasTauriInternals()) return null;
     return invoke<string | null>('get_launch_file_arg');

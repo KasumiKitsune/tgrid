@@ -2927,6 +2927,17 @@ button.active .export-btn-sub {
   background: var(--accent-blue);
 }
 
+.sidebar-rail-bottom {
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--rule);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
 /* Panel Root & Context Strip */
 .sb-panel-root {
   display: flex;
@@ -3633,4 +3644,299 @@ button.active .export-btn-sub {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+/* Settings Panel About Footer */
+.sb-about-footer {
+  padding: 10px 12px 14px;
+}
+
+.sb-about-trigger {
+  justify-content: center;
+  gap: 6px;
+}
+
+/* About Modal */
+.modal-card.about-modal-card {
+  width: min(512px, calc(100vw - 24px));
+}
+
+.about-modal-body {
+  padding: 14px 16px 16px;
+  gap: 14px;
+}
+
+.about-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 12px 14px;
+  background: var(--bg-sheet);
+  border: 1px solid var(--rule);
+}
+
+.about-hero-logo {
+  flex-shrink: 0;
+  line-height: 0;
+  padding-top: 2px;
+}
+
+.about-hero-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.about-hero-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 8px;
+}
+
+.about-hero-name {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
+.about-hero-sub {
+  font-size: 12px;
+  color: var(--ink-muted);
+  letter-spacing: 0.02em;
+}
+
+.about-version-badge {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+  padding: 0 6px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+}
+
+.about-hero-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ink-muted);
+  user-select: text;
+}
+
+.about-meta-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.about-license-tag {
+  font-size: 10.5px;
+  color: var(--ink-muted);
+  padding: 0 6px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-bar);
+  border: 1px solid var(--rule);
+}
+
+.about-link-btn {
+  gap: 4px;
+  height: 22px !important;
+  padding: 0 7px !important;
+  font-size: 11px !important;
+  background: var(--bg-sheet);
+}
+
+/* Desktop Manual Update Checker */
+.about-update-box {
+  background: var(--bg-sheet);
+  border: 1px solid var(--rule);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.about-update-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.about-update-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.about-update-cur {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.about-update-msg {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.about-update-msg.is-ok {
+  color: #166534;
+}
+
+.about-update-msg.is-err {
+  color: var(--accent-red);
+}
+
+.about-check-btn {
+  flex-shrink: 0;
+  background: var(--bg-bar);
+}
+
+.about-update-release {
+  border-top: 1px solid var(--rule);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.about-update-release-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.about-update-new-tag {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent-blue);
+  background: var(--accent-blue-soft);
+  border: 1px solid #93C5FD;
+  padding: 1px 7px;
+}
+
+.about-update-date {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.about-update-notes {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink);
+  user-select: text;
+}
+
+.about-update-actions,
+.about-update-fallback {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Recommended Tools Cards */
+.about-rec-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.about-rec-card {
+  background: var(--bg-sheet);
+  border: 1px solid var(--rule);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  transition: border-color 140ms var(--ease);
+}
+
+.about-rec-card:hover {
+  border-color: var(--rule-hover);
+}
+
+.about-rec-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 8px;
+}
+
+.about-rec-title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.about-rec-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.about-rec-tag {
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0 5px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--rule);
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.about-rec-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.about-rec-desc {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+  user-select: text;
+}
+
+.about-modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 14px;
+  background: var(--bg-sheet);
+  border-top: 1px solid var(--rule);
+  flex-shrink: 0;
+}
+
+.about-foot-meta {
+  font-size: 11px;
+  color: var(--ink-muted);
 }

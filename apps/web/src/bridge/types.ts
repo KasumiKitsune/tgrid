@@ -253,5 +253,6 @@ export interface PlatformBridge {
   writeNativeFile(path: string, bytes: Uint8Array): Promise<boolean>;
   findCompanionAudio(tgPath: string): Promise<string | null>;
   revealInExplorer(path: string): Promise<boolean>;
+  openExternalUrl(url: string): Promise<void>;
   getLaunchFileArg(): Promise<string | null>;
 }

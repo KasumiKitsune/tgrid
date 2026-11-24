@@ -1,6 +1,6 @@
 import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { useEditorStore, type SidebarTab } from '../../store/useEditorStore';
-import { CloseIcon, UiIcon, type IconName } from '../Icons';
+import { CloseIcon, InfoIcon, UiIcon, type IconName } from '../Icons';
 import { InspectorPanel, type InspectorPanelHandle } from './InspectorPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { TiersPanel } from './TiersPanel';
@@ -31,6 +31,8 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
     const setSidebarOpen = useEditorStore((s) => s.setSidebarOpen);
     const toggleSidebarTab = useEditorStore((s) => s.toggleSidebarTab);
     const setSidebarWidth = useEditorStore((s) => s.setSidebarWidth);
+    const aboutOpen = useEditorStore((s) => s.aboutOpen);
+    const setAboutOpen = useEditorStore((s) => s.setAboutOpen);
     const tierCount = useEditorStore((s) => s.tg.tiers.length);
     const selection = useEditorStore((s) => s.selection);
     const playRange = useEditorStore((s) => s.playRange);
@@ -176,6 +178,19 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
               </button>
             );
           })}
+
+          <div className="sidebar-rail-bottom">
+            <button
+              type="button"
+              className={`sidebar-rail-btn ${aboutOpen ? 'active' : ''}`}
+              title="关于 T·Grid"
+              aria-label="关于 T·Grid"
+              aria-pressed={aboutOpen}
+              onClick={() => setAboutOpen(!aboutOpen)}
+            >
+              <InfoIcon size={16} />
+            </button>
+          </div>
         </nav>
       </aside>
     );

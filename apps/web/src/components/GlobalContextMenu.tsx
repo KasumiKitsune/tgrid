@@ -223,6 +223,11 @@ export const GlobalContextMenu: React.FC<GlobalContextMenuProps> = ({
             label: '导出谱面图像…',
             shortcut: isDesktop ? 'Ctrl+P' : undefined,
             action: () => useEditorStore.getState().setExportOpen(true)
+          },
+          { divider: true },
+          {
+            label: '关于 T·Grid…',
+            action: () => useEditorStore.getState().setAboutOpen(true)
           }
         );
 

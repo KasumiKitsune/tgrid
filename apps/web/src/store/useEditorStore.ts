@@ -217,6 +217,7 @@ export interface EditorState {
   // Modals & Layout ref
   exportOpen: boolean;
   exportPresetRange: ExportRangePreset | null;
+  aboutOpen: boolean;
   layout: ScoreLayout | null;
   undoStack: UndoSnapshot[];
   redoStack: UndoSnapshot[];
@@ -296,6 +297,7 @@ export interface EditorState {
   setExportOpen: (open: boolean) => void;
   openExportModal: (presetRange?: ExportRangePreset | null) => void;
   clearExportPresetRange: () => void;
+  setAboutOpen: (open: boolean) => void;
   setLayout: (layout: ScoreLayout | null) => void;
   showToast: (message: string, isError?: boolean, action?: ToastAction | null) => void;
   hideToast: () => void;
@@ -502,6 +504,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   exportOpen: false,
   exportPresetRange: null,
+  aboutOpen: false,
   layout: null,
   toast: { message: '', isError: false, visible: false, action: null },
   docVersion: 1,
@@ -905,6 +908,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setExportOpen: (exportOpen) => set({ exportOpen, ...(exportOpen ? {} : { exportPresetRange: null }) }),
   openExportModal: (presetRange = null) => set({ exportOpen: true, exportPresetRange: presetRange }),
   clearExportPresetRange: () => set({ exportPresetRange: null }),
+  setAboutOpen: (aboutOpen) => set({ aboutOpen }),
   setLayout: (layout) => set({ layout }),
   bumpDocVersion: () => set((s) => ({ docVersion: s.docVersion + 1 })),
 

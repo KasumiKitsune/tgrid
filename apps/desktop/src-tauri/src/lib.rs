@@ -281,6 +281,55 @@ fn reveal_in_explorer(path: String) -> Result<(), String> {
     Err("当前系统不支持定位文件夹".to_string())
 }
 
+fn validate_external_url(url: &str) -> Result<&str, String> {
+    let trimmed = url.trim();
+    let rest = trimmed
+        .strip_prefix("https://")
+        .or_else(|| trimmed.strip_prefix("http://"))
+        .ok_or_else(|| "仅支持打开 http:// 或 https:// 链接".to_string())?;
+    if rest.is_empty()
+        || rest.starts_with('/')
+        || trimmed.chars().any(|c| c.is_control() || c.is_whitespace())
+    {
+        return Err("链接格式无效".to_string());
+    }
+    Ok(trimmed)
+}
+
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    let clean = validate_external_url(&url)?;
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", clean])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| format!("无法打开外部浏览器: {e}"))?;
+        return Ok(());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(clean)
+            .spawn()
+            .map_err(|e| format!("无法打开外部浏览器: {e}"))?;
+        return Ok(());
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(clean)
+            .spawn()
+            .map_err(|e| format!("无法打开外部浏览器: {e}"))?;
+        return Ok(());
+    }
+    #[allow(unreachable_code)]
+    Err("当前系统不支持打开外部链接".to_string())
+}
+
 #[tauri::command]
 fn get_launch_file_arg() -> Option<String> {
     let arg = std::env::args().nth(1)?;
@@ -328,6 +377,7 @@ pub fn run() {
             write_local_file,
             find_companion_audio,
             reveal_in_explorer,
+            open_external_url,
             get_launch_file_arg
         ])
         .run(tauri::generate_context!())
@@ -356,5 +406,22 @@ mod tests {
         assert!(found.unwrap().to_lowercase().ends_with("sample_01.wav"));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn validates_external_urls_safely() {
+        assert_eq!(
+            validate_external_url("https://github.com/KasumiKitsune/tgrid").unwrap(),
+            "https://github.com/KasumiKitsune/tgrid"
+        );
+        assert_eq!(
+            validate_external_url("  http://example.org/docs  ").unwrap(),
+            "http://example.org/docs"
+        );
+        assert!(validate_external_url("javascript:alert(1)").is_err());
+        assert!(validate_external_url("file:///C:/Windows/System32/calc.exe").is_err());
+        assert!(validate_external_url("https://").is_err());
+        assert!(validate_external_url("https://example.org/a b").is_err());
+        assert!(validate_external_url("https://example.org/\nfoo").is_err());
     }
 }

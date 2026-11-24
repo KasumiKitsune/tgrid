@@ -325,6 +325,10 @@ export class WebWasmBridge implements PlatformBridge {
     return false;
   }
 
+  async openExternalUrl(url: string): Promise<void> {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
   async getLaunchFileArg(): Promise<string | null> {
     return null;
   }

@@ -1,6 +1,7 @@
 import React from 'react';
+import { isTauriRuntime } from '../../bridge/PlatformBridge';
 import { useEditorStore, type EditInspectorMode, type IpaInputMode } from '../../store/useEditorStore';
-import { TGridIcon, UiIcon } from '../Icons';
+import { InfoIcon, TGridIcon, UiIcon } from '../Icons';
 import { CollapsibleSection } from './CollapsibleSection';
 
 interface SettingsPanelProps {
@@ -56,6 +57,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const setIpaMode = useEditorStore((s) => s.setIpaMode);
   const ipaDockOpen = useEditorStore((s) => s.ipaDockOpen);
   const setIpaDockOpen = useEditorStore((s) => s.setIpaDockOpen);
+  const setAboutOpen = useEditorStore((s) => s.setAboutOpen);
+  const isDesktop = isTauriRuntime();
 
   return (
     <div className="sb-panel-root">
@@ -395,6 +398,17 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
         </div>
       </CollapsibleSection>
+
+      <div className="sb-about-footer">
+        <button
+          type="button"
+          className="compact sb-full-btn sb-about-trigger"
+          onClick={() => setAboutOpen(true)}
+        >
+          <InfoIcon size={14} />
+          <span>{isDesktop ? '关于 T·Grid 与检查更新' : '关于 T·Grid'}</span>
+        </button>
+      </div>
     </div>
   );
 };
