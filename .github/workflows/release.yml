@@ -9,7 +9,60 @@ permissions:
   contents: write
 
 jobs:
+  create-release:
+    name: Create Draft Release
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create or reuse draft release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="v${VERSION}"
+          fi
+          echo "tag_name=${TAG}" >> "$GITHUB_OUTPUT"
+
+          EXISTING_ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases" --jq ".[] | select(.tag_name == \"${TAG}\") | .id" | head -n 1 || true)
+          if [[ -n "${EXISTING_ID}" ]]; then
+            echo "Reusing existing release id=${EXISTING_ID} for ${TAG}"
+            echo "release_id=${EXISTING_ID}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          BODY=$(cat <<'EOF'
+          ## 安装包说明
+
+          - **Windows (x64)**：`T-Grid_*_x64-setup.exe`（常规 Intel / AMD 64 位电脑）
+          - **Windows (ARM64)**：`T-Grid_*_arm64-setup.exe`（骁龙等 ARM 架构 Windows 电脑）
+          - **macOS (Apple Silicon)**：`T-Grid_*_aarch64.dmg`（M1 / M2 / M3 / M4 芯片）
+          - **macOS (Intel)**：`T-Grid_*_x64.dmg`（旧款 Intel 芯片 Mac）
+
+          > **首次打开提示**：本项目为个人开源免费发布，暂未购买商业代码签名证书。Windows 若出现 SmartScreen 提示，可点击「更多信息 → 仍要运行」；macOS 若提示无法验证开发者，可在「系统设置 → 隐私与安全性」中点击「仍要打开」，或在终端执行 `xattr -cr "/Applications/T-Grid.app"`。
+          EOF
+          )
+
+          RELEASE_ID=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/releases" \
+            -f tag_name="${TAG}" \
+            -f name="T·Grid - TextGrid Editor ${TAG}" \
+            -f body="${BODY}" \
+            -F draft=true \
+            -F prerelease=false \
+            --jq '.id')
+
+          echo "Created draft release id=${RELEASE_ID} for ${TAG}"
+          echo "release_id=${RELEASE_ID}" >> "$GITHUB_OUTPUT"
+
   build-tauri:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -17,15 +70,19 @@ jobs:
           - name: macOS Apple Silicon (M1-M4)
             platform: macos-latest
             rust_target: aarch64-apple-darwin
-            args: --target aarch64-apple-darwin
+            args: --target aarch64-apple-darwin --bundles dmg
           - name: macOS Intel (x86_64)
             platform: macos-latest
             rust_target: x86_64-apple-darwin
-            args: --target x86_64-apple-darwin
+            args: --target x86_64-apple-darwin --bundles dmg
           - name: Windows Installer (x64)
             platform: windows-latest
             rust_target: x86_64-pc-windows-msvc
-            args: ""
+            args: --target x86_64-pc-windows-msvc --bundles nsis
+          - name: Windows Installer (ARM64)
+            platform: windows-latest
+            rust_target: aarch64-pc-windows-msvc
+            args: --target aarch64-pc-windows-msvc --bundles nsis
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.platform }}
     steps:
@@ -47,9 +104,21 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: apps/desktop
-          tagName: v__VERSION__
-          releaseName: "T·Grid - TextGrid Editor v__VERSION__"
-          releaseBody: "Windows 安装包（x64 Setup）与 macOS（Apple Silicon / Intel）DMG 安装包。"
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          tagName: ${{ needs.create-release.outputs.tag_name }}
           releaseDraft: true
-          prerelease: false
           args: ${{ matrix.args }}
+
+  publish-release:
+    name: Publish Official Release
+    needs: [create-release, build-tauri]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release once all 4 installers are uploaded
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+        run: |
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+            -F draft=false \
+            -f make_latest=true

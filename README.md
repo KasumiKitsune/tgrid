@@ -4,7 +4,7 @@
   <p>面向语言学与语音学研究的现代 <strong>Praat TextGrid / Collection</strong> 可视化标注编辑器与出版级插图导出工具</p>
 
   <p>
-    <a href="https://github.com/KasumiKitsune/tgrid/releases/latest" title="前往 Releases 下载 Windows 64位安装包"><img src="docs/pictures/btn-download-win.svg" alt="Windows 安装包" height="42" /></a>
+    <a href="https://github.com/KasumiKitsune/tgrid/releases/latest" title="前往 Releases 下载 Windows 安装包（x64 / ARM64）"><img src="docs/pictures/btn-download-win.svg" alt="Windows 安装包" height="42" /></a>
     &nbsp;&nbsp;
     <a href="https://github.com/KasumiKitsune/tgrid/releases/latest" title="前往 Releases 下载 macOS Apple Silicon (M1-M4) DMG"><img src="docs/pictures/btn-download-mac-arm.svg" alt="macOS (Apple 芯片)" height="42" /></a>
     &nbsp;&nbsp;
@@ -97,7 +97,7 @@ npm run build:desktop-exe
 
 **T·Grid** is a free, local-first visual editor and publication-grade figure exporter for **Praat `.TextGrid` and `.Collection`** files, built for phonetics and linguistics teaching and research. It keeps waveforms and broadband spectrograms at true 1:1 physical time while automatically expanding dense segments so labels remain legible, provides F₀/F₁–F₃ reference contours, acoustic boundary magnification, IPA/trigraph input and batch conversion, and exports clean vector SVG and high-DPI PNG figures for papers and slides.
 
-- **Desktop Installers (Windows x64 & macOS Apple Silicon / Intel)**: [GitHub Releases](https://github.com/KasumiKitsune/tgrid/releases/latest)
+- **Desktop Installers (Windows x64 / ARM64 & macOS Apple Silicon / Intel)**: [GitHub Releases](https://github.com/KasumiKitsune/tgrid/releases/latest)
 - **Try in Browser**: [kasumikitsune.github.io/tgrid](https://kasumikitsune.github.io/tgrid/) *(runs locally in your browser; files are never uploaded)*
 - **Open Specifications**: Platform-agnostic [TextGrid Visualization & Editor Spec](docs/TEXTGRID_VISUALIZATION_AND_EDITOR_SPEC.md) and [Praat TextGrid & Collection Format Spec](docs/PRAAT_TEXTGRID_AND_COLLECTION_SPEC.md)
 

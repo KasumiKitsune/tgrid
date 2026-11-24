@@ -8,6 +8,6 @@
     <rect x="9.5" y="9.5" width="8" height="8" rx="1" fill="#0078D4"/>
   </g>
   <text x="42" y="21" fill="#18181B" font-size="12.5" font-family="'Segoe UI', -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-weight="600">Windows 安装包</text>
-  <text x="42" y="34" fill="#6B7280" font-size="10" font-family="'Segoe UI', -apple-system, sans-serif">64位 (x64 Setup)</text>
+  <text x="42" y="34" fill="#6B7280" font-size="10" font-family="'Segoe UI', -apple-system, sans-serif">64位 (x64 / ARM64)</text>
   <path d="M196 23L192 19M196 23L192 27M196 23H186" stroke="#9CA3AF" stroke-width="1.3" stroke-linecap="round"/>
 </svg>
