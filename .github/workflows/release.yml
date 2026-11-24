@@ -1,0 +1,55 @@
+name: Desktop Release (macOS & Windows)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-tauri:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS Apple Silicon (M1-M4)
+            platform: macos-latest
+            rust_target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+          - name: macOS Intel (x86_64)
+            platform: macos-latest
+            rust_target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+          - name: Windows Installer (x64)
+            platform: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+            args: ""
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }},wasm32-unknown-unknown
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tagName: v__VERSION__
+          releaseName: "T·Grid - TextGrid Editor v__VERSION__"
+          releaseBody: "桌面端安装包（Windows NSIS 安装包、macOS Apple Silicon 与 macOS Intel `.dmg`）。在线网页版与离线单文件版请访问 GitHub Pages。"
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .dn-press {
+      transform-origin: 8px 8px;
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .dn-arrow {
+      stroke: #4b5563;
+      stroke-width: 1.55;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .dn-arrow {
+      stroke: #2563eb;
+      transform: translateY(1.2px);
+    }
+    svg:active .dn-press { transform: scale(0.9); }
+  </style>
+
+  <g class="dn-press">
+    <g class="dn-arrow">
+      <path d="M8 3 V12.8" />
+      <path d="M4.2 9 L8 12.9 L11.8 9" />
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,15 @@
+[package]
+name = "tg-dsp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Acoustic DSP engine for TextGrid Editor: WAV decoding, STFT spectrogram, F0 pitch, and LPC formants."
+
+[features]
+default = []
+parallel = []
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+tg-core.workspace = true

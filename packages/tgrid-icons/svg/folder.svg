@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .folder-root {
+      transform-origin: 8px 8px;
+      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .folder-back {
+      stroke: #374151;
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: stroke 0.2s ease;
+    }
+    .folder-flap {
+      stroke: #374151;
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: rgba(37, 99, 235, 0);
+      transform-origin: 8px 13px;
+      transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.22s ease, fill 0.22s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .folder-back {
+      stroke: #111827;
+    }
+    svg:hover .folder-flap {
+      stroke: #2563eb;
+      fill: rgba(37, 99, 235, 0.08);
+      transform: skewX(-10deg) scaleY(0.84);
+    }
+    svg:active .folder-root {
+      transform: scale(0.91);
+    }
+  </style>
+
+  <g class="folder-root">
+    <!-- 文件夹后背板 -->
+    <path class="folder-back" d="M2 11.8 V4.1 C2 3.38 2.58 2.8 3.3 2.8 H5.95 C6.38 2.8 6.78 3.01 7.02 3.36 L7.58 4.14 C7.76 4.4 8.05 4.55 8.37 4.55 H12.7 C13.42 4.55 14 5.13 14 5.85 V11.8 C14 12.46 13.46 13 12.8 13 H3.2 C2.54 13 2 12.46 2 11.8 Z" />
+    <!-- 文件夹前翻盖（与折耳留出通透开口缝隙） -->
+    <path class="folder-flap" d="M2 8.1 C2 7.44 2.54 6.9 3.2 6.9 H12.8 C13.46 6.9 14 7.44 14 8.1 V11.8 C14 12.46 13.46 13 12.8 13 H3.2 C2.54 13 2 12.46 2 11.8 Z" />
+  </g>
+</svg>

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .redo-press {
+      transform-origin: 8px 8px;
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .redo-move {
+      transform-origin: 7px 9px;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .redo-path {
+      stroke: #374151;
+      stroke-width: 1.45;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: stroke 0.2s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .redo-move { transform: rotate(10deg) translateX(0.4px); }
+    svg:hover .redo-path { stroke: #2563eb; }
+    svg:active .redo-press { transform: scale(0.9); }
+  </style>
+
+  <g class="redo-press">
+    <g class="redo-move">
+      <path class="redo-path" d="M10.3 3.2 L13.2 6 L10.3 8.8" />
+      <path class="redo-path" d="M12.9 6 H6.5 C4.4 6 2.8 7.45 2.8 9.4 C2.8 11.35 4.4 12.8 6.5 12.8 H9.6" />
+    </g>
+  </g>
+</svg>

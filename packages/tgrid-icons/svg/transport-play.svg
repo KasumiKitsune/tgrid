@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .t-play {
+      fill: #1f2937;
+      transform-origin: 8px 8px;
+      transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1), fill 0.2s ease;
+    }
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .t-play {
+      fill: #2563eb;
+      transform: translateX(0.6px) scale(1.06);
+    }
+    svg:active .t-play {
+      transform: translateX(0.6px) scale(0.9);
+    }
+  </style>
+
+  <path class="t-play" d="M4.3 3.55 C4.3 2.75 5.18 2.26 5.86 2.68 L12.92 7.13 C13.56 7.53 13.56 8.47 12.92 8.87 L5.86 13.32 C5.18 13.74 4.3 13.25 4.3 12.45 Z" />
+</svg>

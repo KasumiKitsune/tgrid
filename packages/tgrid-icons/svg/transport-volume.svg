@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .vol-root {
+      transform-origin: 8px 8px;
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .speaker {
+      stroke: #374151;
+      stroke-width: 1.45;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: stroke 0.2s ease;
+    }
+    .wave {
+      stroke: #374151;
+      stroke-width: 1.45;
+      stroke-linecap: round;
+      transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+    .w1 { transition-delay: 0ms; }
+    .w2 { transition-delay: 55ms; }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .speaker { stroke: #111827; }
+    svg:hover .w1 { stroke: #2563eb; transform: translateX(0.45px); }
+    svg:hover .w2 { stroke: #2563eb; transform: translateX(0.85px); }
+    svg:active .vol-root { transform: scale(0.9); }
+  </style>
+
+  <g class="vol-root">
+    <!-- 喇叭主体 -->
+    <path class="speaker" d="M2.2 6.4 C2.2 5.95 2.56 5.6 3 5.6 H4.9 L7.75 3.35 C8.14 3.04 8.7 3.32 8.7 3.82 V12.18 C8.7 12.68 8.14 12.96 7.75 12.65 L4.9 10.4 H3 C2.56 10.4 2.2 10.05 2.2 9.6 Z" />
+    <!-- 双层声波 -->
+    <path class="wave w1" d="M10.8 6 C11.6 6.85 11.6 9.15 10.8 10" />
+    <path class="wave w2" d="M12.6 4.3 C14.1 6.1 14.1 9.9 12.6 11.7" />
+  </g>
+</svg>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .win-close {
+      stroke: #4b5563;
+      stroke-width: 1.6;
+      stroke-linecap: round;
+      transform-origin: 8px 8px;
+      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .win-close {
+      stroke: #dc2626;
+      transform: scale(1.08);
+    }
+    svg:active .win-close {
+      stroke: #b91c1c;
+      transform: scale(0.88);
+    }
+  </style>
+
+  <path class="win-close" d="M3.8 3.8 L12.2 12.2 M12.2 3.8 L3.8 12.2" />
+</svg>

@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .warn-root {
+      transform-origin: 8px 8.5px;
+      transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .warn-frame {
+      stroke: #d97706;
+      stroke-width: 1.55;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: rgba(245, 158, 11, 0.08);
+      transition: stroke 0.2s ease, fill 0.2s ease;
+    }
+    .warn-bang {
+      stroke: #d97706;
+      stroke-width: 1.65;
+      stroke-linecap: round;
+      transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), stroke 0.2s ease;
+    }
+    .warn-dot {
+      fill: #d97706;
+      transition: fill 0.2s ease;
+    }
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .warn-frame {
+      stroke: #b45309;
+      fill: rgba(245, 158, 11, 0.16);
+    }
+    svg:hover .warn-bang {
+      stroke: #b45309;
+      transform: translateY(-0.7px);
+    }
+    svg:hover .warn-dot {
+      fill: #b45309;
+    }
+    svg:active .warn-root {
+      transform: scale(0.9);
+    }
+  </style>
+
+  <g class="warn-root">
+    <path class="warn-frame" d="M7.15 2.75 L1.95 12.1 C1.58 12.76 2.06 13.55 2.81 13.55 H13.19 C13.94 13.55 14.42 12.76 14.05 12.1 L8.85 2.75 C8.48 2.08 7.52 2.08 7.15 2.75 Z" />
+    <path class="warn-bang" d="M8 6.1 V9.2" />
+    <circle class="warn-dot" cx="8" cy="11.35" r="0.9" />
+  </g>
+</svg>

@@ -1,0 +1,13 @@
+/target
+/release
+/node_modules
+/apps/web/node_modules
+/apps/web/dist
+/apps/web/dist-singlefile
+/apps/web/src/wasm-pkg
+/apps/desktop/src-tauri/target
+/apps/desktop/src-tauri/gen
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .close-group {
+      transform-origin: 8px 8px;
+      transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .close-line {
+      stroke: #6b7280;
+      stroke-width: 1.9;
+      stroke-linecap: round;
+      transition: stroke 0.2s ease;
+    }
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .close-group {
+      transform: rotate(90deg);
+    }
+    svg:hover .close-line {
+      stroke: #dc2626;
+    }
+    svg:active .close-group {
+      transform: rotate(90deg) scale(0.84);
+    }
+  </style>
+
+  <g class="close-group">
+    <path class="close-line" d="M4.2 4.2 L11.8 11.8" />
+    <path class="close-line" d="M11.8 4.2 L4.2 11.8" />
+  </g>
+</svg>

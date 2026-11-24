@@ -1,0 +1,22 @@
+{
+  "name": "textgrid-editor-workspace",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/web"
+  ],
+  "scripts": {
+    "build:icons": "node packages/tgrid-icons/scripts/build-icons.mjs",
+    "build:wasm": "node scripts/build-wasm.mjs",
+    "dev:web": "npm run build:icons && npm --workspace apps/web run dev",
+    "build:web": "npm run build:icons && npm run build:wasm && npm --workspace apps/web run build",
+    "build:singlefile": "npm run build:icons && npm run build:wasm && npm --workspace apps/web run build:singlefile",
+    "build:all-web": "npm run build:icons && npm run build:wasm && npm --workspace apps/web run build && npm --workspace apps/web run build:singlefile",
+    "build:desktop-exe": "npm run build:web && cargo build --release -p textgrid-editor-desktop --features custom-protocol",
+    "test:rust": "cargo test --workspace",
+    "check:rust": "cargo check --workspace"
+  },
+  "devDependencies": {
+    "wasm-pack": "^0.13.1"
+  }
+}

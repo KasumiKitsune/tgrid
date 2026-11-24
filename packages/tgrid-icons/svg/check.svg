@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .chk-root {
+      transform-origin: 8px 8px;
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .chk-ring {
+      stroke: #16a34a;
+      stroke-width: 1.45;
+      fill: rgba(22, 163, 74, 0.08);
+      transition: stroke 0.2s ease, fill 0.2s ease;
+    }
+    .chk-mark {
+      stroke: #16a34a;
+      stroke-width: 1.55;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transform-origin: 8px 8px;
+      transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), stroke 0.2s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .chk-ring {
+      stroke: #15803d;
+      fill: rgba(22, 163, 74, 0.16);
+    }
+    svg:hover .chk-mark {
+      stroke: #15803d;
+      transform: scale(1.1);
+    }
+    svg:active .chk-root { transform: scale(0.91); }
+  </style>
+
+  <g class="chk-root">
+    <circle class="chk-ring" cx="8" cy="8" r="5.8" />
+    <path class="chk-mark" d="M5.3 8.1 L7.15 9.95 L10.85 6.05" />
+  </g>
+</svg>

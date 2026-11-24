@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- 三星鹅卵石底座 -->
+  <path d="M 256 0 C 48 0 0 48 0 256 C 0 464 48 512 256 512 C 464 512 512 464 512 256 C 512 48 464 0 256 0 Z" fill="#ECEAE3"/>
+
+  <!-- 主体字母 T（Text 语义） -->
+  <path d="M 132 122 H 380 A 18 18 0 0 1 398 140 V 168 A 18 18 0 0 1 380 186 H 288 V 372 A 18 18 0 0 1 270 390 H 242 A 18 18 0 0 1 224 372 V 186 H 132 A 18 18 0 0 1 114 168 V 140 A 18 18 0 0 1 132 122 Z" fill="#18181B"/>
+
+  <!-- 左侧 Grid 错位区间（1:2 模数） -->
+  <rect x="114" y="204" width="92" height="56" rx="14" fill="#2563EB"/>
+  <rect x="114" y="278" width="92" height="112" rx="14" fill="#D2CEC2"/>
+
+  <!-- 右侧 Grid 错位区间（2:1 模数） -->
+  <rect x="306" y="204" width="92" height="112" rx="14" fill="#D2CEC2"/>
+  <rect x="306" y="334" width="92" height="56" rx="14" fill="#7C3AED"/>
+</svg>

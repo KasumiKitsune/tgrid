@@ -1,0 +1,23 @@
+{
+  "name": "@tgrid/icons",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": [
+    "./src/icons.generated.css"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./styles.css": "./src/icons.generated.css",
+    "./cursors/time-ibeam.svg": "./cursors/time-ibeam.svg"
+  },
+  "scripts": {
+    "build": "node scripts/build-icons.mjs"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  }
+}

@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .rm-root {
+      transform-origin: 8px 8px;
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .w-bar {
+      stroke: #374151;
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      transform-origin: 6px 8px;
+      transition: stroke 0.2s ease, opacity 0.22s ease, transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .x-mark {
+      stroke: #4b5563;
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      transform-origin: 11.8px 11.8px;
+      transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .w-bar {
+      opacity: 0.45;
+      transform: scaleY(0.88);
+    }
+    svg:hover .x-mark {
+      stroke: #dc2626;
+      transform: rotate(90deg) scale(1.08);
+    }
+    svg:active .rm-root { transform: scale(0.91); }
+  </style>
+
+  <g class="rm-root">
+    <!-- 声波条（右下角避让叉号） -->
+    <path class="w-bar" d="M2.4 6.4 V9.6" />
+    <path class="w-bar" d="M5 4.2 V11.8" />
+    <path class="w-bar" d="M7.6 2.6 V13.4" />
+    <path class="w-bar" d="M10.2 4.6 V8" />
+    <!-- 右下移除叉号 -->
+    <g class="x-mark">
+      <path d="M10.2 10.2 L13.4 13.4" />
+      <path d="M13.4 10.2 L10.2 13.4" />
+    </g>
+  </g>
+</svg>

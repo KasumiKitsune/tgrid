@@ -1,0 +1,86 @@
+:root {
+  --bg-desk: #EAE7E0;
+  --bg-bar: #FAF9F6;
+  --bg-sheet: #FFFFFF;
+  --bg-subtle: #F2F0EA;
+  --bg-hover: #ECE9E1;
+  --bg-active: #E0DDD4;
+  --ink: #141413;
+  --ink-muted: #6A675F;
+  --ink-faint: #9E9B92;
+  --rule: #D3CFC5;
+  --rule-hover: #8C887F;
+  --accent-blue: #1D4ED8;
+  --accent-blue-soft: #EEF3FF;
+  --accent-red: #B91C1C;
+  --accent-red-soft: #FEF2F2;
+  --accent-amber: #B45309;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --font-sans: "Inter", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  --font-ipa: "Charis SIL", "Doulos SIL", "Gentium Plus", "Gentium Book Plus", "Segoe UI", "Cambria", "Lucida Sans Unicode", "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", "Menlo", "Consolas", monospace;
+}
+
+* {
+  box-sizing: border-box;
+  border-radius: 0 !important;
+}
+
+::selection {
+  background: #141413;
+  color: #FAF9F6;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  background: var(--bg-desk);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input,
+textarea,
+[contenteditable="true"],
+.selectable {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+img,
+svg,
+a,
+button {
+  -webkit-user-drag: none;
+}
+
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-desk);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--rule-hover);
+  border-radius: 0;
+  transition: background-color 0.16s var(--ease);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-muted);
+}
+::-webkit-scrollbar-thumb:active {
+  background: var(--ink);
+}
+::-webkit-scrollbar-corner {
+  background: var(--bg-desk);
+}

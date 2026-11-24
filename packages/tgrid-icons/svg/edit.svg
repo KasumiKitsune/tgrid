@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .edit-root {
+      transform-origin: 8px 8px;
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .pencil {
+      stroke: #374151;
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transform-origin: 3.4px 12.6px;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+    .baseline {
+      stroke: #374151;
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      transform-origin: 13.6px 13.4px;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .pencil {
+      stroke: #2563eb;
+      transform: translate(0.45px, -0.45px) rotate(-6deg);
+    }
+    svg:hover .baseline {
+      stroke: #2563eb;
+      transform: scaleX(1.14);
+    }
+    svg:active .edit-root { transform: scale(0.91); }
+  </style>
+
+  <g class="edit-root">
+    <!-- 铅笔 -->
+    <g class="pencil">
+      <path d="M10.45 2.65 C10.92 2.18 11.68 2.18 12.15 2.65 L13.35 3.85 C13.82 4.32 13.82 5.08 13.35 5.55 L6.2 12.7 L2.6 13.4 L3.3 9.8 Z" />
+      <path d="M8.9 4.2 L11.8 7.1" />
+    </g>
+    <!-- 行内书写基线 -->
+    <path class="baseline" d="M9.4 13.4 H13.6" />
+  </g>
+</svg>

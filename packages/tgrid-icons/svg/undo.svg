@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .undo-press {
+      transform-origin: 8px 8px;
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .undo-move {
+      transform-origin: 9px 9px;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .undo-path {
+      stroke: #374151;
+      stroke-width: 1.45;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: stroke 0.2s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .undo-move { transform: rotate(-10deg) translateX(-0.4px); }
+    svg:hover .undo-path { stroke: #2563eb; }
+    svg:active .undo-press { transform: scale(0.9); }
+  </style>
+
+  <g class="undo-press">
+    <g class="undo-move">
+      <path class="undo-path" d="M5.7 3.2 L2.8 6 L5.7 8.8" />
+      <path class="undo-path" d="M3.1 6 H9.5 C11.6 6 13.2 7.45 13.2 9.4 C13.2 11.35 11.6 12.8 9.5 12.8 H6.4" />
+    </g>
+  </g>
+</svg>

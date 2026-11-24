@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .t-pause-root {
+      transform-origin: 8px 8px;
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .bar {
+      fill: #1f2937;
+      transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1), fill 0.2s ease;
+    }
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .bar { fill: #2563eb; }
+    svg:hover .bar-l { transform: translateX(-0.5px); }
+    svg:hover .bar-r { transform: translateX(0.5px); }
+    svg:active .t-pause-root { transform: scale(0.9); }
+  </style>
+
+  <g class="t-pause-root">
+    <rect class="bar bar-l" x="3.8" y="2.8" width="3" height="10.4" rx="1.1" />
+    <rect class="bar bar-r" x="9.2" y="2.8" width="3" height="10.4" rx="1.1" />
+  </g>
+</svg>

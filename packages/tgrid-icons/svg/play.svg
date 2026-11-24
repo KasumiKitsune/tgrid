@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .play-line {
+      stroke: #374151;
+      stroke-width: 1.45;
+      stroke-linejoin: round;
+      fill: rgba(37, 99, 235, 0);
+      transform-origin: 8px 8px;
+      transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease, fill 0.2s ease;
+    }
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .play-line {
+      stroke: #2563eb;
+      fill: rgba(37, 99, 235, 0.12);
+      transform: translateX(0.6px);
+    }
+    svg:active .play-line {
+      transform: translateX(0.6px) scale(0.9);
+    }
+  </style>
+
+  <path class="play-line" d="M4.6 3.7 C4.6 3.08 5.28 2.7 5.81 3.03 L12.35 7.33 C12.84 7.65 12.84 8.35 12.35 8.67 L5.81 12.97 C5.28 13.3 4.6 12.92 4.6 12.3 Z" />
+</svg>

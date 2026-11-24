@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .trash-root {
+      transform-origin: 8px 8.5px;
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .lid {
+      stroke: #374151;
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transform-origin: 12.6px 4.4px;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+    .bin {
+      stroke: #374151;
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: stroke 0.2s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .lid {
+      stroke: #dc2626;
+      transform: translateY(-0.65px) rotate(10deg);
+    }
+    svg:hover .bin { stroke: #dc2626; }
+    svg:active .trash-root { transform: scale(0.91); }
+  </style>
+
+  <g class="trash-root">
+    <!-- 桶盖与提手 -->
+    <g class="lid">
+      <path d="M6 4.4 V3.2 C6 2.65 6.45 2.2 7 2.2 H9 C9.55 2.2 10 2.65 10 3.2 V4.4" />
+      <path d="M2.6 4.4 H13.4" />
+    </g>
+    <!-- 桶身与双竖肋 -->
+    <g class="bin">
+      <path d="M3.8 4.4 L4.4 12.4 C4.46 13.18 5.1 13.8 5.88 13.8 H10.12 C10.9 13.8 11.54 13.18 11.6 12.4 L12.2 4.4" />
+      <path d="M6.6 7 V11.2" />
+      <path d="M9.4 7 V11.2" />
+    </g>
+  </g>
+</svg>

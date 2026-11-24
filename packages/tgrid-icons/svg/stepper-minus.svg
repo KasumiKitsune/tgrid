@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .step-m {
+      stroke: #4b5563;
+      stroke-width: 1.75;
+      stroke-linecap: round;
+      transform-origin: 8px 8px;
+      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .step-m {
+      stroke: #2563eb;
+      transform: scaleX(1.08);
+    }
+    svg:active .step-m {
+      transform: scale(0.86);
+    }
+  </style>
+
+  <path class="step-m" d="M3.4 8 H12.6" />
+</svg>
