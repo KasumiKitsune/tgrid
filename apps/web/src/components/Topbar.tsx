@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { isTauriRuntime } from '../bridge/PlatformBridge';
+import { formatKeyCombo } from '../shortcuts/registry';
 import { useEditorStore } from '../store/useEditorStore';
 import type { BuiltinSample } from '../data/samples';
 import { BrandLogoIcon, ChevronIcon, CloseIcon, TGridIcon, UiIcon } from './Icons';
@@ -53,8 +54,10 @@ export const Topbar: React.FC<TopbarProps> = ({
   const sidebarOpen = useEditorStore((s) => s.sidebarOpen);
   const sidebarTab = useEditorStore((s) => s.sidebarTab);
   const toggleSidebarTab = useEditorStore((s) => s.toggleSidebarTab);
+  const openFindBar = useEditorStore((s) => s.openFindBar);
+  const setShortcutsOpen = useEditorStore((s) => s.setShortcutsOpen);
 
-  const [openMenu, setOpenMenu] = useState<'col' | 'samples' | 'export' | null>(null);
+  const [openMenu, setOpenMenu] = useState<'col' | 'samples' | 'tools' | 'export' | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
   const tabstripRef = useRef<HTMLDivElement>(null);
@@ -197,6 +200,7 @@ export const Topbar: React.FC<TopbarProps> = ({
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
+                  e.stopPropagation();
                   onSwitchTab(tab.id);
                 }
               }}
@@ -221,7 +225,7 @@ export const Topbar: React.FC<TopbarProps> = ({
               <button
                 type="button"
                 className="tab-close-btn"
-                title="关闭标签页 (Ctrl+W)"
+                title={`关闭标签页 (${formatKeyCombo('Mod+W')})`}
                 aria-label={`关闭 ${tab.filename}`}
                 tabIndex={-1}
                 onClick={(e) => {
@@ -239,7 +243,7 @@ export const Topbar: React.FC<TopbarProps> = ({
       <button
         type="button"
         className="tab-add-btn"
-        title="新建空白标签页 (Ctrl+T)"
+        title={`新建空白标签页 (${formatKeyCombo('Mod+T')})`}
         aria-label="新建空白标签页"
         onClick={onNewTab}
       >
@@ -355,13 +359,17 @@ export const Topbar: React.FC<TopbarProps> = ({
 
           <button
             type="button"
-            title={isDesktop ? '打开 TextGrid / Collection 文件 (Ctrl+O)' : '打开 TextGrid / Collection / 单层文件'}
+            title={`打开 TextGrid / Collection / 单层文件 (${formatKeyCombo('Mod+O')})`}
             onClick={onOpenTextGridPicker}
           >
             <UiIcon name="folder" size={14} />
             <span>打开文件</span>
           </button>
-          <button type="button" title="载入配套录音（可选）" onClick={onOpenAudioPicker}>
+          <button
+            type="button"
+            title={`载入配套录音 (${formatKeyCombo('Mod+Shift+O')})`}
+            onClick={onOpenAudioPicker}
+          >
             <UiIcon name="waveform" size={14} />
             <span>打开录音</span>
           </button>
@@ -390,7 +398,52 @@ export const Topbar: React.FC<TopbarProps> = ({
               </button>
               <div className="menu-divider" />
               <button type="button" onClick={() => { setOpenMenu(null); onLoadSample('blank'); }}>
-                新建空白文件
+                <span>新建空白文件</span>
+                <span className="shortcut">{formatKeyCombo('Mod+T')}</span>
+              </button>
+            </div>
+          </div>
+
+          <div className={`menu-wrap ${openMenu === 'tools' ? 'open' : ''}`}>
+            <button
+              type="button"
+              className="select-trigger"
+              onClick={() => setOpenMenu(openMenu === 'tools' ? null : 'tools')}
+            >
+              <span>工具</span>
+              <ChevronIcon />
+            </button>
+            <div className="dropdown left">
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenMenu(null);
+                  openFindBar(false);
+                }}
+              >
+                <span>查找与替换</span>
+                <span className="shortcut">{formatKeyCombo('Mod+F')}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenMenu(null);
+                  openFindBar(true);
+                }}
+              >
+                <span>替换标注文本…</span>
+                <span className="shortcut">{formatKeyCombo('Mod+H')}</span>
+              </button>
+              <div className="menu-divider" />
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenMenu(null);
+                  setShortcutsOpen(true);
+                }}
+              >
+                <span>快捷键指南</span>
+                <span className="shortcut">{formatKeyCombo('Mod+/')}</span>
               </button>
             </div>
           </div>
@@ -449,19 +502,17 @@ export const Topbar: React.FC<TopbarProps> = ({
               <ChevronIcon />
             </button>
             <div className="dropdown">
+              <button type="button" onClick={() => { setOpenMenu(null); onExportAction('save'); }}>
+                <span>{isDesktop && !currentFilePath ? '保存 (.TextGrid)…' : '保存 (.TextGrid)'}</span>
+                <span className="shortcut">{formatKeyCombo('Mod+S')}</span>
+              </button>
               {isDesktop && (
-                <>
-                  <button type="button" onClick={() => { setOpenMenu(null); onExportAction('save'); }}>
-                    <span>{currentFilePath ? '保存 (.TextGrid)' : '保存 (.TextGrid)…'}</span>
-                    <span className="shortcut">Ctrl+S</span>
-                  </button>
-                  <button type="button" onClick={() => { setOpenMenu(null); onExportAction('save-as'); }}>
-                    <span>另存为…</span>
-                    <span className="shortcut">Ctrl+Shift+S</span>
-                  </button>
-                  <div className="menu-divider" />
-                </>
+                <button type="button" onClick={() => { setOpenMenu(null); onExportAction('save-as'); }}>
+                  <span>另存为…</span>
+                  <span className="shortcut">{formatKeyCombo('Mod+Shift+S')}</span>
+                </button>
               )}
+              <div className="menu-divider" />
               <button type="button" onClick={() => { setOpenMenu(null); onExportAction('svg'); }}>
                 <span>导出矢量图 (.svg)</span>
               </button>
@@ -470,7 +521,7 @@ export const Topbar: React.FC<TopbarProps> = ({
               </button>
               <button type="button" onClick={() => { setOpenMenu(null); onExportAction('dialog'); }}>
                 <span>自定义导出图像…</span>
-                {isDesktop && <span className="shortcut">Ctrl+P</span>}
+                <span className="shortcut">{formatKeyCombo('Mod+P')}</span>
               </button>
               <div className="menu-divider" />
               <button type="button" onClick={() => { setOpenMenu(null); onExportAction('long'); }}>

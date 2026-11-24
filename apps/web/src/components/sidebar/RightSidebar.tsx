@@ -1,4 +1,5 @@
-import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
+import React, { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import type { TextGrid } from '../../bridge/types';
 import { useEditorStore, type SidebarTab } from '../../store/useEditorStore';
 import { CloseIcon, InfoIcon, UiIcon, type IconName } from '../Icons';
 import { InspectorPanel, type InspectorPanelHandle } from './InspectorPanel';
@@ -17,6 +18,85 @@ interface RightSidebarProps {
   onBatchConvertIpa: (direction: 'toUnicode' | 'toPraat') => void;
 }
 
+const ShortcutsIcon: React.FC<{ size?: number }> = ({ size = 16 }) => (
+  <svg
+    className="ui-icon"
+    width={size}
+    height={size}
+    viewBox="0 0 16 16"
+    fill="none"
+    aria-hidden="true"
+  >
+    <circle cx="8" cy="8" r="5.8" stroke="currentColor" strokeWidth="1.4" />
+    <path
+      d="M6.25 6.35 C6.25 5.35 7.0 4.7 8.05 4.7 C9.05 4.7 9.75 5.3 9.75 6.15 C9.75 6.9 9.25 7.35 8.55 7.75 C8.15 7.98 7.95 8.25 7.95 8.75 V9.1"
+      stroke="currentColor"
+      strokeWidth="1.35"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <circle cx="8" cy="11.15" r="0.85" fill="currentColor" />
+  </svg>
+);
+
+function detectQuickQaIssues(tg: TextGrid): boolean {
+  const EPS = 1e-9;
+  const MICRO_THRESHOLD = 0.005;
+  const boundaryEntries: Array<{ t: number; ti: number }> = [];
+
+  for (let ti = 0; ti < tg.tiers.length; ti++) {
+    const tier = tg.tiers[ti];
+    if (tier.xmin < tg.xmin - EPS || tier.xmax > tg.xmax + EPS) return true;
+    if (tier.kind === 'intervalTier') {
+      const ivs = tier.intervals;
+      if (ivs.length === 0) {
+        if (tier.xmax > tier.xmin + EPS) return true;
+        continue;
+      }
+      if (ivs[0].xmin > tier.xmin + EPS) return true;
+      for (let i = 0; i < ivs.length; i++) {
+        const iv = ivs[i];
+        const dur = iv.xmax - iv.xmin;
+        if (dur <= EPS) return true; // zero or inverted
+        if (dur < MICRO_THRESHOLD) return true; // micro segment (< 5 ms)
+        if (i > 0) {
+          const prev = ivs[i - 1];
+          if (iv.xmin > prev.xmax + EPS) return true; // gap
+          if (iv.xmin < prev.xmax - EPS) return true; // overlap
+        }
+        if (iv.xmin > tier.xmin + EPS && iv.xmin < tier.xmax - EPS) {
+          boundaryEntries.push({ t: iv.xmin, ti });
+        }
+        if (iv.xmax > tier.xmin + EPS && iv.xmax < tier.xmax - EPS) {
+          boundaryEntries.push({ t: iv.xmax, ti });
+        }
+      }
+      if (ivs[ivs.length - 1].xmax < tier.xmax - EPS) return true;
+    } else {
+      for (const pt of tier.points) {
+        if (pt.number < tier.xmin - EPS || pt.number > tier.xmax + EPS) return true;
+        boundaryEntries.push({ t: pt.number, ti });
+      }
+    }
+  }
+
+  // Cross-tier micro boundary misalignment (< 5 ms)
+  if (boundaryEntries.length > 1) {
+    boundaryEntries.sort((a, b) => a.t - b.t || a.ti - b.ti);
+    for (let i = 0; i < boundaryEntries.length; i++) {
+      const a = boundaryEntries[i];
+      for (let j = i + 1; j < boundaryEntries.length; j++) {
+        const b = boundaryEntries[j];
+        const diff = b.t - a.t;
+        if (diff >= MICRO_THRESHOLD) break;
+        if (diff > EPS && a.ti !== b.ti) return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 const RAIL_ITEMS: Array<{ tab: SidebarTab; title: string; icon: IconName; tooltip: string }> = [
   { tab: 'inspector', title: '属性', icon: 'inspector', tooltip: '属性检查器 (Ctrl+B)' },
   { tab: 'tiers', title: '层级', icon: 'layers', tooltip: '层级列表与管理' },
@@ -33,9 +113,14 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
     const setSidebarWidth = useEditorStore((s) => s.setSidebarWidth);
     const aboutOpen = useEditorStore((s) => s.aboutOpen);
     const setAboutOpen = useEditorStore((s) => s.setAboutOpen);
-    const tierCount = useEditorStore((s) => s.tg.tiers.length);
+    const shortcutsOpen = useEditorStore((s) => s.shortcutsOpen);
+    const setShortcutsOpen = useEditorStore((s) => s.setShortcutsOpen);
+    const tg = useEditorStore((s) => s.tg);
+    const tierCount = tg.tiers.length;
     const selection = useEditorStore((s) => s.selection);
     const playRange = useEditorStore((s) => s.playRange);
+
+    const hasQaIssues = useMemo(() => detectQuickQaIssues(tg), [tg]);
 
     const [resizing, setResizing] = useState(false);
     const inspectorRef = useRef<InspectorPanelHandle>(null);
@@ -164,22 +249,53 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
         <nav className="sidebar-rail" aria-label="右侧功能切换栏">
           {RAIL_ITEMS.map((item) => {
             const isActive = sidebarOpen && sidebarTab === item.tab;
+            const showQaDot = item.tab === 'inspector' && hasQaIssues;
             return (
               <button
                 key={item.tab}
                 type="button"
                 className={`sidebar-rail-btn ${isActive ? 'active' : ''}`}
-                title={`${item.title} — ${item.tooltip}`}
-                aria-label={item.title}
+                title={
+                  showQaDot
+                    ? `${item.title} — ${item.tooltip}（检测到结构或微偏异常）`
+                    : `${item.title} — ${item.tooltip}`
+                }
+                aria-label={showQaDot ? `${item.title}（存在数据体检提醒）` : item.title}
                 aria-pressed={isActive}
                 onClick={() => toggleSidebarTab(item.tab)}
               >
                 <UiIcon name={item.icon} size={16} />
+                {showQaDot && (
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      position: 'absolute',
+                      top: 4,
+                      right: 4,
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background: 'var(--accent-amber)',
+                      boxShadow: '0 0 0 1.5px var(--bg-subtle)',
+                      pointerEvents: 'none'
+                    }}
+                  />
+                )}
               </button>
             );
           })}
 
           <div className="sidebar-rail-bottom">
+            <button
+              type="button"
+              className={`sidebar-rail-btn ${shortcutsOpen ? 'active' : ''}`}
+              title="快捷键与操作指南 (?)"
+              aria-label="快捷键与操作指南"
+              aria-pressed={shortcutsOpen}
+              onClick={() => setShortcutsOpen(true)}
+            >
+              <ShortcutsIcon size={16} />
+            </button>
             <button
               type="button"
               className={`sidebar-rail-btn ${aboutOpen ? 'active' : ''}`}

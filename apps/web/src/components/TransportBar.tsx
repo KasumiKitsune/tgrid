@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { formatKeyCombo } from '../shortcuts/registry';
 import { useEditorStore } from '../store/useEditorStore';
 import { ChevronIcon, TGridIcon, UiIcon } from './Icons';
 
@@ -8,6 +9,7 @@ interface TransportBarProps {
   onRateChange: (rate: number) => void;
   onVolumeChange: (vol: number) => void;
   onClearAudio: () => void;
+  onOpenAudio: () => void;
 }
 
 const RATES = [0.5, 0.75, 1, 1.25, 1.5];
@@ -17,12 +19,15 @@ export const TransportBar: React.FC<TransportBarProps> = ({
   onStop,
   onRateChange,
   onVolumeChange,
-  onClearAudio
+  onClearAudio,
+  onOpenAudio
 }) => {
   const tg = useEditorStore((s) => s.tg);
   const playing = useEditorStore((s) => s.playing);
   const loop = useEditorStore((s) => s.loop);
   const setLoop = useEditorStore((s) => s.setLoop);
+  const followPlayhead = useEditorStore((s) => s.followPlayhead);
+  const setFollowPlayhead = useEditorStore((s) => s.setFollowPlayhead);
   const rate = useEditorStore((s) => s.rate);
   const volume = useEditorStore((s) => s.volume);
   const currentTime = useEditorStore((s) => s.currentTime);
@@ -101,11 +106,40 @@ export const TransportBar: React.FC<TransportBarProps> = ({
         <button
           type="button"
           className={loop ? 'active' : ''}
-          title="循环播放当前范围"
+          aria-pressed={loop}
+          title="循环播放当前范围 (L)"
           onClick={() => setLoop(!loop)}
         >
           <UiIcon name="loop" size={13} />
           <span>循环</span>
+        </button>
+
+        <button
+          type="button"
+          className={followPlayhead ? 'active' : ''}
+          aria-pressed={followPlayhead}
+          title="播放时自动跟随播放头滚动"
+          onClick={() => setFollowPlayhead(!followPlayhead)}
+        >
+          <svg
+            className="ui-icon"
+            width="13"
+            height="13"
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path d="M8 2.4 V13.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            <path d="M2.5 8 H5.5 M10.5 8 H13.5" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
+            <path
+              d="M11.6 6.2 L13.6 8 L11.6 9.8"
+              stroke="currentColor"
+              strokeWidth="1.35"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <span>跟随</span>
         </button>
 
         <div ref={rateWrapRef} className={`menu-wrap ${rateOpen ? 'open' : ''}`}>
@@ -180,7 +214,15 @@ export const TransportBar: React.FC<TransportBarProps> = ({
 
       <div className="bar-group audio-meta">
         {!audioName ? (
-          <span>未载入录音</span>
+          <button
+            type="button"
+            className="transport-audio-empty-btn"
+            title={`点击载入配套录音 (${formatKeyCombo('Mod+Shift+O')})`}
+            onClick={onOpenAudio}
+          >
+            <UiIcon name="waveform" size={13} />
+            <span>未载入录音</span>
+          </button>
         ) : (
           <>
             <div className="audio-file-group">

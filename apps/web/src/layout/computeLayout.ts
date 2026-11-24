@@ -190,6 +190,7 @@ export interface ComputeLayoutOptions {
   scaleBarExtraH?: number;
   richOpts?: RichLayoutOptions | null;
   fontScale?: number;
+  hiddenTierIndices?: number[];
   legendConfig?: {
     mode: 'full' | 'compact' | 'off';
     lang: 'zh' | 'en';
@@ -223,8 +224,18 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     scaleBarExtraH = 0,
     richOpts = null,
     fontScale = 1,
+    hiddenTierIndices,
     legendConfig = null
   } = options;
+
+  const rawHiddenSet = new Set(
+    (hiddenTierIndices ?? []).filter(
+      (i) => Number.isInteger(i) && i >= 0 && i < tg.tiers.length
+    )
+  );
+  const visibleIndices = tg.tiers.map((_, i) => i).filter((i) => !rawHiddenSet.has(i));
+  const hiddenSet = visibleIndices.length > 0 ? rawHiddenSet : new Set<number>();
+  const isTierVisible = (ti: number) => !hiddenSet.has(ti);
 
   const isLinear = scaleMode === 'linear';
   const showSpec = hasAudio && showSpectrogram;
@@ -285,7 +296,9 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     addTs(tg.xmin);
     addTs(tg.xmax);
   }
-  for (const tier of tg.tiers) {
+  for (let ti = 0; ti < tg.tiers.length; ti++) {
+    if (!isTierVisible(ti)) continue;
+    const tier = tg.tiers[ti];
     addTs(tier.xmin);
     addTs(tier.xmax);
     if (tier.kind === 'intervalTier') {
@@ -297,7 +310,9 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
   }
   if (tsSet.size <= 2) {
     const ptTimes: number[] = [];
-    for (const tier of tg.tiers) {
+    for (let ti = 0; ti < tg.tiers.length; ti++) {
+      if (!isTierVisible(ti)) continue;
+      const tier = tg.tiers[ti];
       if (tier.kind !== 'textTier') continue;
       for (const pt of tier.points) {
         if (Number.isFinite(pt.number) && pt.number >= vMin && pt.number <= vMax) {
@@ -321,7 +336,9 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
   spineT.forEach((t, i) => tToIdx.set(t, i));
 
   const spineUsage = new Array<number>(spineT.length).fill(0);
-  for (const tier of tg.tiers) {
+  for (let ti = 0; ti < tg.tiers.length; ti++) {
+    if (!isTierVisible(ti)) continue;
+    const tier = tg.tiers[ti];
     const used = new Set<number>();
     if (Number.isFinite(tier.xmin) && tier.xmin !== tg.xmin && tToIdx.has(tier.xmin)) {
       used.add(tToIdx.get(tier.xmin)!);
@@ -345,7 +362,9 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
   }
 
   let maxTierNameW = 28;
-  for (const t of tg.tiers) {
+  for (let ti = 0; ti < tg.tiers.length; ti++) {
+    if (!isTierVisible(ti)) continue;
+    const t = tg.tiers[ti];
     const w = t.name === '' ? 14 : measurePx(t.name, tierFontMeasure);
     if (w > maxTierNameW) maxTierNameW = w;
   }
@@ -471,6 +490,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       const dt = b - a;
       let hasActiveText = false;
       for (let ti = 0; ti < tg.tiers.length; ti++) {
+        if (!isTierVisible(ti)) continue;
         const tm = tierMeta[ti];
         if (tm.kind === 'intervalTier') {
           for (const iv of tm.normalIvs) {
@@ -502,6 +522,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       wrapMode === 'single' ? 220 : Math.min(220, Math.max(84, Math.floor(maxBandContentW * 0.72)));
 
     tg.tiers.forEach((_tier, ti) => {
+      if (!isTierVisible(ti)) return;
       const tm = tierMeta[ti];
       if (tm.kind === 'intervalTier') {
         for (const iv of tm.normalIvs) {
@@ -559,13 +580,14 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
   let finestIntervalTierIdx = -1;
   let maxIvCount = -1;
   tg.tiers.forEach((t, ti) => {
+    if (!isTierVisible(ti)) return;
     if (t.kind === 'intervalTier' && t.intervals.length > maxIvCount) {
       maxIvCount = t.intervals.length;
       finestIntervalTierIdx = ti;
     }
   });
 
-  const displayOrder = tg.tiers.map((_, i) => i);
+  const displayOrder = tg.tiers.map((_, i) => i).filter((i) => isTierVisible(i));
   if (showSpec && tierOrder === 'spec') {
     displayOrder.sort((a, b) => {
       const ta = tg.tiers[a];
@@ -586,6 +608,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
 
     const diff = new Float64Array(numCols + 1);
     for (let ti = 0; ti < tg.tiers.length; ti++) {
+      if (!isTierVisible(ti)) continue;
       const tm = tierMeta[ti];
       if (tm.kind !== 'intervalTier') continue;
       for (const iv of tm.normalIvs) {
@@ -750,6 +773,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
 
     const isoTimeSet = new Set<number>();
     for (let ti = 0; ti < tg.tiers.length; ti++) {
+      if (!isTierVisible(ti)) continue;
       const tm = tierMeta[ti];
       if (tm.kind !== 'textTier') continue;
       for (const pt of tm.finitePts) {
@@ -1040,7 +1064,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       }
     }
 
-    if (tg.tiers.length === 0) ty += 28;
+    if (displayOrder.length === 0) ty += 28;
     else ty -= TIER_GAP;
 
     const bandObj: BandLayout = {

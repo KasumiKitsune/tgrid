@@ -22,11 +22,13 @@ interface AcousticMicroLoupeProps {
   sheetRef: React.RefObject<HTMLDivElement | null>;
 }
 
-const LOUPE_CSS_W = 220;
-const LOUPE_W = 440; // 2x HiDPI
-const WAVE_H = 88; // 44px CSS
-const SPEC_H = 136; // 68px CSS
-const HALF_WIN_SEC = 0.04; // ±40 ms
+const LOUPE_CSS_W = 260;
+const LOUPE_W = 520; // 2x HiDPI
+const WAVE_H = 84; // 42px CSS
+const BRIDGE_H = 18; // 9px CSS
+const SPEC_H = 160; // 80px CSS
+const WAVE_HALF_WIN_SEC = 0.04; // ±40 ms (total 80 ms)
+const SPEC_HALF_WIN_SEC = 0.15; // ±150 ms (total 300 ms)
 const FOOT_H = 20;
 const BORDER_H = 2;
 
@@ -51,7 +53,7 @@ export const AcousticMicroLoupe: React.FC<AcousticMicroLoupeProps> = ({
 
   const visible = Boolean(anchor && audioBuffer && audioBuffer.length > 0);
   const showSpec = Boolean(showSpectrogram && analysis);
-  const totalCanvasH = WAVE_H + (showSpec ? SPEC_H : 0);
+  const totalCanvasH = WAVE_H + (showSpec ? BRIDGE_H + SPEC_H : 0);
 
   const [pos, setPos] = useState<{ left: number; top: number }>({ left: 8, top: 8 });
   const latestDrawRef = useRef<() => void>(() => {});
@@ -65,15 +67,17 @@ export const AcousticMicroLoupe: React.FC<AcousticMicroLoupeProps> = ({
 
       const W = LOUPE_W;
       const waveH = WAVE_H;
+      const bridgeH = showSpec ? BRIDGE_H : 0;
       const specH = showSpec ? SPEC_H : 0;
-      const H = waveH + specH;
+      const specY = waveH + bridgeH;
+      const H = specY + specH;
 
       if (canvas.width !== W) canvas.width = W;
       if (canvas.height !== H) canvas.height = H;
 
       const centerT = curAnchor.centerT;
-      const t0 = centerT - HALF_WIN_SEC;
-      const t1 = centerT + HALF_WIN_SEC;
+      const t0 = centerT - WAVE_HALF_WIN_SEC;
+      const t1 = centerT + WAVE_HALF_WIN_SEC;
       const sr = audioBuffer.sampleRate;
       const raw = audioBuffer.getChannelData(0);
       const len = raw.length;
@@ -82,7 +86,7 @@ export const AcousticMicroLoupe: React.FC<AcousticMicroLoupeProps> = ({
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, W, H);
 
-      // 1. Upper section: ±40 ms high-resolution waveform + zero-crossing markers
+      // 1. Upper section: ±40 ms high-resolution waveform
       ctx.fillStyle = '#FAF9F6';
       ctx.fillRect(0, 0, W, waveH);
 
@@ -106,21 +110,6 @@ export const AcousticMicroLoupe: React.FC<AcousticMicroLoupeProps> = ({
         if (a > localPeak) localPeak = a;
       }
 
-      // Cobalt zero-crossing ticks on centerline
-      ctx.strokeStyle = '#1D4ED8';
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      const zcStart = Math.max(1, sStart);
-      const zcEnd = Math.min(len - 1, sEnd);
-      for (let i = zcStart; i <= zcEnd; i++) {
-        if ((raw[i - 1] < 0 && raw[i] >= 0) || (raw[i - 1] > 0 && raw[i] <= 0)) {
-          const x = ((i - (t0 - offset) * sr) / totalSpan) * W;
-          ctx.moveTo(x, midY - 5);
-          ctx.lineTo(x, midY + 5);
-        }
-      }
-      ctx.stroke();
-
       // Sample-accurate waveform curve
       ctx.strokeStyle = '#141413';
       ctx.lineWidth = 1.5;
@@ -140,10 +129,37 @@ export const AcousticMicroLoupe: React.FC<AcousticMicroLoupeProps> = ({
       }
       ctx.stroke();
 
-      // 2. Lower section: zoomed ±40 ms high-resolution broadband spectrogram
+      // 2. Dual-scale bridge strip + lower ±150 ms natural-aspect broadband spectrogram
       if (showSpec && analysis) {
+        const focusHalfW = (WAVE_HALF_WIN_SEC / SPEC_HALF_WIN_SEC) * (W / 2);
+        const boxL = W / 2 - focusHalfW;
+        const boxR = W / 2 + focusHalfW;
+
+        // 2a. Connecting trapezoid bridge strip (waveH .. waveH + bridgeH)
+        ctx.fillStyle = '#F6F4EE';
+        ctx.fillRect(0, waveH, W, bridgeH);
+
+        ctx.fillStyle = 'rgba(29, 78, 216, 0.09)';
+        ctx.beginPath();
+        ctx.moveTo(0, waveH);
+        ctx.lineTo(W, waveH);
+        ctx.lineTo(boxR, specY);
+        ctx.lineTo(boxL, specY);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(29, 78, 216, 0.55)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(0, waveH);
+        ctx.lineTo(boxL, specY);
+        ctx.moveTo(W, waveH);
+        ctx.lineTo(boxR, specY);
+        ctx.stroke();
+
+        // 2b. Lower spectrogram (±150 ms)
         ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(0, waveH, W, specH);
+        ctx.fillRect(0, specY, W, specH);
 
         const specCanvas = specCanvasRef.current;
         const meta = lastSpecMetaRef.current;
@@ -153,35 +169,76 @@ export const AcousticMicroLoupe: React.FC<AcousticMicroLoupeProps> = ({
           meta.sessionId === analysis.sessionId &&
           meta.maxFreq === maxFreq
         ) {
-          const shiftPx = ((meta.centerT - centerT) / (HALF_WIN_SEC * 2)) * W;
+          const shiftPx = ((meta.centerT - centerT) / (SPEC_HALF_WIN_SEC * 2)) * W;
           if (Math.abs(shiftPx) < W) {
             ctx.save();
             ctx.beginPath();
-            ctx.rect(0, waveH, W, specH);
+            ctx.rect(0, specY, W, specH);
             ctx.clip();
             ctx.imageSmoothingEnabled = true;
-            ctx.drawImage(specCanvas, shiftPx, waveH, W, specH);
+            ctx.drawImage(specCanvas, shiftPx, specY, W, specH);
             ctx.restore();
           }
         }
 
-        // Crisp 1px divider between waveform and zoomed spectrogram
-        ctx.strokeStyle = '#141413';
+        // 2c. Matching ±40 ms focus frame overlay inside the ±150 ms spectrogram
+        ctx.fillStyle = 'rgba(29, 78, 216, 0.05)';
+        ctx.fillRect(boxL, specY, boxR - boxL, specH);
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(29, 78, 216, 0.62)';
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(boxL, specY);
+        ctx.lineTo(boxL, specY + specH);
+        ctx.moveTo(boxR, specY);
+        ctx.lineTo(boxR, specY + specH);
+        ctx.stroke();
+        ctx.restore();
+
+        // Crisp 1px dividers at wave/bridge and bridge/spec boundaries
+        ctx.strokeStyle = '#C8C4BA';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(0, waveH + 0.5);
         ctx.lineTo(W, waveH + 0.5);
         ctx.stroke();
+
+        ctx.strokeStyle = '#141413';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, specY + 0.5);
+        ctx.lineTo(W, specY + 0.5);
+        ctx.stroke();
+
+        // Subtle corner scale micro-tags (2x HiDPI)
+        const drawScalePill = (label: string, topY: number) => {
+          ctx.save();
+          ctx.font = '18px "JetBrains Mono", Consolas, monospace';
+          const pillW = Math.ceil(ctx.measureText(label).width) + 12;
+          const pillH = 24;
+          const px = W - pillW - 6;
+          ctx.fillStyle = '#FFFFFFD9';
+          ctx.fillRect(px, topY, pillW, pillH);
+          ctx.fillStyle = '#6E6A60';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(label, px + pillW / 2, topY + pillH / 2 + 0.5);
+          ctx.restore();
+        };
+        drawScalePill('±40 ms', 5);
+        drawScalePill('±150 ms', specY + 6);
       }
 
-      // 3. Center crisp red (or amber when Z-snapped) vertical crosshair + horizontal ticks
+      // 3. Center crisp red (or amber when snapped) vertical crosshair + horizontal ticks
       const cx = W / 2;
       const reticleColor = curAnchor.snapLabel ? '#B45309' : '#B91C1C';
       ctx.strokeStyle = reticleColor;
       ctx.lineWidth = 2;
       ctx.beginPath();
       if (showSpec) {
-        const specMidY = waveH + specH * 0.5;
+        const specMidY = specY + specH * 0.5;
         ctx.moveTo(cx, 0);
         ctx.lineTo(cx, specMidY - 22);
         ctx.moveTo(cx, specMidY + 22);
@@ -217,9 +274,9 @@ export const AcousticMicroLoupe: React.FC<AcousticMicroLoupeProps> = ({
     specInFlightRef.current = true;
 
     const bridge = getPlatformBridge();
-    const t0 = req.centerT - HALF_WIN_SEC;
-    const t1 = req.centerT + HALF_WIN_SEC;
-    // Render 220x68 (1px per CSS pixel -> fast IPC + sharp 2x HiDPI upscale onto 440x136)
+    const t0 = req.centerT - SPEC_HALF_WIN_SEC;
+    const t1 = req.centerT + SPEC_HALF_WIN_SEC;
+    // Render 260x80 (1px per CSS pixel -> natural broadband aspect ratio + sharp 2x HiDPI draw onto 520x160)
     void bridge
       .renderSpectrogramRgba(
         req.sessionId,
@@ -372,7 +429,7 @@ export const AcousticMicroLoupe: React.FC<AcousticMicroLoupeProps> = ({
           {anchor ? `${anchor.centerT.toFixed(6)} s` : '0.000000 s'}
         </span>
         <span className={`micro-loupe-tag ${snapLabel ? 'snapped' : ''}`}>
-          {snapLabel || '±40 ms · 按 Z 吸附过零'}
+          {snapLabel || (showSpec ? '波 ±40 / 谱 ±150 ms' : '波形 ±40 ms')}
         </span>
       </div>
     </div>

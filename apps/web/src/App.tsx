@@ -23,6 +23,7 @@ import {
   triggerBlobDownload
 } from './render/exporter';
 import { useEditorStore } from './store/useEditorStore';
+import { isComposingEvent } from './shortcuts/registry';
 import { Topbar, type ExportActionKind } from './components/Topbar';
 import { TransportBar } from './components/TransportBar';
 import { EditStrip } from './components/EditStrip';
@@ -32,6 +33,9 @@ import { RightSidebar, type RightSidebarHandle } from './components/sidebar/Righ
 import { IpaDock } from './components/IpaDock';
 import { ExportModal } from './components/ExportModal';
 import { AboutModal } from './components/AboutModal';
+import { ShortcutsModal } from './components/ShortcutsModal';
+import { FindReplaceBar } from './components/FindReplaceBar';
+import { StatusBar } from './components/StatusBar';
 import { UnsavedDialog, type UnsavedDialogState } from './components/UnsavedDialog';
 import { GlobalContextMenu } from './components/GlobalContextMenu';
 import { Toast } from './components/Toast';
@@ -155,7 +159,11 @@ export function App() {
   const handleNewTab = useCallback(() => {
     flushActiveEdits();
     playerRef.current?.stop(false);
-    const newId = useEditorStore.getState().createNewTab({ isBlankPlaceholder: true });
+    const st = useEditorStore.getState();
+    const newId = st.createNewTab({ isBlankPlaceholder: true });
+    if (st.mode === 'read') {
+      st.setMode('edit');
+    }
     syncPlayerForTab(newId);
   }, [flushActiveEdits, syncPlayerForTab]);
 
@@ -220,6 +228,11 @@ export function App() {
         return;
       }
 
+      const curActiveId = useEditorStore.getState().activeTabId;
+      if (curActiveId === tabId) {
+        useEditorStore.getState().updateBlankTabDuration(offset, buffer.duration);
+      }
+
       setTabAudioBuffer(tabId, buffer);
       setAudioMetaForTab(tabId, {
         name,
@@ -229,12 +242,12 @@ export function App() {
         analysis
       });
 
-      const curActiveId = useEditorStore.getState().activeTabId;
-      if (curActiveId === tabId) {
+      const postActiveId = useEditorStore.getState().activeTabId;
+      if (postActiveId === tabId) {
         player.setBuffer(buffer, offset);
         setAudioBuffer(buffer);
       } else {
-        syncPlayerForTab(curActiveId);
+        syncPlayerForTab(postActiveId);
       }
     },
     [setAudioMetaForTab, syncPlayerForTab]
@@ -433,6 +446,9 @@ export function App() {
                 firstSound.xmin
               );
               const analysis = await bridge.loadPcmSession(mono, buffer.sampleRate, firstSound.xmin);
+              if (useEditorStore.getState().activeTabId === targetTabId) {
+                useEditorStore.getState().updateBlankTabDuration(firstSound.xmin, buffer.duration);
+              }
               setTabAudioBuffer(targetTabId, buffer);
               setAudioMetaForTab(targetTabId, {
                 name: firstSound.name || file.name,
@@ -1212,30 +1228,56 @@ export function App() {
     ]
   );
 
-  // Capture-phase browser shortcut blocker, desktop & multi-tab shortcut rebinding, and Ctrl+wheel zoom guard
+  // Capture-phase browser shortcut blocker, desktop & multi-tab shortcut rebinding, and Ctrl/Meta+wheel zoom guard
   useEffect(() => {
     const onKeyDownCapture = (e: KeyboardEvent) => {
+      if (isComposingEvent(e)) return;
+
       const ctrl = e.ctrlKey || e.metaKey;
       const lower = e.key.toLowerCase();
 
       if (e.key === 'Escape') {
         if (unsavedDialogRef.current) {
           e.preventDefault();
+          e.stopPropagation();
           if (!unsavedBusyRef.current) setUnsavedDialog(null);
           return;
         }
         const st = useEditorStore.getState();
         if (st.aboutOpen) {
           e.preventDefault();
+          e.stopPropagation();
           setAboutOpen(false);
           return;
         }
         if (st.exportOpen) {
           e.preventDefault();
+          e.stopPropagation();
           setExportOpen(false);
           return;
         }
+        if (st.shortcutsOpen) {
+          e.preventDefault();
+          e.stopPropagation();
+          st.setShortcutsOpen(false);
+          return;
+        }
+        if (st.findBarOpen) {
+          e.preventDefault();
+          e.stopPropagation();
+          st.closeFindBar();
+          return;
+        }
       }
+
+      const stNow = useEditorStore.getState();
+      const anyModalOpen = Boolean(
+        unsavedDialogRef.current ||
+          stNow.exportOpen ||
+          stNow.aboutOpen ||
+          stNow.shortcutsOpen ||
+          document.querySelector('.modal-backdrop.open')
+      );
 
       if (isDesktop) {
         // Block WebView2 / Edge browser chrome shortcuts
@@ -1243,7 +1285,7 @@ export function App() {
           e.preventDefault();
           return;
         }
-        if (ctrl && (lower === 'r' || lower === 'f' || lower === 'g' || lower === 'u')) {
+        if (ctrl && (lower === 'r' || lower === 'g' || lower === 'u')) {
           e.preventDefault();
           return;
         }
@@ -1254,28 +1296,92 @@ export function App() {
           e.preventDefault();
           return;
         }
-        if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        // Only suppress browser-back Alt+Arrow when Shift is NOT held (preserve Shift+Alt+Arrow ±1ms nudge)
+        if (e.altKey && !e.shiftKey && !ctrl && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
           e.preventDefault();
           return;
         }
-        if (
-          ctrl &&
-          !e.altKey &&
-          (e.key === '=' ||
-            e.key === '+' ||
-            e.key === '-' ||
-            e.key === '_' ||
-            e.key === '0' ||
-            e.code === 'Equal' ||
-            e.code === 'Minus' ||
-            e.code === 'Digit0' ||
-            e.code === 'NumpadAdd' ||
-            e.code === 'NumpadSubtract' ||
-            e.code === 'Numpad0')
-        ) {
-          e.preventDefault();
+      }
+
+      // Reclaim Mod+= / Mod++ / Mod+- / Mod+_ / Mod+0 for #stage horizontal zoom
+      const isZoomIn =
+        ctrl &&
+        !e.altKey &&
+        (e.key === '=' || e.key === '+' || e.code === 'Equal' || e.code === 'NumpadAdd');
+      const isZoomOut =
+        ctrl &&
+        !e.altKey &&
+        (e.key === '-' || e.key === '_' || e.code === 'Minus' || e.code === 'NumpadSubtract');
+      const isZoomReset =
+        ctrl &&
+        !e.altKey &&
+        !e.shiftKey &&
+        (e.key === '0' || e.code === 'Digit0' || e.code === 'Numpad0');
+
+      if (isZoomIn || isZoomOut || isZoomReset) {
+        e.preventDefault();
+        if (anyModalOpen) return;
+        const st = useEditorStore.getState();
+        if (isZoomReset) {
+          st.setTargetWidth(1120);
+          st.setWrapMode('auto');
+          st.setViewDomain(null);
           return;
         }
+        const stageEl = document.getElementById('stage');
+        const curStageW = stageEl?.clientWidth || window.innerWidth;
+        const sidePad = curStageW < 480 ? 12 : curStageW < 760 ? 24 : 56;
+        const availW = Math.max(260, curStageW - sidePad);
+        const curW = st.wrapMode === 'auto' ? Math.min(st.targetWidth, availW) : st.targetWidth;
+        const factor = isZoomIn ? 1.15 : 1 / 1.15;
+        const nextW = Math.round(curW * factor);
+        let nextWrap = st.wrapMode;
+        if (st.wrapMode === 'auto' && factor > 1 && nextW > availW) {
+          nextWrap = 'single';
+          st.setWrapMode('single');
+        }
+        const dom = st.viewDomain || { min: st.tg.xmin, max: st.tg.xmax };
+        const dur = Math.max(
+          0.1,
+          (Number.isFinite(dom.max) ? dom.max : 1) - (Number.isFinite(dom.min) ? dom.min : 0)
+        );
+        const maxW =
+          nextWrap === 'single' ? Math.max(4800, Math.min(18000, Math.round(dur * 600))) : 2400;
+        st.setTargetWidth(Math.max(280, Math.min(maxW, nextW)));
+        return;
+      }
+
+      // Shortcuts modal (Mod+/ and F1)
+      if (
+        (e.key === 'F1' && !ctrl && !e.altKey && !e.shiftKey) ||
+        (ctrl && !e.altKey && !e.shiftKey && (e.key === '/' || e.code === 'Slash'))
+      ) {
+        e.preventDefault();
+        if (!unsavedDialogRef.current && !stNow.exportOpen && !stNow.aboutOpen) {
+          stNow.setShortcutsOpen(!stNow.shortcutsOpen);
+        }
+        return;
+      }
+
+      // Block global document/tab/bar shortcuts whenever a modal dialog is open
+      const isModalBlockedShortcut =
+        ctrl &&
+        !e.altKey &&
+        (lower === 't' ||
+          lower === 'w' ||
+          lower === 'o' ||
+          lower === 's' ||
+          lower === 'p' ||
+          lower === 'b' ||
+          lower === 'f' ||
+          lower === 'h' ||
+          (e.shiftKey && lower === 'e') ||
+          e.key === 'Tab' ||
+          (!e.shiftKey && /^[1-9]$/.test(e.key)));
+
+      if (anyModalOpen && isModalBlockedShortcut) {
+        e.preventDefault();
+        return;
       }
 
       // Multi-tab shortcuts (capture phase prevents WebView2 from closing window on Ctrl+W)
@@ -1300,19 +1406,52 @@ export function App() {
         }
         return;
       }
+      if (ctrl && !e.altKey && !e.shiftKey && /^[1-9]$/.test(e.key)) {
+        e.preventDefault();
+        const st = useEditorStore.getState();
+        const targetIdx = parseInt(e.key, 10) - 1;
+        if (targetIdx >= 0 && targetIdx < st.tabs.length) {
+          handleSwitchTab(st.tabs[targetIdx].id);
+        }
+        return;
+      }
 
-      // Desktop & safe Web document shortcuts
-      if (ctrl && !e.altKey && lower === 'o' && isDesktop) {
+      // Find & Replace (Mod+F / Mod+H)
+      if (ctrl && !e.altKey && !e.shiftKey && lower === 'f') {
+        e.preventDefault();
+        useEditorStore.getState().openFindBar(false);
+        return;
+      }
+      if (ctrl && !e.altKey && !e.shiftKey && lower === 'h') {
+        e.preventDefault();
+        useEditorStore.getState().openFindBar(true);
+        return;
+      }
+
+      // Open files & companion audio (Desktop & Web)
+      if (ctrl && !e.altKey && !e.shiftKey && lower === 'o') {
         e.preventDefault();
         void handleOpenTextGridPicker();
         return;
       }
+      if (ctrl && !e.altKey && e.shiftKey && lower === 'o') {
+        e.preventDefault();
+        void handleOpenAudioPicker();
+        return;
+      }
+
+      // Save & Export & Sidebar
       if (ctrl && !e.altKey && lower === 's') {
         e.preventDefault();
         void handleExportAction(e.shiftKey ? 'save-as' : 'save');
         return;
       }
       if (ctrl && !e.altKey && !e.shiftKey && lower === 'p') {
+        e.preventDefault();
+        setExportOpen(true);
+        return;
+      }
+      if (ctrl && !e.altKey && e.shiftKey && lower === 'e') {
         e.preventDefault();
         setExportOpen(true);
         return;
@@ -1325,7 +1464,7 @@ export function App() {
     };
 
     const onWheelCapture = (e: WheelEvent) => {
-      if (!isDesktop || !e.ctrlKey) return;
+      if (!isDesktop || (!e.ctrlKey && !e.metaKey)) return;
       const target = e.target as HTMLElement | null;
       if (target?.closest('.export-preview-stage, #stage')) return;
       e.preventDefault();
@@ -1347,6 +1486,7 @@ export function App() {
     requestCloseTab,
     handleSwitchTab,
     handleOpenTextGridPicker,
+    handleOpenAudioPicker,
     handleExportAction,
     setExportOpen,
     setAboutOpen
@@ -1403,20 +1543,34 @@ export function App() {
         onRateChange={handleRateChange}
         onVolumeChange={handleVolumeChange}
         onClearAudio={() => void clearAudio()}
+        onOpenAudio={() => void handleOpenAudioPicker()}
       />
 
       <EditStrip />
 
       <div className="workspace-body">
-        <ScoreStage
-          ref={stageRef}
-          audioBuffer={audioBuffer}
-          onStartPlayback={handleStartPlayback}
-          onTogglePlay={handleTogglePlay}
-          onStopPlayback={handleStopPlayback}
-          onQuickExportSvg={() => void quickExportImage('svg')}
-          onQuickExportPng={() => void quickExportImage('png')}
-        />
+        <div
+          id="stage-wrap"
+          style={{
+            position: 'relative',
+            flex: '1 1 auto',
+            minWidth: 0,
+            minHeight: 0,
+            display: 'flex',
+            overflow: 'hidden'
+          }}
+        >
+          <ScoreStage
+            ref={stageRef}
+            audioBuffer={audioBuffer}
+            onStartPlayback={handleStartPlayback}
+            onTogglePlay={handleTogglePlay}
+            onStopPlayback={handleStopPlayback}
+            onQuickExportSvg={() => void quickExportImage('svg')}
+            onQuickExportPng={() => void quickExportImage('png')}
+          />
+          <FindReplaceBar />
+        </div>
 
         <RightSidebar
           ref={sidebarRef}
@@ -1440,9 +1594,13 @@ export function App() {
 
       <LegendDock />
 
+      <StatusBar />
+
       <ExportModal audioBuffer={audioBuffer} />
 
       <AboutModal />
+
+      <ShortcutsModal />
 
       <UnsavedDialog
         state={unsavedDialog}

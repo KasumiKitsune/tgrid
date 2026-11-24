@@ -40,6 +40,34 @@ export interface DragPreviewState {
   time: number;
 }
 
+export interface EdgeSnapVisual {
+  x: number;
+  linX: number;
+  label: string;
+}
+
+export interface IntervalDragPreviewState {
+  bandIndex: number;
+  tierIndex: number;
+  mode: 'create' | 'move';
+  tStart: number;
+  tEnd: number;
+  x0: number;
+  x1: number;
+  linX0: number;
+  linX1: number;
+  y0: number;
+  y1: number;
+  startSnap?: EdgeSnapVisual | null;
+  endSnap?: EdgeSnapVisual | null;
+  compressWarningSide?: 'left' | 'right' | null;
+  // Keep legacy fields optional for compatibility
+  snapX?: number | null;
+  snapSide?: 'start' | 'end' | null;
+  snapLabel?: string | null;
+  text?: string;
+}
+
 export type BandSpecRenderResult =
   | { kind: 'none' }
   | { kind: 'contour'; paths: ContourPath[] }
@@ -87,6 +115,7 @@ export interface RenderScoreInput {
   currentTime: number;
   showPlayhead: boolean;
   dragPreview: DragPreviewState | null;
+  intervalDragPreview?: IntervalDragPreviewState | null;
   screenSpecUrls?: Map<number, string>;
   exportCtx?: RenderScoreExportContext | null;
 }
@@ -269,7 +298,13 @@ export function renderInteractiveOverlay(
   layout: ScoreLayout,
   input: Pick<
     RenderScoreInput,
-    'selection' | 'playRange' | 'currentTime' | 'showPlayhead' | 'dragPreview' | 'hasAudio'
+    | 'selection'
+    | 'playRange'
+    | 'currentTime'
+    | 'showPlayhead'
+    | 'dragPreview'
+    | 'intervalDragPreview'
+    | 'hasAudio'
   >
 ): void {
   if (!layerG) return;
@@ -607,6 +642,259 @@ export function renderInteractiveOverlay(
       ).textContent = txt;
     }
   }
+
+  if (input.intervalDragPreview) {
+    const {
+      bandIndex,
+      mode: dragMode,
+      tStart,
+      tEnd,
+      x0,
+      x1,
+      linX0,
+      linX1,
+      y0,
+      y1,
+      startSnap,
+      endSnap,
+      compressWarningSide,
+      snapX,
+      snapSide,
+      snapLabel,
+      text
+    } = input.intervalDragPreview;
+    const band = layout.bands[bandIndex];
+    const sSnap: EdgeSnapVisual | null =
+      startSnap ??
+      (snapSide === 'start' && snapX != null
+        ? { x: snapX, linX: linX0, label: snapLabel || '' }
+        : null);
+    const eSnap: EdgeSnapVisual | null =
+      endSnap ??
+      (snapSide === 'end' && snapX != null
+        ? { x: snapX, linX: linX1, label: snapLabel || '' }
+        : null);
+    const legacyOnlySnapX = !sSnap && !eSnap && snapX != null ? snapX : null;
+    const startColor = sSnap ? '#B45309' : '#1D4ED8';
+    const endColor = eSnap ? '#B45309' : '#1D4ED8';
+    const px0 = Math.min(x0, x1);
+    const px1 = Math.max(x0, x1);
+    const lx0 = Math.min(linX0, linX1);
+    const lx1 = Math.max(linX0, linX1);
+    const rectW = Math.max(1, px1 - px0);
+    const rectH = Math.max(1, y1 - y0);
+
+    if (band && Number.isFinite(lx0) && Number.isFinite(lx1)) {
+      svgEl(
+        'rect',
+        {
+          x: lx0,
+          y: band.linearY,
+          width: Math.max(1, lx1 - lx0),
+          height: Math.max(1, band.neckTopY - band.linearY),
+          fill: '#1D4ED8',
+          opacity: 0.14
+        },
+        layerG
+      );
+      svgEl(
+        'line',
+        {
+          x1: linX0,
+          y1: band.linearY,
+          x2: linX0,
+          y2: band.neckTopY,
+          stroke: startColor,
+          'stroke-width': 1.4,
+          opacity: 0.9
+        },
+        layerG
+      );
+      svgEl(
+        'line',
+        {
+          x1: linX1,
+          y1: band.linearY,
+          x2: linX1,
+          y2: band.neckTopY,
+          stroke: endColor,
+          'stroke-width': 1.4,
+          opacity: 0.9
+        },
+        layerG
+      );
+      svgEl(
+        'line',
+        {
+          x1: linX0,
+          y1: band.neckTopY,
+          x2: x0,
+          y2: band.neckBotY,
+          stroke: startColor,
+          'stroke-width': 1.2,
+          opacity: 0.82
+        },
+        layerG
+      );
+      svgEl(
+        'line',
+        {
+          x1: linX1,
+          y1: band.neckTopY,
+          x2: x1,
+          y2: band.neckBotY,
+          stroke: endColor,
+          'stroke-width': 1.2,
+          opacity: 0.82
+        },
+        layerG
+      );
+    }
+
+    if (dragMode === 'create') {
+      svgEl(
+        'rect',
+        {
+          x: px0,
+          y: y0,
+          width: rectW,
+          height: rectH,
+          fill: '#1D4ED8',
+          'fill-opacity': 0.13,
+          stroke: '#1D4ED8',
+          'stroke-width': 1.8,
+          'stroke-dasharray': '4 3'
+        },
+        layerG
+      );
+    } else {
+      svgEl(
+        'rect',
+        {
+          x: px0,
+          y: y0,
+          width: rectW,
+          height: rectH,
+          fill: '#1D4ED8',
+          'fill-opacity': 0.16,
+          stroke: '#1D4ED8',
+          'stroke-width': 1.8
+        },
+        layerG
+      );
+      if (text && rectW >= 20) {
+        const flat = text.replace(/[\r\n\t]+/g, ' ').trim();
+        if (flat) {
+          const font = `12px ${IPA_FONT_STACK}`;
+          const maxTxtW = rectW - 8;
+          let displayTxt = flat;
+          if (measurePx(displayTxt, font) > maxTxtW) {
+            const graphemes = splitGraphemes(displayTxt);
+            while (graphemes.length > 1 && measurePx(graphemes.join('') + '…', font) > maxTxtW) {
+              graphemes.pop();
+            }
+            displayTxt = graphemes.length > 0 ? graphemes.join('') + '…' : '';
+          }
+          if (displayTxt && measurePx(displayTxt, font) <= maxTxtW + 4) {
+            svgEl(
+              'text',
+              {
+                x: px0 + rectW / 2,
+                y: y0 + rectH / 2 + 4,
+                'text-anchor': 'middle',
+                'font-family': IPA_FONT_STACK,
+                'font-size': '12',
+                fill: '#1E3A8A',
+                opacity: 0.84
+              },
+              layerG
+            ).textContent = displayTxt;
+          }
+        }
+      }
+    }
+
+    if (compressWarningSide === 'left' || compressWarningSide === 'right') {
+      const warnX = compressWarningSide === 'left' ? px0 : px1;
+      svgEl(
+        'line',
+        {
+          x1: warnX,
+          y1: y0 - 1,
+          x2: warnX,
+          y2: y1 + 1,
+          stroke: '#B45309',
+          'stroke-width': 2.2
+        },
+        layerG
+      );
+    }
+
+    const drawMagneticGuide = (guideX: number) => {
+      if (!band) return;
+      svgEl(
+        'line',
+        {
+          x1: guideX,
+          y1: band.neckBotY,
+          x2: guideX,
+          y2: band.tiersTopY,
+          stroke: '#B45309',
+          'stroke-width': 1.2,
+          opacity: 0.65
+        },
+        layerG
+      );
+      svgEl(
+        'line',
+        {
+          x1: guideX,
+          y1: band.tiersTopY,
+          x2: guideX,
+          y2: band.tiersBottomY,
+          stroke: '#B45309',
+          'stroke-width': 1.6
+        },
+        layerG
+      );
+    };
+
+    if (sSnap) drawMagneticGuide(sSnap.x);
+    if (eSnap && (!sSnap || Math.abs(eSnap.x - sSnap.x) > 0.5)) drawMagneticGuide(eSnap.x);
+    if (legacyOnlySnapX !== null) drawMagneticGuide(legacyOnlySnapX);
+
+    const durMs = Math.max(0, Math.round((tEnd - tStart) * 1000));
+    const baseTxt = `${formatPraatDouble(tStart)} – ${formatPraatDouble(tEnd)} s (${durMs} ms)`;
+    const anySnap = Boolean(sSnap || eSnap || legacyOnlySnapX !== null);
+    let snapSuffix = '';
+    if (sSnap && eSnap) {
+      snapSuffix = '双端对齐';
+    } else if (sSnap && sSnap.label) {
+      snapSuffix = sSnap.label;
+    } else if (eSnap && eSnap.label) {
+      snapSuffix = eSnap.label;
+    } else if (snapLabel) {
+      snapSuffix = snapLabel;
+    }
+    const txt = snapSuffix ? `${baseTxt} · ${snapSuffix}` : baseTxt;
+    const tw = measurePx(txt, `10.5px ${MONO_FONT_STACK}`) + 12;
+    const fx = Math.max(4, Math.min(layout.width - tw - 4, (px0 + px1) / 2 - tw / 2));
+    const fy = Math.max(4, (anySnap && band ? Math.min(y0, band.tiersTopY) : y0) - 22);
+    const isSnapped = anySnap || Boolean(snapLabel);
+    svgEl('rect', { x: fx, y: fy, width: tw, height: 18, fill: isSnapped ? '#B45309' : '#141413' }, layerG);
+    svgEl(
+      'text',
+      {
+        x: fx + tw / 2,
+        y: fy + 12.5,
+        'text-anchor': 'middle',
+        'font-family': MONO_FONT_STACK,
+        'font-size': '10',
+        fill: '#FFFFFF'
+      },
+      layerG
+    ).textContent = txt;
+  }
 }
 
 export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): void {
@@ -835,7 +1123,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
       }
 
       for (const tl of band.tiersLayout) {
-        if (tl.meta.kind !== 'textTier') continue;
+        if (!tl || tl.meta.kind !== 'textTier') continue;
         for (const vp of tl.visiblePts || []) {
           const lx = band.linearXForTime(vp.pt.number);
           svgEl('polygon', {
@@ -879,12 +1167,14 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
       svgEl('rect', { x: band.originX, y: band.anchorY, width: band.bandContentW, height: band.anchorH, fill: transparentBg ? 'none' : pal.anchorBg, stroke: pal.anchorStroke, 'stroke-width': sw(0.9) }, ancG);
       if (band.finestIntervalTierIdx >= 0) {
         const fineTl = band.tiersLayout[band.finestIntervalTierIdx];
-        for (const vi of fineTl?.visibleIvs || []) {
-          const ax0 = band.linearXForTime(Math.max(vi.iv.xmin, band.startT));
-          const ax1 = band.linearXForTime(Math.min(vi.iv.xmax, band.endT));
-          if (ax1 <= ax0) continue;
-          if (vi.iv.text !== '') svgEl('rect', { x: ax0, y: band.anchorY + 1, width: Math.max(0.5, ax1 - ax0), height: band.anchorH - 2, fill: pal.ink, opacity: 0.24 }, ancG);
-          svgEl('line', { x1: ax0, y1: band.anchorY, x2: ax0, y2: band.anchorY + band.anchorH, stroke: pal.border, 'stroke-width': sw(0.9) }, ancG);
+        if (fineTl) {
+          for (const vi of fineTl.visibleIvs || []) {
+            const ax0 = band.linearXForTime(Math.max(vi.iv.xmin, band.startT));
+            const ax1 = band.linearXForTime(Math.min(vi.iv.xmax, band.endT));
+            if (ax1 <= ax0) continue;
+            if (vi.iv.text !== '') svgEl('rect', { x: ax0, y: band.anchorY + 1, width: Math.max(0.5, ax1 - ax0), height: band.anchorH - 2, fill: pal.ink, opacity: 0.24 }, ancG);
+            svgEl('line', { x1: ax0, y1: band.anchorY, x2: ax0, y2: band.anchorY + band.anchorH, stroke: pal.border, 'stroke-width': sw(0.9) }, ancG);
+          }
         }
       }
 
@@ -913,6 +1203,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
           if (seg.collapsed) continue;
           let activeCount = 0;
           for (const tl of band.tiersLayout) {
+            if (!tl) continue;
             if (tl.meta.kind === 'intervalTier') {
               for (const vi of tl.visibleIvs || []) {
                 if (vi.iv.text !== '' && vi.iv.xmin <= seg.t0 && vi.iv.xmax >= seg.t1) {
@@ -1262,6 +1553,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
     // D. Multi-Tier Tracks
     for (const ti of band.displayOrder) {
       const tl = band.tiersLayout[ti];
+      if (!tl) continue;
       const tier = tl.tier;
       const displayNum = tier.displayNum ?? ti + 1;
       const accent = pal.tierAccents[(displayNum - 1) % pal.tierAccents.length];
@@ -1352,6 +1644,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
 
             const ivG = svgEl('g', isExp ? {} : {
               'data-role': 'interval', 'data-tier': ti, 'data-idx': iv.origIdx, 'data-band': band.bandIndex,
+              'data-empty': isEmpty ? '1' : '0',
               'data-legend-keys': isEmpty ? 'empty-interval' : 'labeled-interval'
             }, tG);
             if (!isExp) {
@@ -1477,14 +1770,23 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
 
           if (!isExp && mode === 'edit') {
             const bSet = new Set<number>();
-            for (const vi of tl.visibleIvs || []) {
+            const visIvs = tl.visibleIvs || [];
+            for (const vi of visIvs) {
               if (!vi.clippedLeft && vi.iv.xmin > tier.xmin && vi.iv.xmin < tier.xmax) bSet.add(vi.iv.xmin);
               if (!vi.clippedRight && vi.iv.xmax > tier.xmin && vi.iv.xmax < tier.xmax) bSet.add(vi.iv.xmax);
             }
             bSet.forEach((bt) => {
               const bx = safeColX(bt);
+              const leftIv = visIvs.find((vi) => Math.abs(vi.iv.xmax - bt) < 1e-9);
+              const rightIv = visIvs.find((vi) => Math.abs(vi.iv.xmin - bt) < 1e-9);
+              const leftHit = leftIv
+                ? Math.min(leftIv.iv.text === '' ? 3 : 4.5, Math.max(1.5, leftIv.w * 0.25))
+                : 3;
+              const rightHit = rightIv
+                ? Math.min(rightIv.iv.text === '' ? 3 : 4.5, Math.max(1.5, rightIv.w * 0.25))
+                : 3;
               const bHandle = svgEl('g', { 'data-role': 'boundary', 'data-tier': ti, 'data-time': String(bt), 'data-band': band.bandIndex, 'data-ui-only': '1' }, tG);
-              svgEl('rect', { x: bx - 4.5, y: tl.y, width: 9, height: tl.h, fill: 'transparent' }, bHandle);
+              svgEl('rect', { x: bx - leftHit, y: tl.y, width: leftHit + rightHit, height: tl.h, fill: 'transparent' }, bHandle);
               svgEl('line', { class: 'bnd-vis', x1: bx, y1: tl.y - 2, x2: bx, y2: tl.y + tl.h + 2, stroke: '#1D4ED8', 'stroke-width': 2.2 }, bHandle);
               svgEl('rect', { class: 'bnd-vis', x: bx - 2.5, y: tl.y - 3, width: 5, height: 3, fill: '#1D4ED8' }, bHandle);
               svgEl('rect', { class: 'bnd-vis', x: bx - 2.5, y: tl.y + tl.h, width: 5, height: 3, fill: '#1D4ED8' }, bHandle);
@@ -1522,6 +1824,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             }, pG);
           } else {
             const boxY = tl.y + (tl.levelY?.[vp.level] || 0);
+            if (!isExp) svgEl('rect', { x: px - 7, y: wy - 7, width: 14, height: 14, fill: 'transparent', 'data-ui-only': '1' }, pG);
             svgEl('line', { ...(isExp ? {} : { class: 'pt-stem' }), x1: px, y1: wy + 3.5, x2: px, y2: boxY, stroke: strokeCol, 'stroke-width': sw(1) }, pG);
             svgEl('polygon', { ...(isExp ? {} : { class: 'pt-diamond' }), points: `${px},${wy - 4} ${px + 4},${wy} ${px},${wy + 4} ${px - 4},${wy}`, fill: strokeCol, stroke: strokeCol, 'stroke-width': sw(0.8) }, pG);
             svgEl('rect', { ...(isExp ? {} : { class: 'pt-flag' }), x: vp.bx, y: boxY, width: vp.boxW, height: vp.boxH, fill: pal.paper, stroke: strokeCol, 'stroke-width': sw(1) }, pG);

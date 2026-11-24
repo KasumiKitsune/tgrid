@@ -1,13 +1,18 @@
-import React, { useEffect, useState } from 'react';
-import { useEditorStore } from '../store/useEditorStore';
+import React, { useEffect, useRef, useState } from 'react';
 import { formatPraatDouble } from '../layout/richText';
+import { IS_MAC, formatKeyCombo, isComposingEvent } from '../shortcuts/registry';
+import {
+  getLatestRedoLabel,
+  getLatestUndoLabel,
+  useEditorStore
+} from '../store/useEditorStore';
 import { UiIcon } from './Icons';
 
 export const EditStrip: React.FC = () => {
   const mode = useEditorStore((s) => s.mode);
   const tg = useEditorStore((s) => s.tg);
-  const undoStackLen = useEditorStore((s) => s.undoStack.length);
-  const redoStackLen = useEditorStore((s) => s.redoStack.length);
+  const undoStack = useEditorStore((s) => s.undoStack);
+  const redoStack = useEditorStore((s) => s.redoStack);
   const undo = useEditorStore((s) => s.undo);
   const redo = useEditorStore((s) => s.redo);
   const insertTierAt = useEditorStore((s) => s.insertTierAt);
@@ -21,13 +26,26 @@ export const EditStrip: React.FC = () => {
 
   const [minText, setMinText] = useState(formatPraatDouble(tg.xmin));
   const [maxText, setMaxText] = useState(formatPraatDouble(tg.xmax));
+  const skipMinBlurRef = useRef(false);
+  const skipMaxBlurRef = useRef(false);
 
   useEffect(() => {
     setMinText(formatPraatDouble(tg.xmin));
     setMaxText(formatPraatDouble(tg.xmax));
   }, [tg.xmin, tg.xmax]);
 
+  const undoLabel = getLatestUndoLabel(undoStack);
+  const redoLabel = getLatestRedoLabel(redoStack);
+  const undoShortcut = formatKeyCombo('Mod+Z');
+  const redoShortcut = formatKeyCombo(IS_MAC ? 'Mod+Shift+Z' : 'Mod+Y');
+  const undoTitle = undoLabel ? `撤销：${undoLabel} (${undoShortcut})` : `撤销 (${undoShortcut})`;
+  const redoTitle = redoLabel ? `重做：${redoLabel} (${redoShortcut})` : `重做 (${redoShortcut})`;
+
   const commitGlobalMin = () => {
+    if (skipMinBlurRef.current) {
+      skipMinBlurRef.current = false;
+      return;
+    }
     const val = parseFloat(minText);
     if (!Number.isFinite(val) || val > tg.xmax) {
       showToast('全局起点不能大于终点', true);
@@ -35,25 +53,33 @@ export const EditStrip: React.FC = () => {
       return;
     }
     if (val !== tg.xmin) {
-      commitTgMutation((draft) => {
-        const oldMin = draft.xmin;
-        draft.xmin = val;
-        for (const t of draft.tiers) {
-          if (t.xmin === oldMin) t.xmin = val;
-          if (
-            t.kind === 'intervalTier' &&
-            t.intervals.length > 0 &&
-            t.intervals[0].xmin === oldMin &&
-            t.intervals[0].xmax >= val
-          ) {
-            t.intervals[0].xmin = val;
+      commitTgMutation(
+        (draft) => {
+          const oldMin = draft.xmin;
+          draft.xmin = val;
+          for (const t of draft.tiers) {
+            if (t.xmin === oldMin) t.xmin = val;
+            if (
+              t.kind === 'intervalTier' &&
+              t.intervals.length > 0 &&
+              t.intervals[0].xmin === oldMin &&
+              t.intervals[0].xmax >= val
+            ) {
+              t.intervals[0].xmin = val;
+            }
           }
-        }
-      });
+        },
+        undefined,
+        '修改全局起点'
+      );
     }
   };
 
   const commitGlobalMax = () => {
+    if (skipMaxBlurRef.current) {
+      skipMaxBlurRef.current = false;
+      return;
+    }
     const val = parseFloat(maxText);
     if (!Number.isFinite(val) || val < tg.xmin) {
       showToast('全局终点不能小于起点', true);
@@ -61,19 +87,23 @@ export const EditStrip: React.FC = () => {
       return;
     }
     if (val !== tg.xmax) {
-      commitTgMutation((draft) => {
-        const oldMax = draft.xmax;
-        draft.xmax = val;
-        for (const t of draft.tiers) {
-          if (t.xmax === oldMax) t.xmax = val;
-          if (t.kind === 'intervalTier' && t.intervals.length > 0) {
-            const last = t.intervals[t.intervals.length - 1];
-            if (last.xmax === oldMax && last.xmin <= val) {
-              last.xmax = val;
+      commitTgMutation(
+        (draft) => {
+          const oldMax = draft.xmax;
+          draft.xmax = val;
+          for (const t of draft.tiers) {
+            if (t.xmax === oldMax) t.xmax = val;
+            if (t.kind === 'intervalTier' && t.intervals.length > 0) {
+              const last = t.intervals[t.intervals.length - 1];
+              if (last.xmax === oldMax && last.xmin <= val) {
+                last.xmax = val;
+              }
             }
           }
-        }
-      });
+        },
+        undefined,
+        '修改全局终点'
+      );
     }
   };
 
@@ -84,8 +114,8 @@ export const EditStrip: React.FC = () => {
           <button
             type="button"
             className="compact"
-            title="撤销 (Ctrl+Z)"
-            disabled={undoStackLen === 0}
+            title={undoTitle}
+            disabled={undoStack.length === 0}
             onClick={undo}
           >
             <UiIcon name="undo" size={13} />
@@ -94,8 +124,8 @@ export const EditStrip: React.FC = () => {
           <button
             type="button"
             className="compact"
-            title="重做 (Ctrl+Y)"
-            disabled={redoStackLen === 0}
+            title={redoTitle}
+            disabled={redoStack.length === 0}
             onClick={redo}
           >
             <UiIcon name="redo" size={13} />
@@ -139,8 +169,15 @@ export const EditStrip: React.FC = () => {
               onChange={(e) => setMinText(e.target.value)}
               onBlur={commitGlobalMin}
               onKeyDown={(e) => {
+                if (isComposingEvent(e)) return;
                 if (e.key === 'Enter') {
                   e.preventDefault();
+                  (e.target as HTMLInputElement).blur();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  skipMinBlurRef.current = true;
+                  setMinText(formatPraatDouble(tg.xmin));
                   (e.target as HTMLInputElement).blur();
                 }
               }}
@@ -155,8 +192,15 @@ export const EditStrip: React.FC = () => {
               onChange={(e) => setMaxText(e.target.value)}
               onBlur={commitGlobalMax}
               onKeyDown={(e) => {
+                if (isComposingEvent(e)) return;
                 if (e.key === 'Enter') {
                   e.preventDefault();
+                  (e.target as HTMLInputElement).blur();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  skipMaxBlurRef.current = true;
+                  setMaxText(formatPraatDouble(tg.xmax));
                   (e.target as HTMLInputElement).blur();
                 }
               }}
@@ -167,7 +211,7 @@ export const EditStrip: React.FC = () => {
           <div
             className="segmented ipa-ctrl-noblur"
             role="group"
-            title="国际音标输入方案 (Ctrl+\ 或 Alt+I 切换)"
+            title={`国际音标输入方案 (${formatKeyCombo('Mod+\\')} 或 Alt+I 切换)`}
             onMouseDown={(e) => e.preventDefault()}
           >
             <button
@@ -199,7 +243,7 @@ export const EditStrip: React.FC = () => {
           <button
             type="button"
             className={`compact ipa-ctrl-noblur ${ipaDockOpen ? 'active' : ''}`}
-            title="打开 / 关闭交互式国际音标虚拟键盘"
+            title="打开 / 关闭交互式国际音标虚拟键盘 (Alt+K)"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => setIpaDockOpen(!ipaDockOpen)}
           >
@@ -209,7 +253,7 @@ export const EditStrip: React.FC = () => {
         </div>
 
         <span className="hint-text">
-          方向键跨格/跨层 · Enter/双击改字 · Tab 连编 · Ctrl+\ 切音标 · Shift+点击切分
+          拖拽划建/平移 · 悬停自动磁吸 · B 播头切分 · ? 快捷键
         </span>
       </div>
     </div>

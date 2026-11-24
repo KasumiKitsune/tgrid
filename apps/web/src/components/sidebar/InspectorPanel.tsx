@@ -8,12 +8,19 @@ import React, {
   useState
 } from 'react';
 import { getPlatformBridge } from '../../bridge/PlatformBridge';
-import type { AudioAnalysisSummary, TextGridFormat, TierDiagnostics } from '../../bridge/types';
+import type {
+  AudioAnalysisSummary,
+  TextGrid,
+  TextGridFormat,
+  TierDiagnostics
+} from '../../bridge/types';
 import {
   decodeTrigraphGlossSync,
   formatPraatDouble,
   primeTrigraphString
 } from '../../layout/richText';
+import type { EditorSelection } from '../../render/renderScoreSvg';
+import { formatKeyCombo, isComposingEvent } from '../../shortcuts/registry';
 import { useEditorStore } from '../../store/useEditorStore';
 import { UiIcon } from '../Icons';
 import { IpaImePopover, IpaModePill } from '../IpaImePopover';
@@ -119,6 +126,297 @@ function formatHz(v: number | null, digits = 0): string {
   return `${v.toFixed(digits)} Hz`;
 }
 
+type QaIssueKind = 'gap' | 'overlap' | 'zero' | 'micro' | 'space';
+
+interface QaIssue {
+  id: string;
+  kind: QaIssueKind;
+  badge: string;
+  tierIndex: number;
+  tierName: string;
+  time: number;
+  detail: string;
+  targetSelection: EditorSelection;
+  fixableKind?: 'micro-cross' | 'space-interval' | 'space-point';
+  itemIndex?: number;
+}
+
+const QA_ISSUE_CAP = 120;
+const QA_EPS = 1e-9;
+const QA_MICRO_THRESHOLD = 0.005;
+
+function scanQaIssues(tg: TextGrid): {
+  issues: QaIssue[];
+  totalFound: number;
+  crossMicroCount: number;
+} {
+  const issues: QaIssue[] = [];
+  let totalFound = 0;
+  let crossMicroCount = 0;
+
+  const pushIssue = (issue: QaIssue) => {
+    totalFound++;
+    if (issues.length < QA_ISSUE_CAP) {
+      issues.push(issue);
+    }
+  };
+
+  interface BoundaryRef {
+    t: number;
+    tierIndex: number;
+    tierName: string;
+    kind: 'boundary' | 'point';
+    itemIndex?: number;
+  }
+
+  const boundaryRefs: BoundaryRef[] = [];
+
+  for (let ti = 0; ti < tg.tiers.length; ti++) {
+    const tier = tg.tiers[ti];
+    const tierName = tier.name || `第 ${ti + 1} 层`;
+
+    if (tier.kind === 'intervalTier') {
+      const ivs = tier.intervals;
+      if (ivs.length === 0) {
+        if (tier.xmax > tier.xmin + QA_EPS) {
+          pushIssue({
+            id: `gap-empty-${ti}`,
+            kind: 'gap',
+            badge: '空隙',
+            tierIndex: ti,
+            tierName,
+            time: tier.xmin,
+            detail: `${tierName} · 无区间覆盖`,
+            targetSelection: { kind: 'tier', tierIndex: ti }
+          });
+        }
+        continue;
+      }
+
+      if (ivs[0].xmin > tier.xmin + QA_EPS) {
+        const ms = (ivs[0].xmin - tier.xmin) * 1000;
+        pushIssue({
+          id: `gap-lead-${ti}`,
+          kind: 'gap',
+          badge: '空隙',
+          tierIndex: ti,
+          tierName,
+          time: tier.xmin,
+          detail: `${tierName} · 首段前空隙 (${ms.toFixed(1)} ms)`,
+          targetSelection: { kind: 'interval', tierIndex: ti, itemIndex: 0 }
+        });
+      }
+
+      const seenInterior = new Set<number>();
+      for (let ii = 0; ii < ivs.length; ii++) {
+        const iv = ivs[ii];
+        const dur = iv.xmax - iv.xmin;
+
+        if (dur <= QA_EPS) {
+          pushIssue({
+            id: `zero-${ti}-${ii}`,
+            kind: 'zero',
+            badge: '零长',
+            tierIndex: ti,
+            tierName,
+            time: iv.xmin,
+            detail: `${tierName} · #${ii + 1} 零时长区间`,
+            targetSelection: { kind: 'interval', tierIndex: ti, itemIndex: ii }
+          });
+        } else if (dur < QA_MICRO_THRESHOLD) {
+          pushIssue({
+            id: `micro-iv-${ti}-${ii}`,
+            kind: 'micro',
+            badge: '微偏',
+            tierIndex: ti,
+            tierName,
+            time: iv.xmin,
+            detail: `${tierName} · #${ii + 1} 极短段 (${(dur * 1000).toFixed(1)} ms)`,
+            targetSelection: { kind: 'interval', tierIndex: ti, itemIndex: ii }
+          });
+        }
+
+        if (ii > 0) {
+          const prev = ivs[ii - 1];
+          if (iv.xmin > prev.xmax + QA_EPS) {
+            const ms = (iv.xmin - prev.xmax) * 1000;
+            pushIssue({
+              id: `gap-${ti}-${ii}`,
+              kind: 'gap',
+              badge: '空隙',
+              tierIndex: ti,
+              tierName,
+              time: prev.xmax,
+              detail: `${tierName} · #${ii}–#${ii + 1} 空隙 (${ms.toFixed(1)} ms)`,
+              targetSelection: { kind: 'interval', tierIndex: ti, itemIndex: ii }
+            });
+          } else if (iv.xmin < prev.xmax - QA_EPS) {
+            const ms = (prev.xmax - iv.xmin) * 1000;
+            pushIssue({
+              id: `overlap-${ti}-${ii}`,
+              kind: 'overlap',
+              badge: '重叠',
+              tierIndex: ti,
+              tierName,
+              time: iv.xmin,
+              detail: `${tierName} · #${ii}–#${ii + 1} 重叠 (${ms.toFixed(1)} ms)`,
+              targetSelection: { kind: 'interval', tierIndex: ti, itemIndex: ii }
+            });
+          }
+        }
+
+        if (iv.text.length > 0 && iv.text !== iv.text.trim()) {
+          pushIssue({
+            id: `space-iv-${ti}-${ii}`,
+            kind: 'space',
+            badge: '空格',
+            tierIndex: ti,
+            tierName,
+            time: iv.xmin,
+            detail: `${tierName} · #${ii + 1} 首尾含空格`,
+            targetSelection: { kind: 'interval', tierIndex: ti, itemIndex: ii },
+            fixableKind: 'space-interval',
+            itemIndex: ii
+          });
+        }
+
+        if (iv.xmin > tier.xmin + QA_EPS && iv.xmin < tier.xmax - QA_EPS && !seenInterior.has(iv.xmin)) {
+          seenInterior.add(iv.xmin);
+          boundaryRefs.push({ t: iv.xmin, tierIndex: ti, tierName, kind: 'boundary' });
+        }
+        if (iv.xmax > tier.xmin + QA_EPS && iv.xmax < tier.xmax - QA_EPS && !seenInterior.has(iv.xmax)) {
+          seenInterior.add(iv.xmax);
+          boundaryRefs.push({ t: iv.xmax, tierIndex: ti, tierName, kind: 'boundary' });
+        }
+      }
+
+      const last = ivs[ivs.length - 1];
+      if (last.xmax < tier.xmax - QA_EPS) {
+        const ms = (tier.xmax - last.xmax) * 1000;
+        pushIssue({
+          id: `gap-trail-${ti}`,
+          kind: 'gap',
+          badge: '空隙',
+          tierIndex: ti,
+          tierName,
+          time: last.xmax,
+          detail: `${tierName} · 末段后空隙 (${ms.toFixed(1)} ms)`,
+          targetSelection: { kind: 'interval', tierIndex: ti, itemIndex: ivs.length - 1 }
+        });
+      }
+    } else {
+      for (let pi = 0; pi < tier.points.length; pi++) {
+        const pt = tier.points[pi];
+        if (pt.mark.length > 0 && pt.mark !== pt.mark.trim()) {
+          pushIssue({
+            id: `space-pt-${ti}-${pi}`,
+            kind: 'space',
+            badge: '空格',
+            tierIndex: ti,
+            tierName,
+            time: pt.number,
+            detail: `${tierName} · 点 #${pi + 1} 首尾含空格`,
+            targetSelection: { kind: 'point', tierIndex: ti, itemIndex: pi },
+            fixableKind: 'space-point',
+            itemIndex: pi
+          });
+        }
+        boundaryRefs.push({
+          t: pt.number,
+          tierIndex: ti,
+          tierName,
+          kind: 'point',
+          itemIndex: pi
+        });
+      }
+    }
+  }
+
+  // Cross-tier micro boundary misalignment (0 < |t1 - t2| < 5 ms)
+  if (boundaryRefs.length > 1) {
+    boundaryRefs.sort((a, b) => a.t - b.t || a.tierIndex - b.tierIndex);
+    const reportedKeys = new Set<string>();
+
+    for (let i = 0; i < boundaryRefs.length; i++) {
+      const b = boundaryRefs[i];
+      let bestRef: BoundaryRef | null = null;
+      let bestDist = QA_MICRO_THRESHOLD;
+
+      // Scan backward within < 5ms
+      for (let j = i - 1; j >= 0; j--) {
+        const a = boundaryRefs[j];
+        const diff = b.t - a.t;
+        if (diff >= QA_MICRO_THRESHOLD) break;
+        if (diff <= QA_EPS || a.tierIndex === b.tierIndex) continue;
+        const isPriorityRef =
+          (a.kind === 'boundary' && b.kind === 'point') ||
+          (a.kind === b.kind && a.tierIndex < b.tierIndex);
+        if (isPriorityRef && diff < bestDist) {
+          bestDist = diff;
+          bestRef = a;
+        }
+      }
+      // Scan forward within < 5ms
+      for (let j = i + 1; j < boundaryRefs.length; j++) {
+        const a = boundaryRefs[j];
+        const diff = a.t - b.t;
+        if (diff >= QA_MICRO_THRESHOLD) break;
+        if (diff <= QA_EPS || a.tierIndex === b.tierIndex) continue;
+        const isPriorityRef =
+          (a.kind === 'boundary' && b.kind === 'point') ||
+          (a.kind === b.kind && a.tierIndex < b.tierIndex);
+        if (isPriorityRef && diff < bestDist) {
+          bestDist = diff;
+          bestRef = a;
+        }
+      }
+
+      if (bestRef) {
+        const key = `${b.tierIndex}:${b.t.toFixed(9)}`;
+        if (reportedKeys.has(key)) continue;
+        reportedKeys.add(key);
+        crossMicroCount++;
+        pushIssue({
+          id: `micro-x-${b.tierIndex}-${i}`,
+          kind: 'micro',
+          badge: '微偏',
+          tierIndex: b.tierIndex,
+          tierName: b.tierName,
+          time: b.t,
+          detail: `${b.tierName} ↔ ${bestRef.tierName} 偏 ${(bestDist * 1000).toFixed(1)} ms`,
+          targetSelection:
+            b.kind === 'point' && b.itemIndex !== undefined
+              ? { kind: 'point', tierIndex: b.tierIndex, itemIndex: b.itemIndex }
+              : { kind: 'boundary', tierIndex: b.tierIndex, time: b.t },
+          fixableKind: 'micro-cross'
+        });
+      }
+    }
+  }
+
+  return { issues, totalFound, crossMicroCount };
+}
+
+function isSameQaTarget(a: EditorSelection, b: EditorSelection): boolean {
+  if (!a || !b || a.kind !== b.kind) return false;
+  if (a.kind === 'interval' && b.kind === 'interval') {
+    return a.tierIndex === b.tierIndex && a.itemIndex === b.itemIndex;
+  }
+  if (a.kind === 'point' && b.kind === 'point') {
+    return a.tierIndex === b.tierIndex && a.itemIndex === b.itemIndex;
+  }
+  if (a.kind === 'boundary' && b.kind === 'boundary') {
+    return a.tierIndex === b.tierIndex && Math.abs(a.time - b.time) < 1e-9;
+  }
+  if (a.kind === 'tier' && b.kind === 'tier') {
+    return a.tierIndex === b.tierIndex;
+  }
+  if (a.kind === 'spine' && b.kind === 'spine') {
+    return Math.abs(a.time - b.time) < 1e-9;
+  }
+  return false;
+}
+
 export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelProps>(
   ({ onStartPlayback }, ref) => {
     const tg = useEditorStore((s) => s.tg);
@@ -147,13 +445,24 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
     const mergeIntervalWith = useEditorStore((s) => s.mergeIntervalWith);
     const deleteBoundaryAt = useEditorStore((s) => s.deleteBoundaryAt);
     const insertTierAt = useEditorStore((s) => s.insertTierAt);
+    const duplicateTier = useEditorStore((s) => s.duplicateTier);
     const moveTier = useEditorStore((s) => s.moveTier);
-    const deleteTier = useEditorStore((s) => s.deleteTier);
+    const removeTierWithUndoToast = useEditorStore((s) => s.removeTierWithUndoToast);
+    const clearTierText = useEditorStore((s) => s.clearTierText);
+    const alignMicroBoundaries = useEditorStore((s) => s.alignMicroBoundaries);
+    const hiddenTierIndices = useEditorStore((s) => s.hiddenTierIndices);
+    const toggleTierVisibility = useEditorStore((s) => s.toggleTierVisibility);
     const normalizeTextGrid = useEditorStore((s) => s.normalizeTextGrid);
     const moveTierBoundary = useEditorStore((s) => s.moveTierBoundary);
     const moveSharedTimestamp = useEditorStore((s) => s.moveSharedTimestamp);
     const openExportModal = useEditorStore((s) => s.openExportModal);
     const showToast = useEditorStore((s) => s.showToast);
+
+    const onStartPlaybackRef = useRef(onStartPlayback);
+    onStartPlaybackRef.current = onStartPlayback;
+
+    // Skip blur commit right after pressing Escape in numeric/text fields
+    const skipNextBlurRef = useRef(false);
 
     // Local editing drafts + race-free target tracking
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -208,19 +517,27 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
           const cur = st.tg.tiers[tgt.tierIndex]?.intervals[tgt.itemIndex];
           if (cur && cur.text !== valueToCommit) {
             void primeTrigraphString(valueToCommit, bridge).then(() => st.bumpDocVersion());
-            st.commitTgMutation((draft) => {
-              const target = draft.tiers[tgt.tierIndex]?.intervals[tgt.itemIndex];
-              if (target) target.text = valueToCommit;
-            });
+            st.commitTgMutation(
+              (draft) => {
+                const target = draft.tiers[tgt.tierIndex]?.intervals[tgt.itemIndex];
+                if (target) target.text = valueToCommit;
+              },
+              undefined,
+              '编辑区间文本'
+            );
           }
         } else if (tgt.kind === 'point') {
           const cur = st.tg.tiers[tgt.tierIndex]?.points[tgt.itemIndex];
           if (cur && cur.mark !== valueToCommit) {
             void primeTrigraphString(valueToCommit, bridge).then(() => st.bumpDocVersion());
-            st.commitTgMutation((draft) => {
-              const target = draft.tiers[tgt.tierIndex]?.points[tgt.itemIndex];
-              if (target) target.mark = valueToCommit;
-            });
+            st.commitTgMutation(
+              (draft) => {
+                const target = draft.tiers[tgt.tierIndex]?.points[tgt.itemIndex];
+                if (target) target.mark = valueToCommit;
+              },
+              undefined,
+              '编辑标点文本'
+            );
           }
         }
       },
@@ -239,12 +556,92 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
 
     const handleInspectorUnhandledKeyDown = useCallback(
       (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (isComposingEvent(e)) return;
+
+        // Audition right inside Inspector textarea: Alt+P / F4 (exact) and Alt+Shift+P / Shift+F4 (±250 ms context)
+        const isAltP =
+          e.altKey && !e.ctrlKey && !e.metaKey && (e.code === 'KeyP' || e.key.toLowerCase() === 'p');
+        const isF4 = !e.ctrlKey && !e.metaKey && !e.altKey && e.key === 'F4';
+        if (isAltP || isF4) {
+          e.preventDefault();
+          e.stopPropagation();
+          const st = useEditorStore.getState();
+          const sel = st.selection;
+          const withContext = e.shiftKey;
+          if (sel?.kind === 'interval') {
+            const iv = st.tg.tiers[sel.tierIndex]?.intervals[sel.itemIndex];
+            if (iv && iv.xmax > iv.xmin) {
+              const pad = withContext ? 0.25 : 0;
+              const start = Math.max(st.tg.xmin, iv.xmin - pad);
+              const end = Math.min(st.tg.xmax, iv.xmax + pad);
+              if (!withContext) {
+                st.setPlayRange({ start: iv.xmin, end: iv.xmax });
+              }
+              onStartPlaybackRef.current(start, end);
+            }
+          } else if (sel?.kind === 'point') {
+            const pt = st.tg.tiers[sel.tierIndex]?.points[sel.itemIndex];
+            if (pt) {
+              if (withContext) {
+                const start = Math.max(st.tg.xmin, pt.number - 0.25);
+                const end = Math.min(st.tg.xmax, pt.number + 0.25);
+                onStartPlaybackRef.current(start, end);
+              } else {
+                onStartPlaybackRef.current(pt.number, st.tg.xmax);
+              }
+            }
+          }
+          return;
+        }
+
+        // Tab / Shift+Tab: commit current text and advance to next/prev interval or point while keeping focus
+        if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          flushPendingRef.current();
+          const st = useEditorStore.getState();
+          const sel = st.selection;
+          const delta = e.shiftKey ? -1 : 1;
+          if (sel?.kind === 'interval') {
+            const tier = st.tg.tiers[sel.tierIndex];
+            if (tier && tier.kind === 'intervalTier') {
+              const nextIdx = sel.itemIndex + delta;
+              if (nextIdx >= 0 && nextIdx < tier.intervals.length) {
+                const nextIv = tier.intervals[nextIdx];
+                st.setSelection({ kind: 'interval', tierIndex: sel.tierIndex, itemIndex: nextIdx });
+                if (nextIv && nextIv.xmax > nextIv.xmin) {
+                  st.setPlayRange({ start: nextIv.xmin, end: nextIv.xmax });
+                  st.setPlaybackTime(nextIv.xmin, true);
+                }
+              }
+            }
+          } else if (sel?.kind === 'point') {
+            const tier = st.tg.tiers[sel.tierIndex];
+            if (tier && tier.kind === 'textTier') {
+              const nextIdx = sel.itemIndex + delta;
+              if (nextIdx >= 0 && nextIdx < tier.points.length) {
+                const nextPt = tier.points[nextIdx];
+                st.setSelection({ kind: 'point', tierIndex: sel.tierIndex, itemIndex: nextIdx });
+                if (nextPt) {
+                  st.setPlaybackTime(nextPt.number, true);
+                }
+              }
+            }
+          }
+          requestAnimationFrame(() => {
+            textareaRef.current?.focus();
+            textareaRef.current?.select();
+          });
+          return;
+        }
+
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
           e.preventDefault();
           flushPendingRef.current();
           (e.target as HTMLTextAreaElement).blur();
         } else if (e.key === 'Escape') {
           e.preventDefault();
+          e.stopPropagation();
           resetDraftRef.current();
           (e.target as HTMLTextAreaElement).blur();
         }
@@ -413,9 +810,8 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
       };
     }, [selection?.kind, textDraft]);
 
-    // Document structural diagnostics when overview is shown
+    // Document structural diagnostics (always active for collapsible QA section)
     useEffect(() => {
-      if (selection !== null || playRange !== null) return;
       let cancelled = false;
       void getPlatformBridge()
         .scanDiagnostics(tg)
@@ -428,7 +824,10 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
       return () => {
         cancelled = true;
       };
-    }, [tg, docVersion, selection, playRange]);
+    }, [tg, docVersion]);
+
+    // Lightweight navigable QA issues list (capped at 120 items)
+    const qaScan = useMemo(() => scanQaIssues(tg), [tg]);
 
     // Allow IpaDock to insert symbols directly into the focused Inspector textarea
     useImperativeHandle(
@@ -489,6 +888,10 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
 
     // Interval start / end mutations
     const updateIntervalBound = (which: 'start' | 'end', targetVal: number) => {
+      if (skipNextBlurRef.current) {
+        skipNextBlurRef.current = false;
+        return;
+      }
       if (isReadOnly) return;
       if (selection?.kind !== 'interval' || !activeInterval) return;
       const tier = tg.tiers[selection.tierIndex];
@@ -511,15 +914,19 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
           return;
         }
         if (val === activeInterval.xmin) return;
-        commitTgMutation((draft) => {
-          const dTier = draft.tiers[selection.tierIndex];
-          const cur = dTier.intervals[ii];
-          const dPrev = dTier.intervals[ii - 1];
-          if (linkAdjacent && dPrev && Math.abs(dPrev.xmax - cur.xmin) < 1e-9 && val > dPrev.xmin) {
-            dPrev.xmax = val;
-          }
-          cur.xmin = val;
-        });
+        commitTgMutation(
+          (draft) => {
+            const dTier = draft.tiers[selection.tierIndex];
+            const cur = dTier.intervals[ii];
+            const dPrev = dTier.intervals[ii - 1];
+            if (linkAdjacent && dPrev && Math.abs(dPrev.xmax - cur.xmin) < 1e-9 && val > dPrev.xmin) {
+              dPrev.xmax = val;
+            }
+            cur.xmin = val;
+          },
+          undefined,
+          '修改区间起点'
+        );
         if (playRange && Math.abs(playRange.start - activeInterval.xmin) < 1e-6 && Math.abs(playRange.end - activeInterval.xmax) < 1e-6) {
           setPlayRange({ start: val, end: activeInterval.xmax });
         }
@@ -537,15 +944,19 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
           return;
         }
         if (val === activeInterval.xmax) return;
-        commitTgMutation((draft) => {
-          const dTier = draft.tiers[selection.tierIndex];
-          const cur = dTier.intervals[ii];
-          const dNext = dTier.intervals[ii + 1];
-          if (linkAdjacent && dNext && Math.abs(dNext.xmin - cur.xmax) < 1e-9 && val < dNext.xmax) {
-            dNext.xmin = val;
-          }
-          cur.xmax = val;
-        });
+        commitTgMutation(
+          (draft) => {
+            const dTier = draft.tiers[selection.tierIndex];
+            const cur = dTier.intervals[ii];
+            const dNext = dTier.intervals[ii + 1];
+            if (linkAdjacent && dNext && Math.abs(dNext.xmin - cur.xmax) < 1e-9 && val < dNext.xmax) {
+              dNext.xmin = val;
+            }
+            cur.xmax = val;
+          },
+          undefined,
+          '修改区间终点'
+        );
         if (playRange && Math.abs(playRange.start - activeInterval.xmin) < 1e-6 && Math.abs(playRange.end - activeInterval.xmax) < 1e-6) {
           setPlayRange({ start: activeInterval.xmin, end: val });
         }
@@ -554,6 +965,10 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
 
     // Point timestamp mutation
     const updatePointTime = (targetVal: number) => {
+      if (skipNextBlurRef.current) {
+        skipNextBlurRef.current = false;
+        return;
+      }
       if (isReadOnly) return;
       if (selection?.kind !== 'point' || !activePoint || !activeTier) return;
       const val = round6(Math.max(activeTier.xmin, Math.min(activeTier.xmax, targetVal)));
@@ -567,19 +982,27 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
         return;
       }
       let nextIdx = selection.itemIndex;
-      commitTgMutation((draft) => {
-        const dTier = draft.tiers[selection.tierIndex];
-        const pt = dTier.points[selection.itemIndex];
-        if (!pt) return;
-        pt.number = val;
-        dTier.points.sort((a, b) => a.number - b.number);
-        nextIdx = dTier.points.indexOf(pt);
-      });
+      commitTgMutation(
+        (draft) => {
+          const dTier = draft.tiers[selection.tierIndex];
+          const pt = dTier.points[selection.itemIndex];
+          if (!pt) return;
+          pt.number = val;
+          dTier.points.sort((a, b) => a.number - b.number);
+          nextIdx = dTier.points.indexOf(pt);
+        },
+        undefined,
+        '调整标点时刻'
+      );
       setSelection({ kind: 'point', tierIndex: selection.tierIndex, itemIndex: Math.max(0, nextIdx) });
     };
 
     // Boundary or spine timestamp mutation
     const updateBoundaryOrSpineTime = (targetVal: number) => {
+      if (skipNextBlurRef.current) {
+        skipNextBlurRef.current = false;
+        return;
+      }
       if (isReadOnly) return;
       if (!selection || (selection.kind !== 'boundary' && selection.kind !== 'spine')) return;
       const val = round6(targetVal);
@@ -697,6 +1120,218 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
       </div>
     ) : null;
 
+    const handleNavigateQaIssue = (issue: QaIssue) => {
+      if (hiddenTierIndices.includes(issue.tierIndex)) {
+        toggleTierVisibility(issue.tierIndex);
+      }
+      if (viewDomain && (issue.time < viewDomain.min || issue.time > viewDomain.max)) {
+        setViewDomain(null);
+      }
+      setSelection(issue.targetSelection);
+      setPlaybackTime(issue.time, true);
+    };
+
+    const handleTrimQaSpace = (issue: QaIssue) => {
+      if (isReadOnly || issue.itemIndex === undefined) return;
+      const ti = issue.tierIndex;
+      const idx = issue.itemIndex;
+      if (issue.fixableKind === 'space-interval') {
+        commitTgMutation(
+          (draft) => {
+            const target = draft.tiers[ti]?.intervals[idx];
+            if (target) target.text = target.text.trim();
+          },
+          undefined,
+          '清理区间首尾空格'
+        );
+        showToast('已清理该区间首尾空格');
+      } else if (issue.fixableKind === 'space-point') {
+        commitTgMutation(
+          (draft) => {
+            const target = draft.tiers[ti]?.points[idx];
+            if (target) target.mark = target.mark.trim();
+          },
+          undefined,
+          '清理标点首尾空格'
+        );
+        showToast('已清理该标点首尾空格');
+      }
+    };
+
+    const gapTotal = diagnostics.reduce((acc, d) => acc + d.gapCount, 0);
+    const overlapTotal = diagnostics.reduce((acc, d) => acc + d.overlapCount, 0);
+    const zeroTotal = diagnostics.reduce((acc, d) => acc + d.zeroDurationCount, 0);
+    const microTotal = diagnostics.reduce((acc, d) => acc + (d.microSegmentCount || 0), 0);
+    const oodTotal = diagnostics.reduce((acc, d) => acc + (d.outOfDomain ? 1 : 0), 0);
+    const structAnomalyTotal = gapTotal + overlapTotal + zeroTotal + oodTotal;
+    const qaTotalCount = Math.max(qaScan.totalFound, structAnomalyTotal + microTotal);
+    const hasQaIssues = qaTotalCount > 0;
+
+    const qaSectionId =
+      selection === null ? 'insp-doc-qa' : hasQaIssues ? 'insp-qa-issues' : 'insp-qa-clean';
+
+    const qaDiagnosticsSection = (
+      <CollapsibleSection
+        key={qaSectionId}
+        id={qaSectionId}
+        title="数据体检"
+        badge={
+          <span className={hasQaIssues ? 'sb-badge-warn' : 'sb-badge-ok'}>
+            {hasQaIssues ? `${qaTotalCount} 项异常` : '无异常'}
+          </span>
+        }
+        defaultOpen={selection === null || hasQaIssues}
+      >
+        <div className="sb-stack">
+          {(selection === null || structAnomalyTotal + microTotal > 0) && (
+            <div className="sb-kv-list">
+              <div className="sb-kv-row">
+                <span className="sb-kv-key">区间缝隙</span>
+                <span className={`sb-kv-val mono ${gapTotal > 0 ? 'is-warn' : ''}`}>{gapTotal}</span>
+              </div>
+              <div className="sb-kv-row">
+                <span className="sb-kv-key">区间重叠</span>
+                <span className={`sb-kv-val mono ${overlapTotal > 0 ? 'is-warn' : ''}`}>
+                  {overlapTotal}
+                </span>
+              </div>
+              <div className="sb-kv-row">
+                <span className="sb-kv-key">零时长区间</span>
+                <span className={`sb-kv-val mono ${zeroTotal > 0 ? 'is-warn' : ''}`}>
+                  {zeroTotal}
+                </span>
+              </div>
+              <div className="sb-kv-row">
+                <span className="sb-kv-key">极短段 (&lt; 5 ms)</span>
+                <span className={`sb-kv-val mono ${microTotal > 0 ? 'is-warn' : ''}`}>
+                  {microTotal}
+                </span>
+              </div>
+              <div className="sb-kv-row">
+                <span className="sb-kv-key">越界层级</span>
+                <span className={`sb-kv-val mono ${oodTotal > 0 ? 'is-warn' : ''}`}>
+                  {oodTotal} 层
+                </span>
+              </div>
+            </div>
+          )}
+
+          {qaScan.issues.length > 0 ? (
+            <>
+              <div className="qa-issue-list" role="list" aria-label="数据体检异常列表">
+                {qaScan.issues.map((issue) => {
+                  const isActive = isSameQaTarget(selection, issue.targetSelection);
+                  return (
+                    <div
+                      key={issue.id}
+                      role="listitem"
+                      tabIndex={0}
+                      className={`qa-issue-item ${isActive ? 'active' : ''}`}
+                      title={`${issue.detail} (${issue.time.toFixed(4)} s) — 点击定位`}
+                      onClick={() => handleNavigateQaIssue(issue)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleNavigateQaIssue(issue);
+                        }
+                      }}
+                    >
+                      <div className="qa-issue-main">
+                        <span className={`qa-issue-badge ${issue.kind}`}>{issue.badge}</span>
+                        <span className="qa-issue-text">{issue.detail}</span>
+                      </div>
+                      <span className="qa-issue-time">{issue.time.toFixed(3)}s</span>
+                      {!isReadOnly && issue.fixableKind === 'micro-cross' && (
+                        <button
+                          type="button"
+                          className="qa-issue-fix-btn"
+                          title={`对齐「${issue.tierName}」跨层微偏边界 (< 5 ms)`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const n = alignMicroBoundaries(issue.tierIndex);
+                            showToast(
+                              n > 0
+                                ? `已对齐「${issue.tierName}」${n} 处微偏边界`
+                                : '未发现可安全对齐的微偏边界'
+                            );
+                          }}
+                        >
+                          对齐
+                        </button>
+                      )}
+                      {!isReadOnly &&
+                        (issue.fixableKind === 'space-interval' ||
+                          issue.fixableKind === 'space-point') &&
+                        issue.itemIndex !== undefined && (
+                          <button
+                            type="button"
+                            className="qa-issue-fix-btn"
+                            title="清理首尾多余空格"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleTrimQaSpace(issue);
+                            }}
+                          >
+                            修
+                          </button>
+                        )}
+                    </div>
+                  );
+                })}
+              </div>
+              {qaScan.totalFound > qaScan.issues.length && (
+                <div className="sb-hint">
+                  已显示前 {qaScan.issues.length} 项（共检出 {qaScan.totalFound} 项异常）。
+                </div>
+              )}
+            </>
+          ) : !hasQaIssues ? (
+            <div className="sb-status-ok">
+              <UiIcon name="check" size={13} />
+              <span>各层起止对齐且区间连续，未发现结构、微偏或空格异常。</span>
+            </div>
+          ) : null}
+
+          <div className="sb-action-grid">
+            <button
+              type="button"
+              className="compact"
+              disabled={isReadOnly}
+              title={
+                isReadOnly
+                  ? '请先切换至编辑模式'
+                  : '将跨层间距小于 5 ms 的微偏边界对齐至上层参考时刻'
+              }
+              onClick={() => {
+                if (isReadOnly) return;
+                const aligned = alignMicroBoundaries();
+                if (aligned > 0) {
+                  showToast(`已对齐 ${aligned} 处跨层微偏边界 (< 5 ms)`);
+                } else {
+                  showToast('未发现可安全对齐的跨层微偏边界');
+                }
+              }}
+            >
+              <UiIcon name="zeroCross" size={13} />
+              <span>对齐微偏 (&lt; 5 ms)</span>
+            </button>
+            <button
+              type="button"
+              className={`compact ${structAnomalyTotal > 0 ? 'primary' : ''}`}
+              disabled={isReadOnly}
+              title={isReadOnly ? '请先切换至编辑模式' : '统一各层起止范围并补齐连续区间'}
+              onClick={() => {
+                if (!isReadOnly) normalizeTextGrid();
+              }}
+            >
+              <UiIcon name="normalize" size={13} />
+              <span>一键整理边界</span>
+            </button>
+          </div>
+        </div>
+      </CollapsibleSection>
+    );
+
     // 1. INTERVAL SELECTED
     if (selection?.kind === 'interval' && activeInterval && activeTier) {
       const ti = selection.tierIndex;
@@ -759,7 +1394,7 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
               <div className="sb-hint">
                 {isReadOnly
                   ? '只读模式：可选中复制文本，切换至编辑模式后修改。'
-                  : '失焦或按 Ctrl+Enter 提交，Ctrl+\\ 切换音标输入，支持音标盘直输。'}
+                  : `Tab 连编 · Alt+P/F4 重听（+Shift 语境）· ${formatKeyCombo('Mod+Enter')} 提交 · ${formatKeyCombo('Mod+\\')} 切音标。`}
               </div>
             </div>
           </CollapsibleSection>
@@ -786,8 +1421,15 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
                       isReadOnly
                         ? undefined
                         : (e) => {
+                            if (isComposingEvent(e)) return;
                             if (e.key === 'Enter') {
                               e.preventDefault();
+                              (e.target as HTMLInputElement).blur();
+                            } else if (e.key === 'Escape') {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              skipNextBlurRef.current = true;
+                              setStartInput(formatPraatDouble(activeInterval.xmin));
                               (e.target as HTMLInputElement).blur();
                             }
                           }
@@ -808,8 +1450,15 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
                       isReadOnly
                         ? undefined
                         : (e) => {
+                            if (isComposingEvent(e)) return;
                             if (e.key === 'Enter') {
                               e.preventDefault();
+                              (e.target as HTMLInputElement).blur();
+                            } else if (e.key === 'Escape') {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              skipNextBlurRef.current = true;
+                              setEndInput(formatPraatDouble(activeInterval.xmax));
                               (e.target as HTMLInputElement).blur();
                             }
                           }
@@ -937,9 +1586,13 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
                   draftDirtyRef.current = false;
                   draftValueRef.current = '';
                   setTextDraft('');
-                  commitTgMutation((d) => {
-                    d.tiers[ti].intervals[ii].text = '';
-                  });
+                  commitTgMutation(
+                    (d) => {
+                      d.tiers[ti].intervals[ii].text = '';
+                    },
+                    undefined,
+                    '清空区间文本'
+                  );
                 }}
               >
                 <UiIcon name="clear" size={13} />
@@ -956,6 +1609,20 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
               >
                 <UiIcon name="play" size={13} />
                 <span>播放该区间</span>
+              </button>
+              <button
+                type="button"
+                className="compact"
+                disabled={activeInterval.xmax <= activeInterval.xmin}
+                title="前后各扩展 250 ms 带语境试听 (Shift+R / Shift+F4)"
+                onClick={() => {
+                  const start = Math.max(tg.xmin, activeInterval.xmin - 0.25);
+                  const end = Math.min(tg.xmax, activeInterval.xmax + 0.25);
+                  onStartPlayback(start, end);
+                }}
+              >
+                <UiIcon name="play" size={13} />
+                <span>语境 ±250ms</span>
               </button>
               <button
                 type="button"
@@ -997,6 +1664,7 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
               </button>
             </div>
           </CollapsibleSection>
+          {qaDiagnosticsSection}
         </div>
       );
     }
@@ -1055,7 +1723,7 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
               <div className="sb-hint">
                 {isReadOnly
                   ? '只读模式：可选中复制标记，切换至编辑模式后修改。'
-                  : '失焦或按 Ctrl+Enter 提交，Ctrl+\\ 切换音标输入，支持音标盘直输。'}
+                  : `Tab 连编 · Alt+P/F4 重听（+Shift 语境）· ${formatKeyCombo('Mod+Enter')} 提交 · ${formatKeyCombo('Mod+\\')} 切音标。`}
               </div>
             </div>
           </CollapsibleSection>
@@ -1081,8 +1749,15 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
                     isReadOnly
                       ? undefined
                       : (e) => {
+                          if (isComposingEvent(e)) return;
                           if (e.key === 'Enter') {
                             e.preventDefault();
+                            (e.target as HTMLInputElement).blur();
+                          } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            skipNextBlurRef.current = true;
+                            setSingleTimeInput(formatPraatDouble(activePoint.number));
                             (e.target as HTMLInputElement).blur();
                           }
                         }
@@ -1134,9 +1809,13 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
                 title={isReadOnly ? '请先切换至编辑模式' : undefined}
                 onClick={() => {
                   if (isReadOnly) return;
-                  commitTgMutation((draft) => {
-                    draft.tiers[ti].points.splice(pi, 1);
-                  }, null);
+                  commitTgMutation(
+                    (draft) => {
+                      draft.tiers[ti].points.splice(pi, 1);
+                    },
+                    null,
+                    '删除标注点'
+                  );
                 }}
               >
                 <UiIcon name="trash" size={13} />
@@ -1144,6 +1823,7 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
               </button>
             </div>
           </CollapsibleSection>
+          {qaDiagnosticsSection}
         </div>
       );
     }
@@ -1185,8 +1865,15 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
                     isReadOnly
                       ? undefined
                       : (e) => {
+                          if (isComposingEvent(e)) return;
                           if (e.key === 'Enter') {
                             e.preventDefault();
+                            (e.target as HTMLInputElement).blur();
+                          } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            skipNextBlurRef.current = true;
+                            setSingleTimeInput(formatPraatDouble(selection.time));
                             (e.target as HTMLInputElement).blur();
                           }
                         }
@@ -1235,8 +1922,60 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
             </div>
           </CollapsibleSection>
 
-          <CollapsibleSection id="insp-bnd-actions" title="对齐与操作" defaultOpen={true}>
+          <CollapsibleSection id="insp-bnd-actions" title="试听与操作" defaultOpen={true}>
             <div className="sb-stack">
+              <div className="sb-setting-block">
+                <span className="sb-field-lbl">边界试听</span>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                    gap: 4
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="compact"
+                    style={{ padding: '0 4px', justifyContent: 'center' }}
+                    disabled={selection.time <= tg.xmin + 1e-6}
+                    title="试听边界前 250 ms"
+                    onClick={() => {
+                      const start = Math.max(tg.xmin, selection.time - 0.25);
+                      onStartPlayback(start, selection.time);
+                    }}
+                  >
+                    前 250ms
+                  </button>
+                  <button
+                    type="button"
+                    className="compact"
+                    style={{ padding: '0 4px', justifyContent: 'center' }}
+                    disabled={tg.xmax <= tg.xmin}
+                    title="跨越边界试听前后各 200 ms"
+                    onClick={() => {
+                      const start = Math.max(tg.xmin, selection.time - 0.2);
+                      const end = Math.min(tg.xmax, selection.time + 0.2);
+                      onStartPlayback(start, end);
+                    }}
+                  >
+                    跨越 ±200ms
+                  </button>
+                  <button
+                    type="button"
+                    className="compact"
+                    style={{ padding: '0 4px', justifyContent: 'center' }}
+                    disabled={selection.time >= tg.xmax - 1e-6}
+                    title="试听边界后 250 ms"
+                    onClick={() => {
+                      const end = Math.min(tg.xmax, selection.time + 0.25);
+                      onStartPlayback(selection.time, end);
+                    }}
+                  >
+                    后 250ms
+                  </button>
+                </div>
+              </div>
+
               {isBoundary ? (
                 <>
                   <div className="sb-setting-block">
@@ -1295,6 +2034,7 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
               )}
             </div>
           </CollapsibleSection>
+          {qaDiagnosticsSection}
         </div>
       );
     }
@@ -1306,11 +2046,20 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
         activeTier.kind === 'intervalTier' ? activeTier.intervals.length : activeTier.points.length;
 
       const commitTierName = () => {
+        if (skipNextBlurRef.current) {
+          skipNextBlurRef.current = false;
+          return;
+        }
         if (isReadOnly) return;
         if (tierNameInput !== activeTier.name) {
-          commitTgMutation((d) => {
-            if (d.tiers[ti]) d.tiers[ti].name = tierNameInput;
-          });
+          const nextName = tierNameInput;
+          commitTgMutation(
+            (d) => {
+              if (d.tiers[ti]) d.tiers[ti].name = nextName;
+            },
+            undefined,
+            `重命名层级「${nextName || '未命名'}」`
+          );
         }
       };
 
@@ -1344,10 +2093,14 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
                     isReadOnly
                       ? undefined
                       : (e) => {
+                          if (isComposingEvent(e)) return;
                           if (e.key === 'Enter') {
                             e.preventDefault();
                             (e.target as HTMLInputElement).blur();
                           } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            skipNextBlurRef.current = true;
                             setTierNameInput(activeTier.name);
                             (e.target as HTMLInputElement).blur();
                           }
@@ -1443,11 +2196,49 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
               </button>
               <button
                 type="button"
+                className="compact"
+                disabled={isReadOnly}
+                title={isReadOnly ? '请先切换至编辑模式' : '复制当前层及其全部边界与文本'}
+                onClick={() => {
+                  if (!isReadOnly) duplicateTier(ti, { copyText: true });
+                }}
+              >
+                <UiIcon name="copy" size={13} />
+                <span>复制整层</span>
+              </button>
+              {activeTier.kind === 'intervalTier' && (
+                <button
+                  type="button"
+                  className="compact"
+                  disabled={isReadOnly}
+                  title={isReadOnly ? '请先切换至编辑模式' : '新建区间层并继承当前层所有边界（不含文本）'}
+                  onClick={() => {
+                    if (!isReadOnly) duplicateTier(ti, { copyText: false });
+                  }}
+                >
+                  <UiIcon name="addIntervalTier" size={13} />
+                  <span>仅复制边界新建层</span>
+                </button>
+              )}
+              <button
+                type="button"
+                className="compact"
+                disabled={isReadOnly}
+                title={isReadOnly ? '请先切换至编辑模式' : '保留所有边界与点位，仅清空本层标注文本'}
+                onClick={() => {
+                  if (!isReadOnly) clearTierText(ti);
+                }}
+              >
+                <UiIcon name="clear" size={13} />
+                <span>清空本层文本</span>
+              </button>
+              <button
+                type="button"
                 className="compact danger"
                 disabled={isReadOnly}
-                title={isReadOnly ? '请先切换至编辑模式' : undefined}
+                title={isReadOnly ? '请先切换至编辑模式' : '删除当前层（支持单步撤销）'}
                 onClick={() => {
-                  if (!isReadOnly) deleteTier(ti);
+                  if (!isReadOnly) removeTierWithUndoToast(ti);
                 }}
               >
                 <UiIcon name="trash" size={13} />
@@ -1455,6 +2246,7 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
               </button>
             </div>
           </CollapsibleSection>
+          {qaDiagnosticsSection}
         </div>
       );
     }
@@ -1465,6 +2257,10 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
       const durMs = durSec * 1000;
 
       const applyRange = (which: 'start' | 'end', rawVal: number) => {
+        if (skipNextBlurRef.current) {
+          skipNextBlurRef.current = false;
+          return;
+        }
         if (!Number.isFinite(rawVal)) {
           setStartInput(formatPraatDouble(playRange.start));
           setEndInput(formatPraatDouble(playRange.end));
@@ -1509,8 +2305,15 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
                     onChange={(e) => setStartInput(e.target.value)}
                     onBlur={() => applyRange('start', parseFloat(startInput))}
                     onKeyDown={(e) => {
+                      if (isComposingEvent(e)) return;
                       if (e.key === 'Enter') {
                         e.preventDefault();
+                        (e.target as HTMLInputElement).blur();
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        skipNextBlurRef.current = true;
+                        setStartInput(formatPraatDouble(playRange.start));
                         (e.target as HTMLInputElement).blur();
                       }
                     }}
@@ -1525,8 +2328,15 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
                     onChange={(e) => setEndInput(e.target.value)}
                     onBlur={() => applyRange('end', parseFloat(endInput))}
                     onKeyDown={(e) => {
+                      if (isComposingEvent(e)) return;
                       if (e.key === 'Enter') {
                         e.preventDefault();
+                        (e.target as HTMLInputElement).blur();
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        skipNextBlurRef.current = true;
+                        setEndInput(formatPraatDouble(playRange.end));
                         (e.target as HTMLInputElement).blur();
                       }
                     }}
@@ -1602,6 +2412,7 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
               </button>
             </div>
           </CollapsibleSection>
+          {qaDiagnosticsSection}
         </div>
       );
     }
@@ -1616,12 +2427,6 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
       0
     );
     const totalDur = Math.max(0, (Number.isFinite(tg.xmax) ? tg.xmax : 0) - (Number.isFinite(tg.xmin) ? tg.xmin : 0));
-
-    const gapTotal = diagnostics.reduce((acc, d) => acc + d.gapCount, 0);
-    const overlapTotal = diagnostics.reduce((acc, d) => acc + d.overlapCount, 0);
-    const zeroTotal = diagnostics.reduce((acc, d) => acc + d.zeroDurationCount, 0);
-    const oodTotal = diagnostics.reduce((acc, d) => acc + (d.outOfDomain ? 1 : 0), 0);
-    const anomalyTotal = gapTotal + overlapTotal + zeroTotal + oodTotal;
 
     return (
       <div className="sb-panel-root">
@@ -1681,57 +2486,7 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection
-          id="insp-doc-diag"
-          title="结构诊断"
-          badge={
-            <span className={anomalyTotal > 0 ? 'sb-badge-warn' : 'sb-badge-ok'}>
-              {anomalyTotal > 0 ? `${anomalyTotal} 处异常` : '无异常'}
-            </span>
-          }
-          defaultOpen={true}
-        >
-          <div className="sb-stack">
-            <div className="sb-kv-list">
-              <div className="sb-kv-row">
-                <span className="sb-kv-key">区间缝隙</span>
-                <span className={`sb-kv-val mono ${gapTotal > 0 ? 'is-warn' : ''}`}>{gapTotal}</span>
-              </div>
-              <div className="sb-kv-row">
-                <span className="sb-kv-key">区间重叠</span>
-                <span className={`sb-kv-val mono ${overlapTotal > 0 ? 'is-warn' : ''}`}>{overlapTotal}</span>
-              </div>
-              <div className="sb-kv-row">
-                <span className="sb-kv-key">零时长区间</span>
-                <span className={`sb-kv-val mono ${zeroTotal > 0 ? 'is-warn' : ''}`}>{zeroTotal}</span>
-              </div>
-              <div className="sb-kv-row">
-                <span className="sb-kv-key">越界层级</span>
-                <span className={`sb-kv-val mono ${oodTotal > 0 ? 'is-warn' : ''}`}>{oodTotal} 层</span>
-              </div>
-            </div>
-
-            {anomalyTotal > 0 ? (
-              <button
-                type="button"
-                className="compact primary sb-full-btn"
-                disabled={isReadOnly}
-                title={isReadOnly ? '请先切换至编辑模式' : undefined}
-                onClick={() => {
-                  if (!isReadOnly) normalizeTextGrid();
-                }}
-              >
-                <UiIcon name="normalize" size={13} />
-                <span>一键规范修复</span>
-              </button>
-            ) : (
-              <div className="sb-status-ok">
-                <UiIcon name="check" size={13} />
-                <span>各层起止对齐且区间连续，未发现结构异常。</span>
-              </div>
-            )}
-          </div>
-        </CollapsibleSection>
+        {qaDiagnosticsSection}
       </div>
     );
   }
