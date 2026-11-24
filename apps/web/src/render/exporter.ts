@@ -37,6 +37,7 @@ export interface ExportPrefs {
   showLinearScaleBar: boolean;
   scaleMode: 'follow' | 'linear' | 'adaptive';
   tickPrecision: '2' | '3' | 'full' | 'none';
+  tickFixedDecimals: boolean;
   marginPreset: 'tight' | 'standard' | 'wide';
   specDynRange: 40 | 45 | 52;
   contourLevels: 4 | 6 | 8;
@@ -71,6 +72,7 @@ export const DEFAULT_EXPORT_PREFS: ExportPrefs = {
   showLinearScaleBar: true,
   scaleMode: 'follow',
   tickPrecision: '3',
+  tickFixedDecimals: false,
   marginPreset: 'standard',
   specDynRange: 45,
   contourLevels: 6,
@@ -105,7 +107,7 @@ export function saveExportPrefs(prefs: ExportPrefs): void {
 export function applyPresetToPrefs(
   cur: ExportPrefs,
   presetId: 'screen' | 'journal' | 'slides' | 'lines',
-  ctx: { tickPrecision: string; legendOpen: boolean }
+  ctx: { tickPrecision: string; tickFixedDecimals?: boolean; legendOpen: boolean }
 ): ExportPrefs {
   const next: ExportPrefs = { ...cur, activePreset: presetId };
   if (presetId === 'screen') {
@@ -118,6 +120,7 @@ export function applyPresetToPrefs(
       ctx.tickPrecision === '2' || ctx.tickPrecision === '3' || ctx.tickPrecision === 'full'
         ? ctx.tickPrecision
         : '3';
+    next.tickFixedDecimals = Boolean(ctx.tickFixedDecimals);
     next.marginPreset = 'standard';
     next.trigraphMode = 'dual';
     next.hideMetaSymbols = false;
@@ -133,6 +136,7 @@ export function applyPresetToPrefs(
     next.transparentBg = false;
     next.presentationBoost = false;
     next.widthPreset = 'full-col';
+    next.tickFixedDecimals = true;
     next.marginPreset = 'standard';
     next.trigraphMode = 'ipa-only';
     next.hideMetaSymbols = true;
@@ -149,6 +153,7 @@ export function applyPresetToPrefs(
     next.transparentBg = false;
     next.presentationBoost = true;
     next.widthPreset = 'full-col';
+    next.tickFixedDecimals = false;
     next.marginPreset = 'standard';
     next.trigraphMode = 'ipa-only';
     next.hideMetaSymbols = true;
@@ -420,6 +425,7 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
     tierOrder: input.tierOrder,
     scaleMode: effectiveScaleMode,
     tickPrecision: prefs.tickPrecision,
+    tickFixedDecimals: prefs.tickFixedDecimals,
     viewDomain: null,
     mode: 'read',
     marginPreset: prefs.marginPreset,
@@ -554,9 +560,13 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
       legendLang: prefs.legendLang,
       showCaption: prefs.showCaption,
       captionTitle: stem,
-      captionTimeText: formatCaptionTimeText(vtg.xmin, vtg.xmax, prefs.legendLang, (v) =>
-        formatDisplayTick(v, '3')
-      ),
+      captionTimeText: formatCaptionTimeText(vtg.xmin, vtg.xmax, prefs.legendLang, (v) => {
+        const prec = String(prefs.tickPrecision);
+        if (prefs.tickFixedDecimals && (prec === '2' || prec === '3' || prec === '4')) {
+          return formatDisplayTick(v, prec, true);
+        }
+        return formatDisplayTick(v, '3');
+      }),
       showLinearScaleBar: prefs.showLinearScaleBar,
       semanticGroups: prefs.semanticGroups,
       idPrefix,

@@ -466,7 +466,9 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
       tMax: number,
       label?: string
     ) => {
-      const durMs = Math.max(0, (tMax - tMin) * 1000).toFixed(1);
+      const durSec = Math.max(0, tMax - tMin);
+      const showMidFormants = durSec <= 0.30;
+      const durMs = (durSec * 1000).toFixed(1);
       const cols = [
         ...(label !== undefined ? [label.replace(/[\t\r\n]+/g, ' ')] : []),
         formatPraatDouble(tMin),
@@ -475,9 +477,9 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
         stats.f0Mean !== null ? stats.f0Mean.toFixed(1) : '',
         stats.f0Min !== null ? stats.f0Min.toFixed(1) : '',
         stats.f0Max !== null ? stats.f0Max.toFixed(1) : '',
-        stats.f1 !== null ? stats.f1.toFixed(0) : '',
-        stats.f2 !== null ? stats.f2.toFixed(0) : '',
-        stats.f3 !== null ? stats.f3.toFixed(0) : ''
+        showMidFormants && stats.f1 !== null ? stats.f1.toFixed(0) : '',
+        showMidFormants && stats.f2 !== null ? stats.f2.toFixed(0) : '',
+        showMidFormants && stats.f3 !== null ? stats.f3.toFixed(0) : ''
       ];
       void navigator.clipboard
         .writeText(cols.join('\t'))
@@ -625,6 +627,9 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
       label?: string
     ) => {
       if (!analysis || !stats) return null;
+      const durSec = Math.max(0, tMax - tMin);
+      const showMidFormants = durSec <= 0.30;
+      const hasMidFormants = stats.f1 !== null || stats.f2 !== null || stats.f3 !== null;
       return (
         <div className="sb-stack">
           <div className="sb-metric-grid">
@@ -641,29 +646,40 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
               </span>
             </div>
           </div>
-          <div className="sb-metric-grid sb-metric-grid-3">
-            <div className="sb-metric-cell">
-              <span className="sb-metric-lbl">中点 F₁</span>
-              <span className="sb-metric-val">{formatHz(stats.f1, 0)}</span>
+          {showMidFormants && hasMidFormants && (
+            <div className="sb-metric-grid sb-metric-grid-3">
+              <div className="sb-metric-cell">
+                <span className="sb-metric-lbl">中点 F₁</span>
+                <span className="sb-metric-val">{formatHz(stats.f1, 0)}</span>
+              </div>
+              <div className="sb-metric-cell">
+                <span className="sb-metric-lbl">中点 F₂</span>
+                <span className="sb-metric-val">{formatHz(stats.f2, 0)}</span>
+              </div>
+              <div className="sb-metric-cell">
+                <span className="sb-metric-lbl">中点 F₃</span>
+                <span className="sb-metric-val">{formatHz(stats.f3, 0)}</span>
+              </div>
             </div>
-            <div className="sb-metric-cell">
-              <span className="sb-metric-lbl">中点 F₂</span>
-              <span className="sb-metric-val">{formatHz(stats.f2, 0)}</span>
-            </div>
-            <div className="sb-metric-cell">
-              <span className="sb-metric-lbl">中点 F₃</span>
-              <span className="sb-metric-val">{formatHz(stats.f3, 0)}</span>
-            </div>
-          </div>
+          )}
           <button
             type="button"
             className="compact sb-full-btn"
-            title="复制起止时间、时长、基频与共振峰读数（制表符分隔）"
+            title={
+              showMidFormants
+                ? '复制起止时间、时长、基频与共振峰读数（制表符分隔）'
+                : '复制起止时间、时长与基频读数（制表符分隔，>300 ms 句段略去中点共振峰）'
+            }
             onClick={() => copyAcousticTsv(stats, tMin, tMax, label)}
           >
             <UiIcon name="copy" size={13} />
             <span>复制声学数据</span>
           </button>
+          <div className="sb-hint">
+            {!showMidFormants
+              ? '快速预览参考值（>300 ms 句段略去中点共振峰），正式论文数据请以 Praat 测量为准。'
+              : '快速预览参考值，正式论文数据请以 Praat 测量为准。'}
+          </div>
         </div>
       );
     };
@@ -1091,6 +1107,10 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
                   ))}
                 </div>
               </div>
+
+              <div className="sb-hint">
+                拖拽时按住 Z 吸附过零点、Alt 临时取消对齐，或按 Shift+←/→（+Alt ±1ms）微调。
+              </div>
             </div>
           </CollapsibleSection>
 
@@ -1208,6 +1228,10 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
                   <span>吸附最近过零点</span>
                 </button>
               )}
+
+              <div className="sb-hint">
+                可直接在上方语谱图区匀速拖拽边界，或按 Shift+←/→（+Alt ±1ms）微调。
+              </div>
             </div>
           </CollapsibleSection>
 

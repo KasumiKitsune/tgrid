@@ -8,6 +8,7 @@ import {
   MONO_FONT_STACK,
   SANS_FONT_STACK,
   buildDisplayTickStrings,
+  formatDisplayTick,
   layoutRichText,
   measurePx,
   type RichLayoutOptions,
@@ -111,6 +112,13 @@ export interface SpineCol {
   labelVisible: boolean;
 }
 
+export interface IsolatedPointTick {
+  t: number;
+  x: number;
+  label: string;
+  labelVisible: boolean;
+}
+
 export interface BandLinearSeg extends LinearSeg {
   globalIdx: number;
   collapsed: boolean;
@@ -139,6 +147,7 @@ export interface BandLayout {
   tiersTopY: number;
   tiersBottomY: number;
   spineCols: SpineCol[];
+  isolatedPointTicks: IsolatedPointTick[];
   linearSegs: BandLinearSeg[];
   linearXForTime: (t: number) => number;
   tiersLayout: TierLayout[];
@@ -173,6 +182,7 @@ export interface ComputeLayoutOptions {
   tierOrder?: 'raw' | 'spec';
   scaleMode?: 'elastic' | 'linear';
   tickPrecision?: '2' | '3' | '4' | 'full' | 'none';
+  tickFixedDecimals?: boolean;
   viewDomain?: { min: number; max: number } | null;
   mode?: 'read' | 'edit';
   marginPreset?: 'tight' | 'standard' | 'wide';
@@ -205,6 +215,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     tierOrder = 'raw',
     scaleMode = 'elastic',
     tickPrecision = '3',
+    tickFixedDecimals = false,
     viewDomain = null,
     mode = 'read',
     marginPreset = 'standard',
@@ -282,8 +293,25 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
         addTs(iv.xmin);
         addTs(iv.xmax);
       }
-    } else {
-      for (const pt of tier.points) addTs(pt.number);
+    }
+  }
+  if (tsSet.size <= 2) {
+    const ptTimes: number[] = [];
+    for (const tier of tg.tiers) {
+      if (tier.kind !== 'textTier') continue;
+      for (const pt of tier.points) {
+        if (Number.isFinite(pt.number) && pt.number >= vMin && pt.number <= vMax) {
+          ptTimes.push(pt.number);
+        }
+      }
+    }
+    ptTimes.sort((a, b) => a - b);
+    let lastAdded = -Infinity;
+    for (const t of ptTimes) {
+      if (t - lastAdded >= 0.25) {
+        tsSet.add(t);
+        lastAdded = t;
+      }
     }
   }
 
@@ -327,12 +355,12 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     gutterMax,
     Math.max(gutterMin, Math.ceil((isTinyView ? 40 : 54) + maxTierNameW + 12))
   );
-  const GUTTER_COMPACT = isTinyView
-    ? 44
-    : Math.min(GUTTER_FULL, Math.max(72, Math.min(96, Math.ceil(46 + maxTierNameW + 8))));
+  const GUTTER_SUBSEQUENT = isTinyView ? 44 : GUTTER_FULL;
 
   const ANGLE_RAD = (52 * Math.PI) / 180;
-  const tickStrings = hideTicks ? spineT.map(() => '') : buildDisplayTickStrings(spineT, tickPrecision);
+  const tickStrings = hideTicks
+    ? spineT.map(() => '')
+    : buildDisplayTickStrings(spineT, tickPrecision, tickFixedDecimals);
   let maxTickW = 22;
   if (!hideTicks) {
     for (const s of tickStrings) {
@@ -451,6 +479,14 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
               break;
             }
           }
+        } else {
+          for (const pt of tm.finitePts) {
+            if (pt.number >= b) break;
+            if (pt.number > a) {
+              hasActiveText = true;
+              break;
+            }
+          }
         }
         if (hasActiveText) break;
       }
@@ -478,23 +514,26 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
           const unwrapped = layoutRichText(iv.text, 0, textFontMeasure, mode, effectiveRichOpts);
           const desiredW = Math.min(unwrapped.width + 22, Math.max(curSpanW, MAX_SINGLE_INTERVAL_W));
           if (curSpanW < desiredW) {
-            const add = (desiredW - curSpanW) / (bIdx - aIdx);
-            for (let c = aIdx; c < bIdx; c++) dx[c] += add;
-          }
-        }
-      } else if (tm.finitePts.length >= 2) {
-        for (let p = 0; p < tm.finitePts.length - 1; p++) {
-          const ptA = tm.finitePts[p];
-          const ptB = tm.finitePts[p + 1];
-          if (ptA.mark === '' || ptB.mark === '') continue;
-          const iA = tToIdx.get(ptA.number);
-          const iB = tToIdx.get(ptB.number);
-          if (iA === undefined || iB === undefined || iB <= iA) continue;
-          let curW = 0;
-          for (let c = iA; c < iB; c++) curW += dx[c];
-          if (curW < 24) {
-            const add = (24 - curW) / (iB - iA);
-            for (let c = iA; c < iB; c++) dx[c] += add;
+            const extra = desiredW - curSpanW;
+            let useAll = true;
+            for (let c = aIdx; c < bIdx; c++) {
+              if (!colCollapsed[c]) {
+                useAll = false;
+                break;
+              }
+            }
+            let totalWeight = 0;
+            for (let c = aIdx; c < bIdx; c++) {
+              if (!useAll && colCollapsed[c]) continue;
+              totalWeight += Math.pow(Math.max(1e-4, spineT[c + 1] - spineT[c]), 0.85);
+            }
+            if (totalWeight > 0) {
+              for (let c = aIdx; c < bIdx; c++) {
+                if (!useAll && colCollapsed[c]) continue;
+                const w = Math.pow(Math.max(1e-4, spineT[c + 1] - spineT[c]), 0.85);
+                dx[c] += extra * (w / totalWeight);
+              }
+            }
           }
         }
       }
@@ -540,50 +579,103 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
   if (wrapMode === 'single' || numCols === 0) {
     bands.push({ startIdx: 0, endIdx: spineT.length - 1 });
   } else {
-    let start = 0;
-    while (start < numCols) {
-      const availW =
-        start === 0
-          ? maxBandContentW
-          : Math.max(130, targetWidth - PAD_X * 2 - GUTTER_COMPACT - RIGHT_OVERHANG);
-      let sumW = 0;
-      let farthest = start;
-      while (farthest < numCols && sumW + dx[farthest] <= availW) {
-        sumW += dx[farthest];
-        farthest++;
-      }
-      if (farthest === start) farthest = start + 1;
-      if (farthest >= numCols) {
-        bands.push({ startIdx: start, endIdx: numCols });
-        break;
-      }
+    const prefW = new Float64Array(numCols + 1);
+    for (let i = 0; i < numCols; i++) {
+      prefW[i + 1] = prefW[i] + dx[i];
+    }
 
-      let bestK = farthest;
-      let bestScore = Infinity;
-      let runW = 0;
-      for (let k = start + 1; k <= farthest; k++) {
-        runW += dx[k - 1];
-        if (runW < availW * 0.52 && k < farthest) continue;
-        const tBreak = spineT[k];
-        let penalty = 0;
-        for (let ti = 0; ti < tg.tiers.length; ti++) {
-          const tm = tierMeta[ti];
-          if (tm.kind === 'intervalTier') {
-            for (const iv of tm.normalIvs) {
-              if (iv.xmin < tBreak && iv.xmax > tBreak) penalty += iv.text !== '' ? 120 : 18;
-            }
+    const diff = new Float64Array(numCols + 1);
+    for (let ti = 0; ti < tg.tiers.length; ti++) {
+      const tm = tierMeta[ti];
+      if (tm.kind !== 'intervalTier') continue;
+      for (const iv of tm.normalIvs) {
+        if (iv.xmax <= vMin || iv.xmin >= vMax) continue;
+        const aIdx = iv.xmin < vMin ? 0 : tToIdx.get(Math.max(vMin, iv.xmin));
+        const bIdx = iv.xmax > vMax ? numCols : tToIdx.get(Math.min(vMax, iv.xmax));
+        if (aIdx !== undefined && bIdx !== undefined && bIdx - aIdx >= 2) {
+          const w = iv.text !== '' ? 120 : 18;
+          diff[aIdx + 1] += w;
+          diff[bIdx] -= w;
+        }
+      }
+    }
+    const cutPenalty = new Float64Array(numCols + 1);
+    let accPenalty = 0;
+    for (let k = 1; k < numCols; k++) {
+      accPenalty += diff[k];
+      cutPenalty[k] = accPenalty;
+    }
+
+    const breakCost = new Float64Array(numCols + 1);
+    for (let k = 1; k < numCols; k++) {
+      breakCost[k] =
+        cutPenalty[k] - Math.min(spineUsage[k], 4) * 10 - (colCollapsed[k - 1] ? 20 : 0);
+    }
+
+    const availW0 = maxBandContentW;
+    const availWRest = Math.max(130, targetWidth - PAD_X * 2 - GUTTER_SUBSEQUENT - RIGHT_OVERHANG);
+
+    if (prefW[numCols] <= availW0) {
+      bands.push({ startIdx: 0, endIdx: numCols });
+    } else {
+      const estBands = Math.max(2, 1 + Math.ceil((prefW[numCols] - availW0) / availWRest));
+      const targetFillRatio = Math.max(
+        0.62,
+        Math.min(0.92, prefW[numCols] / (availW0 + (estBands - 1) * availWRest))
+      );
+      const dp = new Float64Array(numCols + 1);
+      dp.fill(Infinity);
+      dp[numCols] = 0;
+      const nextIdx = new Int32Array(numCols + 1);
+      const BAND_BASE = 28;
+
+      for (let i = numCols - 1; i >= 0; i--) {
+        const avail = i === 0 ? availW0 : availWRest;
+        let maxK = i + 1;
+        while (maxK < numCols && prefW[maxK + 1] - prefW[i] <= avail) {
+          maxK++;
+        }
+        let bestCost = Infinity;
+        let bestK = maxK;
+        for (let k = i + 1; k <= maxK; k++) {
+          const runW = prefW[k] - prefW[i];
+          const fill = runW / avail;
+          let cost: number;
+          if (k === numCols) {
+            const shortage = i > 0 ? Math.max(0, targetFillRatio - fill) : 0;
+            cost =
+              BAND_BASE +
+              (i > 0
+                ? 160 * shortage * shortage + (fill < 0.45 ? 90 * (0.45 - fill) : 0)
+                : 0);
+          } else {
+            const dev = Math.max(0, targetFillRatio - fill);
+            const excess = Math.max(0, fill - targetFillRatio);
+            const tinyGuard = fill < 0.38 && k < maxK ? 400 * Math.pow(0.38 - fill, 2) : 0;
+            cost =
+              BAND_BASE +
+              breakCost[k] +
+              220 * dev * dev +
+              55 * Math.pow(1 - fill, 2) +
+              35 * excess * excess +
+              tinyGuard +
+              dp[k];
+          }
+          if (cost < bestCost) {
+            bestCost = cost;
+            bestK = k;
           }
         }
-        penalty -= spineUsage[k] * 14;
-        if (colCollapsed[k - 1]) penalty -= 20;
-        penalty += 36 * Math.pow(1 - runW / availW, 2);
-        if (penalty < bestScore) {
-          bestScore = penalty;
-          bestK = k;
-        }
+        dp[i] = bestCost;
+        nextIdx[i] = bestK;
       }
-      bands.push({ startIdx: start, endIdx: bestK });
-      start = bestK;
+
+      let cur = 0;
+      while (cur < numCols) {
+        const next = nextIdx[cur] > cur && nextIdx[cur] <= numCols ? nextIdx[cur] : cur + 1;
+        bands.push({ startIdx: cur, endIdx: next });
+        cur = next;
+      }
     }
   }
 
@@ -591,7 +683,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
   let totalSvgW = 0;
 
   const bandLayouts: BandLayout[] = bands.map((b, bandIndex) => {
-    const gutterW = bandIndex === 0 ? GUTTER_FULL : GUTTER_COMPACT;
+    const gutterW = bandIndex === 0 ? GUTTER_FULL : GUTTER_SUBSEQUENT;
     const originX = PAD_X + gutterW;
     const startT = spineT[b.startIdx];
     const endT = spineT[b.endIdx];
@@ -613,7 +705,23 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     const bandTotalW = originX + bandContentW + RIGHT_OVERHANG + PAD_X;
     if (bandTotalW > totalSvgW) totalSvgW = bandTotalW;
     const xForGlobalIdx = (gi: number) => spineCols[gi - b.startIdx].x;
+    const elasticXLocal = (t: number) => {
+      if (!spineCols.length) return originX;
+      if (t <= spineCols[0].t) return spineCols[0].x;
+      const last = spineCols[spineCols.length - 1];
+      if (t >= last.t) return last.x;
+      for (let i = 0; i < spineCols.length - 1; i++) {
+        if (t >= spineCols[i].t && t <= spineCols[i + 1].t) {
+          const dt = spineCols[i + 1].t - spineCols[i].t;
+          return dt <= 0
+            ? spineCols[i].x
+            : spineCols[i].x + ((t - spineCols[i].t) / dt) * (spineCols[i + 1].x - spineCols[i].x);
+        }
+      }
+      return originX;
+    };
 
+    const placedTickXs: number[] = [];
     if (!hideTicks) {
       const MIN_TICK_GAP = 15;
       const tickOrder = spineCols.map((col, idx) => {
@@ -624,7 +732,6 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
         return { idx, x: col.x, prio };
       });
       tickOrder.sort((a, b2) => b2.prio - a.prio || a.idx - b2.idx);
-      const placedTickXs: number[] = [];
       for (const item of tickOrder) {
         const minGap = item.prio >= 2 ? 12 : MIN_TICK_GAP;
         let collides = false;
@@ -639,6 +746,59 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
           placedTickXs.push(item.x);
         }
       }
+    }
+
+    const isoTimeSet = new Set<number>();
+    for (let ti = 0; ti < tg.tiers.length; ti++) {
+      const tm = tierMeta[ti];
+      if (tm.kind !== 'textTier') continue;
+      for (const pt of tm.finitePts) {
+        const t = pt.number;
+        if ((bandIndex === 0 ? t >= startT : t > startT) && t <= endT && !tToIdx.has(t)) {
+          isoTimeSet.add(t);
+        }
+      }
+    }
+    const isoTimes = Array.from(isoTimeSet).sort((a, b2) => a - b2);
+    const isoLabels: string[] = hideTicks
+      ? isoTimes.map(() => '')
+      : isoTimes.map((t) => formatDisplayTick(t, tickPrecision, tickFixedDecimals));
+    if (!hideTicks && isoTimes.length > 0 && tickPrecision !== 'full') {
+      const spineLabelSet = new Set<string>();
+      for (const col of spineCols) spineLabelSet.add(col.label);
+      const baseDigits = parseInt(tickPrecision, 10) || 3;
+      for (let d = baseDigits + 1; d <= 6; d++) {
+        const colliding = new Set<number>();
+        for (let i = 0; i < isoTimes.length; i++) {
+          if (spineLabelSet.has(isoLabels[i])) colliding.add(i);
+          if (i > 0 && isoLabels[i] === isoLabels[i - 1]) {
+            colliding.add(i - 1);
+            colliding.add(i);
+          }
+        }
+        if (colliding.size === 0) break;
+        colliding.forEach((idx) => {
+          isoLabels[idx] = formatDisplayTick(isoTimes[idx], String(d), tickFixedDecimals);
+        });
+      }
+    }
+    const isolatedPointTicks: IsolatedPointTick[] = [];
+    for (let i = 0; i < isoTimes.length; i++) {
+      const t = isoTimes[i];
+      const x = elasticXLocal(t);
+      const label = isoLabels[i];
+      let collides = false;
+      if (!hideTicks) {
+        for (let p = 0; p < placedTickXs.length; p++) {
+          if (Math.abs(x - placedTickXs[p]) < 15) {
+            collides = true;
+            break;
+          }
+        }
+      }
+      const labelVisible = !hideTicks && !collides;
+      if (labelVisible) placedTickXs.push(x);
+      isolatedPointTicks.push({ t, x, label, labelVisible });
     }
 
     const linearSegs: BandLinearSeg[] = [];
@@ -818,7 +978,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
         const visiblePts: VisiblePoint[] = tm.finitePts
           .filter((pt) => (bandIndex === 0 ? pt.number >= startT : pt.number > startT) && pt.number <= endT)
           .map((pt) => {
-            const x = xForGlobalIdx(tToIdx.get(pt.number)!);
+            const x = elasticXLocal(pt.number);
             const rich =
               pt.mark !== ''
                 ? layoutRichText(pt.mark, Math.max(48, maxFlagW - 18), ptFontMeasure, mode, effectiveRichOpts)
@@ -905,6 +1065,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       tiersTopY,
       tiersBottomY: ty,
       spineCols,
+      isolatedPointTicks,
       linearSegs,
       linearXForTime,
       tiersLayout,

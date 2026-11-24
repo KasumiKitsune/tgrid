@@ -17,9 +17,19 @@
 
 ---
 
-## 开放规范与开发者复用（Open Specifications）
+## 核心特性
 
-如果你正在开发自己的语音标注工具、语料库检索平台、音系学教学网站或 Praat 生态软件，**非常欢迎直接复用本项目的可视化方案与文件解析规范**。本仓库附带两份完全**平台无关**的独立技术规范文档（不绑定任何前端框架或界面实现）：
+- **完整兼容 Praat 标注文件**：直接读写标准长文本、短文本、二进制、按时间排序 `.TextGrid`、独立单层及 `.Collection` 文件；自动标出空隙、重叠、零时长、层域不一致与极短音段，支持一键整理边界。
+- **短音段不挤字、语谱图不变形**：上方波形与宽带语谱图保持 1:1 真实物理时间，下方标注层按文字宽度自动舒展并自动折叠长静默，支持均衡多行折行与跨行续接，也可随时切回 1:1 线性对齐。
+- **看谱听辨与精细切音**：载入 WAV 音频即可对照波形、语谱图、基频（F₀）与共振峰（F₁–F₃）参考曲线听辨；拖动边界时随行弹出 ±40 ms 放大镜，支持跨层磁吸对齐（`Alt` 临时跳过、`Z` 吸附过零点）与 ±1 ms / ±10 ms 键盘微调。
+- **国际音标输入与批转换**：内置云龙国际音标（含五度声调）与 Praat 反斜杠音标（如 `\sh`、`\ng`、`\^h`）直接输入、对照显示与整文档互转，配有虚拟音标键盘；支持多标签页切换与只读防误改模式。
+- **论文插图直接导出**：支持按层与时段筛选，内置论文单栏、通栏、幻灯片版幅与纯黑白印刷配色，导出矢量 SVG（可选纯矢量轮廓、图文分离包等）与高清 PNG，可按需附带中英双语图例与统一小数位刻度。
+
+---
+
+## 开放规范与开发者参考
+
+如果你正在开发语音标注工具、语料库检索平台或语音学教学网站，欢迎直接参考并复用本仓库附带的两份独立技术规范（不绑定任何框架或界面实现）：
 
 <div align="center">
   <p>
@@ -29,33 +39,17 @@
   </p>
 </div>
 
-| 规范文档 | 适用场景与核心内容 |
+| 规范文档 | 核心内容 |
 | :--- | :--- |
-| **[TextGrid 可视化与交互编辑规范](docs/TEXTGRID_VISUALIZATION_AND_EDITOR_SPEC.md)** | 完整阐述「上轨 1:1 物理时间 → 梯形投影映射颈 → 下轨按字宽自适应展开」双轨可视化架构、多行折行与跨行续接、长静默折叠、语义色系分离、异常结构诊断（空隙/重叠/零时长/越界）及交互模型；**不限定实现技术栈（Web / Qt / Python / Rust / Electron 皆可自由实现）**。 |
-| **[Praat `.TextGrid` 与 `.Collection` 文件格式规范](docs/PRAAT_TEXTGRID_AND_COLLECTION_SPEC.md)** | 逐字节对照 Praat C++ 源码核验的完整编解码规范，覆盖标准长文本（`ooTextFile`）、短文本、按时间排序文本、二进制（`ooBinaryFile` 含 UTF-16BE + UTF-32 码点数、布尔字节、大端 IEEE-754）、独立单层与嵌套 `Collection`，适合独立实现 100% 兼容 Praat 的读写器。 |
+| **[TextGrid 可视化与交互编辑规范](docs/TEXTGRID_VISUALIZATION_AND_EDITOR_SPEC.md)** | 说明「上方 1:1 真实时间声学视图 → 时间映射斜线区 → 下方按字宽舒展标注层」的双轨排版设计、长静默折叠、多行均衡折行与跨行续接、配色与符号语义、结构异常诊断及交互与导出规范，可按任意技术栈独立实现。 |
+| **[Praat `.TextGrid` 与 `.Collection` 文件格式规范](docs/PRAAT_TEXTGRID_AND_COLLECTION_SPEC.md)** | 对照 Praat 源码核验的完整读写参考，涵盖标准长文本、短文本、二进制、按时间排序文本、独立单层及 `.Collection` 的解析规则、边界约束与测试用例，便于编写兼容 Praat 的读写库。 |
 
-此外，本仓库的 Rust 核心库（`crates/tg-core`、`crates/tg-dsp`）与微动效图标库（`packages/tgrid-icons`）均采用宽松的 **MIT 协议**开源，欢迎直接引用、移植或作为参考实现。
+本项目全部代码（包括核心读写库、声学分析模块与图标库）均以 **MIT 协议**开源，欢迎直接复用或二次开发。
 
----
+<details>
+<summary>面向开发者：项目结构与本地构建</summary>
 
-## 核心特性
-
-- **完整兼容 Praat 文件格式**
-  - 原生 Rust 编解码器完整读写标准长文本、短文本、按时间排序文本、二进制 `ooBinaryFile`、独立单层（`IntervalTier` / `TextTier`）及嵌套 `Collection` 集合。
-  - 自动检测并可视化空隙、同层重叠、零时长区间、越界时间域与 `< 5 ms` 极短音段，支持一键规范整理。
-- **双轨自适应排版与声学分析**
-  - 支持「自适应宽度（短音素按字宽展开、长静默自动折叠）」与「1:1 线性对齐」自由切换，多行自动折行且保留跨行续接引导。
-  - 内置 Rust 声学引擎：WAV 解码、宽带语谱图、基频（$F_0$）与共振峰（$F_1\text{–}F_3$）轨迹显示、拖拽边界 `±40 ms` 声学微距放大镜、跨层磁吸对齐（`Alt` 临时跳过、`Z` 吸附过零点）以及语谱图悬停时间/频率读数。
-- **高效标注与国际音标输入**
-  - 顶栏多标签页与多会话音频缓存；右侧可拖宽/可折叠任务窗格（属性 / 层级 / 设置），支持在「侧边栏」与「画布浮动条」间切换，只读模式严格防误改。
-  - 内置双方案 IPA 输入法（**云龙国际音标 647 词条 + 五度声调**、**Praat `Longchar_database` 408 项三字符编码**）与可停靠/悬浮的 5 标签虚拟音标键盘，支持整文档 Unicode IPA ↔ Praat `\xx` 批量互转。
-- **出版级插图导出工作台**
-  - 独立离屏渲染管线，支持滚轮缩放预览、层与时段筛选、论文单栏/通栏/单行版幅、暖灰原色与严格零彩色的纯黑白印刷配色。
-  - 提供 **4 种 SVG 语谱图策略**（纯矢量等值轮廓、图文分离 `.zip` 包、仅留声学曲线、单文件内嵌）与 `2× / 3× / 6×` 真实重绘高清 PNG，内置按需裁剪的中英双语学术图例栏。
-
----
-
-## 仓库结构
+### 仓库结构
 
 ```text
 tgrid/
@@ -77,9 +71,7 @@ tgrid/
     └── release.yml           # 推送 v* 标签自动打包 macOS (Apple Silicon / Intel) 与 Windows 安装包
 ```
 
----
-
-## 本地开发与构建
+### 本地开发与构建
 
 需要环境：**Node.js 22+**、**Rust (stable)** 与 `wasm32-unknown-unknown` 目标：
 
@@ -97,15 +89,17 @@ npm run dev:web
 npm run build:desktop-exe
 ```
 
+</details>
+
 ---
 
 ## English Summary
 
-**T·Grid** is an open-source, local-first Praat `.TextGrid` and `.Collection` annotation editor and publication-grade figure exporter built with **Rust** (`tg-core`, `tg-dsp`, Tauri v2) and **React + TypeScript**.
+**T·Grid** is a free, local-first visual editor and publication-grade figure exporter for **Praat `.TextGrid` and `.Collection`** files, built for phonetics and linguistics teaching and research. It keeps waveforms and broadband spectrograms at true 1:1 physical time while automatically expanding dense segments so labels remain legible, provides F₀/F₁–F₃ reference contours, acoustic boundary magnification, IPA/trigraph input and batch conversion, and exports clean vector SVG and high-DPI PNG figures for papers and slides.
 
-- **Open Specifications for Developers**: Feel free to adopt our platform-agnostic [TextGrid Visualization & Editor Spec](docs/TEXTGRID_VISUALIZATION_AND_EDITOR_SPEC.md) and byte-accurate [Praat TextGrid & Collection Format Spec](docs/PRAAT_TEXTGRID_AND_COLLECTION_SPEC.md) in your own linguistics/speech software.
 - **Desktop Installers (Windows x64 & macOS Apple Silicon / Intel)**: [GitHub Releases](https://github.com/KasumiKitsune/tgrid/releases/latest)
-- **Live Demo**: [kasumikitsune.github.io/tgrid](https://kasumikitsune.github.io/tgrid/)
+- **Try in Browser**: [kasumikitsune.github.io/tgrid](https://kasumikitsune.github.io/tgrid/) *(runs locally in your browser; files are never uploaded)*
+- **Open Specifications**: Platform-agnostic [TextGrid Visualization & Editor Spec](docs/TEXTGRID_VISUALIZATION_AND_EDITOR_SPEC.md) and [Praat TextGrid & Collection Format Spec](docs/PRAAT_TEXTGRID_AND_COLLECTION_SPEC.md)
 
 ## License
 

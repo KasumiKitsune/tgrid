@@ -37,20 +37,33 @@ export function formatPraatDouble(val: number): string {
   return String(val);
 }
 
-export function formatDisplayTick(val: number, precisionMode = '3'): string {
+export function formatDisplayTick(
+  val: number,
+  precisionMode = '3',
+  fixedDecimals = false
+): string {
   if (!Number.isFinite(val)) return '--undefined--';
-  if (Object.is(val, -0) || val === 0) return '0';
   if (precisionMode === 'full') return formatPraatDouble(val);
   const digits = parseInt(precisionMode, 10) || 3;
-  const fixed = val.toFixed(digits);
+  const cleanVal = Object.is(val, -0) || Math.abs(val) < 1e-12 ? 0 : val;
+  if (fixedDecimals) {
+    const fixed = cleanVal.toFixed(digits);
+    return fixed === '-0' || /^-0\.0+$/.test(fixed) ? (0).toFixed(digits) : fixed;
+  }
+  if (cleanVal === 0) return '0';
+  const fixed = cleanVal.toFixed(digits);
   const stripped = fixed.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
   return stripped === '-0' ? '0' : stripped;
 }
 
-export function buildDisplayTickStrings(spineT: number[], precisionMode = '3'): string[] {
+export function buildDisplayTickStrings(
+  spineT: number[],
+  precisionMode = '3',
+  fixedDecimals = false
+): string[] {
   if (precisionMode === 'full') return spineT.map(formatPraatDouble);
   const baseDigits = parseInt(precisionMode, 10) || 3;
-  const labels = spineT.map((t) => formatDisplayTick(t, String(baseDigits)));
+  const labels = spineT.map((t) => formatDisplayTick(t, String(baseDigits), fixedDecimals));
   for (let d = baseDigits + 1; d <= 6; d++) {
     const colliding = new Set<number>();
     for (let i = 1; i < spineT.length; i++) {
@@ -61,7 +74,7 @@ export function buildDisplayTickStrings(spineT: number[], precisionMode = '3'): 
     }
     if (colliding.size === 0) break;
     colliding.forEach((idx) => {
-      labels[idx] = formatDisplayTick(spineT[idx], String(d));
+      labels[idx] = formatDisplayTick(spineT[idx], String(d), fixedDecimals);
     });
   }
   return labels;

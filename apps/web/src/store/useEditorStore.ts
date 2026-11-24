@@ -178,6 +178,7 @@ export interface EditorState {
   wrapMode: 'auto' | 'single';
   scaleMode: 'elastic' | 'linear';
   tickPrecision: '2' | '3' | '4' | 'full';
+  tickFixedDecimals: boolean;
   viewDomain: { min: number; max: number } | null;
   targetWidth: number;
   selection: EditorSelection;
@@ -262,6 +263,7 @@ export interface EditorState {
   setWrapMode: (wrapMode: 'auto' | 'single') => void;
   setScaleMode: (scaleMode: 'elastic' | 'linear') => void;
   setTickPrecision: (prec: '2' | '3' | '4' | 'full') => void;
+  setTickFixedDecimals: (v: boolean) => void;
   setViewDomain: (domain: { min: number; max: number } | null) => void;
   setTargetWidth: (w: number) => void;
   setSelection: (sel: EditorSelection) => void;
@@ -464,6 +466,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   wrapMode: 'auto',
   scaleMode: 'elastic',
   tickPrecision: '3',
+  tickFixedDecimals: (() => {
+    try {
+      return localStorage.getItem('tg_tick_fixed_decimals') === '1';
+    } catch {
+      return false;
+    }
+  })(),
   targetWidth: 1120,
   showPlayhead: false,
   playing: false,
@@ -812,6 +821,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     })),
   setScaleMode: (scaleMode) => set({ scaleMode }),
   setTickPrecision: (tickPrecision) => set({ tickPrecision }),
+  setTickFixedDecimals: (tickFixedDecimals) => {
+    try {
+      localStorage.setItem('tg_tick_fixed_decimals', tickFixedDecimals ? '1' : '0');
+    } catch {
+      // ignore
+    }
+    set({ tickFixedDecimals });
+  },
   setViewDomain: (viewDomain) => set((s) => syncActivePatch(s, { viewDomain })),
   setTargetWidth: (w) => set({ targetWidth: Math.max(280, Math.min(18000, Math.round(w))) }),
   setSelection: (selection) => set((s) => syncActivePatch(s, { selection })),

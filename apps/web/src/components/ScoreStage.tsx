@@ -69,9 +69,12 @@ interface ContextMenuItem {
   action?: () => void;
 }
 
-function getSelectionAnchorRect(layout: ScoreLayout | null, sel: EditorSelection): BoxRect | null {
+function getSelectionAnchor(
+  layout: ScoreLayout | null,
+  sel: EditorSelection
+): { rect: BoxRect; band: BandLayout } | null {
   if (!sel || !layout) return null;
-  const search = (restrictBand: boolean): BoxRect | null => {
+  const search = (restrictBand: boolean): { rect: BoxRect; band: BandLayout } | null => {
     for (const band of layout.bands) {
       if (restrictBand && sel.bandIndex !== undefined && band.bandIndex !== sel.bandIndex) continue;
       if (sel.kind === 'interval') {
@@ -80,15 +83,20 @@ function getSelectionAnchorRect(layout: ScoreLayout | null, sel: EditorSelection
         for (const vi of tl.visibleIvs || []) {
           if (vi.iv.origIdx === sel.itemIndex) {
             return {
-              x: vi.x0,
-              y: tl.y + (tl.laneOffsets?.[vi.iv.lane] || 0),
-              w: vi.w,
-              h: tl.laneHeights?.[vi.iv.lane] || tl.h
+              rect: {
+                x: vi.x0,
+                y: tl.y + (tl.laneOffsets?.[vi.iv.lane] || 0),
+                w: vi.w,
+                h: tl.laneHeights?.[vi.iv.lane] || tl.h
+              },
+              band
             };
           }
         }
         for (const vz of tl.visibleZeros || []) {
-          if (vz.iv.origIdx === sel.itemIndex) return { x: vz.x - 10, y: tl.y, w: 20, h: tl.h };
+          if (vz.iv.origIdx === sel.itemIndex) {
+            return { rect: { x: vz.x - 10, y: tl.y, w: 20, h: tl.h }, band };
+          }
         }
       } else if (sel.kind === 'point') {
         const tl = band.tiersLayout[sel.tierIndex];
@@ -98,7 +106,10 @@ function getSelectionAnchorRect(layout: ScoreLayout | null, sel: EditorSelection
             const boxH =
               vp.rich && tl.levelY ? tl.levelY[vp.level] + vp.boxH - (tl.wireY - tl.y) : 12;
             const x = vp.rich ? vp.bx : vp.x - 12;
-            return { x, y: tl.wireY - 6, w: Math.max(24, vp.boxW), h: Math.max(18, boxH + 6) };
+            return {
+              rect: { x, y: tl.wireY - 6, w: Math.max(24, vp.boxW), h: Math.max(18, boxH + 6) },
+              band
+            };
           }
         }
       } else if (sel.kind === 'boundary') {
@@ -106,20 +117,30 @@ function getSelectionAnchorRect(layout: ScoreLayout | null, sel: EditorSelection
         if (!tl || sel.time < band.startT || sel.time > band.endT) continue;
         const idx = layout.tToIdx.get(sel.time);
         if (idx === undefined || idx < band.startIdx || idx > band.endIdx) continue;
-        return { x: band.spineCols[idx - band.startIdx].x - 4, y: tl.y, w: 8, h: tl.h };
+        return {
+          rect: { x: band.spineCols[idx - band.startIdx].x - 4, y: tl.y, w: 8, h: tl.h },
+          band
+        };
       } else if (sel.kind === 'spine') {
         if (sel.time < band.startT || sel.time > band.endT) continue;
         const idx = layout.tToIdx.get(sel.time);
-        if (idx === undefined || idx < band.startIdx || idx > band.endIdx) continue;
-        return { x: band.spineCols[idx - band.startIdx].x - 6, y: band.tiersTopY - 24, w: 12, h: 24 };
+        const x =
+          idx !== undefined && idx >= band.startIdx && idx <= band.endIdx
+            ? band.spineCols[idx - band.startIdx].x
+            : elasticXInBand(band, sel.time);
+        return { rect: { x: x - 6, y: band.tiersTopY - 24, w: 12, h: 24 }, band };
       } else if (sel.kind === 'tier') {
         const tl = band.tiersLayout[sel.tierIndex];
-        if (tl) return tl.headerBox;
+        if (tl) return { rect: tl.headerBox, band };
       }
     }
     return null;
   };
   return search(true) || search(false);
+}
+
+function getSelectionAnchorRect(layout: ScoreLayout | null, sel: EditorSelection): BoxRect | null {
+  return getSelectionAnchor(layout, sel)?.rect ?? null;
 }
 
 function getBoundaryDragBounds(
@@ -156,7 +177,9 @@ function findCrossTierSnap(
   origTime: number,
   minAllowed: number,
   maxAllowed: number,
-  tolPx = 8
+  tolPx = 8,
+  excludeTierIdx?: number,
+  excludeTime?: number
 ): { t: number; x: number } | null {
   let best: { t: number; x: number } | null = null;
   let bestDist = Infinity;
@@ -168,6 +191,29 @@ function findCrossTierSnap(
     if (dist <= tolPx && dist < bestDist) {
       bestDist = dist;
       best = { t: col.t, x: col.x };
+    }
+  }
+  // Also scan detached/visible TextTier points so boundaries & points still snap to isolated points
+  for (const tl of band.tiersLayout) {
+    if (!tl?.visiblePts) continue;
+    for (const vp of tl.visiblePts) {
+      const ptT = vp.pt.number;
+      if (!Number.isFinite(ptT)) continue;
+      if (
+        excludeTierIdx !== undefined &&
+        tl.tierIndex === excludeTierIdx &&
+        ptT === (excludeTime ?? origTime)
+      ) {
+        continue;
+      }
+      if (excludeTierIdx === undefined && ptT === origTime) continue;
+      if (ptT < minAllowed || ptT > maxAllowed) continue;
+      const targetPx = fromSpec ? band.linearXForTime(ptT) : vp.x;
+      const dist = Math.abs(targetPx - cursorX);
+      if (dist <= tolPx && dist < bestDist) {
+        bestDist = dist;
+        best = { t: ptT, x: vp.x };
+      }
     }
   }
   return best;
@@ -223,6 +269,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const setWrapMode = useEditorStore((s) => s.setWrapMode);
     const scaleMode = useEditorStore((s) => s.scaleMode);
     const tickPrecision = useEditorStore((s) => s.tickPrecision);
+    const tickFixedDecimals = useEditorStore((s) => s.tickFixedDecimals);
     const viewDomain = useEditorStore((s) => s.viewDomain);
     const setViewDomain = useEditorStore((s) => s.setViewDomain);
     const targetWidth = useEditorStore((s) => s.targetWidth);
@@ -274,6 +321,12 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const zKeyDownRef = useRef(false);
     const altKeyDownRef = useRef(false);
     const draggingRef = useRef(false);
+    const pendingDragAnchorRef = useRef<{
+      time: number;
+      bandIndex: number;
+      clientX: number;
+      clientY: number;
+    } | null>(null);
 
     const [stageW, setStageW] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1200));
     const [trigraphTick, setTrigraphTick] = useState(0);
@@ -338,6 +391,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
     // Clear transient UI overlays when switching / closing document tabs
     useEffect(() => {
+      pendingDragAnchorRef.current = null;
       setInlineTarget(null);
       setInlineBox(null);
       setCtxMenu(null);
@@ -402,6 +456,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         tierOrder,
         scaleMode,
         tickPrecision,
+        tickFixedDecimals,
         viewDomain,
         mode
       });
@@ -417,9 +472,49 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       tierOrder,
       scaleMode,
       tickPrecision,
+      tickFixedDecimals,
       viewDomain,
       mode
     ]);
+
+    // P1-4: Preserve visual screen anchor after boundary/point drag commit triggers elastic layout reflow
+    useLayoutEffect(() => {
+      const anchor = pendingDragAnchorRef.current;
+      if (!anchor) return;
+      pendingDragAnchorRef.current = null;
+      const stageEl = stageRef.current;
+      const svg = svgRef.current;
+      if (!stageEl || !svg || layout.width <= 0 || layout.height <= 0) return;
+
+      const updatedBand =
+        layout.bands.find(
+          (b) =>
+            b.bandIndex === anchor.bandIndex &&
+            anchor.time >= b.startT - 1e-9 &&
+            anchor.time <= b.endT + 1e-9
+        ) ??
+        layout.bands.find(
+          (b) => anchor.time >= b.startT - 1e-9 && anchor.time <= b.endT + 1e-9
+        );
+      if (!updatedBand) return;
+
+      const rect = svg.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const scaleX = rect.width / layout.width;
+      const scaleY = rect.height / layout.height;
+      const newSvgX = elasticXInBand(updatedBand, anchor.time);
+      const newSvgY = (updatedBand.tiersTopY + updatedBand.tiersBottomY) / 2;
+      const newClientX = rect.left + newSvgX * scaleX;
+      const newClientY = rect.top + newSvgY * scaleY;
+      const dx = newClientX - anchor.clientX;
+      const dy = newClientY - anchor.clientY;
+      if (Math.abs(dx) > 4) {
+        stageEl.scrollLeft += dx;
+      }
+      if (Math.abs(dy) > 4) {
+        stageEl.scrollTop += dy;
+      }
+    }, [layout]);
 
     useEffect(() => {
       setLayoutStore(layout);
@@ -654,6 +749,13 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     );
     closeInlineRef.current = closeInline;
 
+    const clearHoverGuide = useCallback(() => {
+      const hg = svgRef.current?.querySelector('#hover-guide-layer');
+      if (hg) {
+        while (hg.firstChild) hg.removeChild(hg.firstChild);
+      }
+    }, []);
+
     const openInline = useCallback(
       (tgt: InlineTarget, caretAtEnd = false) => {
         let box: (BoxRect & { align: 'center' | 'left' }) | null = null;
@@ -719,6 +821,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         }
 
         if (!box) return;
+        clearHoverGuide();
         ipaIme.clearComposing();
         setInlineTarget(tgt);
         setInlineBox(box);
@@ -731,7 +834,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           else el.select();
         });
       },
-      [tg, layout, ipaIme]
+      [tg, layout, ipaIme, clearHoverGuide]
     );
 
     const insertTextIntoInline = useCallback(
@@ -1249,13 +1352,6 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       }
     }, []);
 
-    const clearHoverGuide = useCallback(() => {
-      const hg = svgRef.current?.querySelector('#hover-guide-layer');
-      if (hg) {
-        while (hg.firstChild) hg.removeChild(hg.firstChild);
-      }
-    }, []);
-
     const handleSvgPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
       clearHoverGuide();
       if (draggingRef.current || inlineTarget) return;
@@ -1269,6 +1365,31 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       const band = layout.bands[bandIdx];
       if (!band) return;
       const pt = svgPointFromEvent(e);
+
+      const drawHoverNecks = (times: number[]) => {
+        const anchorTopY = band.anchorH > 0 ? band.anchorY : band.linearY;
+        const drawn: number[] = [];
+        for (const t of times) {
+          if (!Number.isFinite(t) || t < band.startT || t > band.endT) continue;
+          if (drawn.some((prev) => Math.abs(prev - t) <= 1e-12)) continue;
+          drawn.push(t);
+          const lx = band.linearXForTime(t);
+          const ex = elasticXInBand(band, t);
+          svgEl(
+            'path',
+            {
+              d: `M${lx},${anchorTopY} L${lx},${band.neckTopY} L${ex},${band.neckBotY}`,
+              fill: 'none',
+              stroke: '#1D4ED8',
+              'stroke-width': 1.35,
+              'stroke-linecap': 'round',
+              'stroke-linejoin': 'round',
+              opacity: 0.72
+            },
+            hg
+          );
+        }
+      };
 
       if (role === 'spec-area') {
         const clampedX = Math.max(band.originX, Math.min(band.originX + band.bandContentW, pt.x));
@@ -1396,7 +1517,43 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           'stroke-width': 1.4,
           'stroke-dasharray': '3 2'
         }, hg);
+      } else if (role === 'interval') {
+        const ti = parseInt(target.getAttribute('data-tier') || '0', 10);
+        const ii = parseInt(target.getAttribute('data-idx') || '0', 10);
+        const iv = tg.tiers[ti]?.intervals[ii];
+        if (iv) drawHoverNecks([iv.xmin, iv.xmax]);
+      } else if (role === 'boundary') {
+        const t = parseFloat(target.getAttribute('data-time') || 'NaN');
+        drawHoverNecks([t]);
+      } else if (role === 'point') {
+        const ti = parseInt(target.getAttribute('data-tier') || '0', 10);
+        const pi = parseInt(target.getAttribute('data-idx') || '0', 10);
+        const ptItem = tg.tiers[ti]?.points[pi];
+        if (ptItem) drawHoverNecks([ptItem.number]);
       }
+    };
+
+    const captureDragAnchor = (band: BandLayout, bandIdx: number, time: number) => {
+      const svg = svgRef.current;
+      if (!svg || layout.width <= 0 || layout.height <= 0) {
+        pendingDragAnchorRef.current = null;
+        return;
+      }
+      const rect = svg.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) {
+        pendingDragAnchorRef.current = null;
+        return;
+      }
+      const scaleX = rect.width / layout.width;
+      const scaleY = rect.height / layout.height;
+      const svgX = elasticXInBand(band, time);
+      const svgY = (band.tiersTopY + band.tiersBottomY) / 2;
+      pendingDragAnchorRef.current = {
+        time,
+        bandIndex: bandIdx,
+        clientX: rect.left + svgX * scaleX,
+        clientY: rect.top + svgY * scaleY
+      };
     };
 
     const startBoundaryDrag = (opts: {
@@ -1526,8 +1683,11 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         setDragPreview(null);
         setLoupeAnchor(null);
         if (commit && Math.abs(latestTime - origTime) > 1e-9) {
+          captureDragAnchor(band, bandIdx, latestTime);
           if (moveTierBoundary(ti, origTime, latestTime, shared)) {
             setSelection({ kind: 'boundary', tierIndex: ti, time: latestTime, bandIndex: bandIdx });
+          } else {
+            pendingDragAnchorRef.current = null;
           }
         }
       };
@@ -1613,7 +1773,17 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             snapMode = true;
             snapLabel = '已吸附过零';
           } else if (!altKeyDownRef.current) {
-            const hit = findCrossTierSnap(band, curPt.x, false, origPt.number, tierMin, tierMax, 8);
+            const hit = findCrossTierSnap(
+              band,
+              curPt.x,
+              false,
+              origPt.number,
+              tierMin,
+              tierMax,
+              8,
+              ti,
+              origPt.number
+            );
             if (hit) {
               t = hit.t; // EXACT floating-point equality with target tier!
               snapX = hit.x;
@@ -1694,6 +1864,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               showToast('目标时刻已存在标点', true);
               return;
             }
+            captureDragAnchor(band, bandIdx, latestTime);
             let nextIdx = pi;
             commitTgMutation((draft) => {
               const dTier = draft.tiers[ti];
@@ -2102,17 +2273,19 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             ? 'focus-interval'
             : 'focus-none';
 
-    // Floating Contextual Edit Bar geometry (measured dynamically so wrapped bars NEVER cover the selected item or time axis)
+    // Floating Contextual Edit Bar geometry (positioned outside the entire owning Band so it NEVER covers adjacent tiers)
     const showFloatingBar = editInspectorMode === 'floating';
-    const anchorRect =
+    const selectionAnchor =
       mode === 'edit' && showFloatingBar && selection && !inlineTarget && !dragPreview
-        ? getSelectionAnchorRect(layout, selection)
+        ? getSelectionAnchor(layout, selection)
         : null;
+    const anchorRect = selectionAnchor?.rect ?? null;
+    const anchorBand = selectionAnchor?.band ?? null;
 
     const [floatingPos, setFloatingPos] = useState<{ left: number; top: number } | null>(null);
 
     useLayoutEffect(() => {
-      if (!anchorRect || !selection) {
+      if (!anchorRect || !anchorBand || !selection) {
         setFloatingPos(null);
         return;
       }
@@ -2124,15 +2297,20 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         const barW = barEl ? barEl.offsetWidth : 480;
         const barH = barEl ? barEl.offsetHeight : 38;
         const gap = 8;
+        const margin = 6;
 
-        // Horizontal: center over anchorRect, clamped cleanly inside both sheet & visible stage bounds
-        let minLeft = 6;
-        let maxLeft = Math.max(6, layout.width - barW - 6);
+        // Horizontal: center over selected element, clamped cleanly inside both sheet & visible stage bounds
+        let minLeft = margin;
+        let maxLeft = Math.max(margin, layout.width - barW - margin);
         if (stageEl && sheetEl) {
           const stageRect = stageEl.getBoundingClientRect();
           const sheetRect = sheetEl.getBoundingClientRect();
-          const visMin = Math.max(6, stageRect.left - sheetRect.left + 6);
-          const visMax = Math.min(layout.width - barW - 6, stageRect.right - sheetRect.left - barW - 6);
+          const sheetOriginX = sheetRect.left + sheetEl.clientLeft;
+          const visMin = Math.max(margin, stageRect.left - sheetOriginX + margin);
+          const visMax = Math.min(
+            layout.width - barW - margin,
+            stageRect.left + stageEl.clientWidth - sheetOriginX - barW - margin
+          );
           if (visMin <= visMax) {
             minLeft = visMin;
             maxLeft = visMax;
@@ -2140,22 +2318,43 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         }
         const left = Math.max(minLeft, Math.min(maxLeft, anchorRect.x + anchorRect.w / 2 - barW / 2));
 
-        // Vertical: prefer BELOW selected item so it never covers the item OR the time axis/spectrogram above;
-        // flip ABOVE (at exact anchorRect.y - barH - gap) only if placing below clips the visible stage bottom.
-        const belowTop = anchorRect.y + anchorRect.h + gap;
-        const aboveTop = anchorRect.y - barH - gap;
+        // Vertical: anchor OUTSIDE the entire owning band so adjacent tiers inside the band are NEVER occluded.
+        // Primary: just below band bottom (band.tiersBottomY + gap).
+        // Fallback when bottom clips container/viewport: above band top (band.linearY - barH - gap).
+        // Viewport clamp only if a single band is taller than (or straddles both edges of) the viewport.
+        const belowTop = anchorBand.tiersBottomY + gap;
+        const aboveTop = anchorBand.linearY - barH - gap;
 
         let top = belowTop;
         if (stageEl && sheetEl) {
-          const sheetOffsetTop = sheetEl.offsetTop;
-          const visibleBottomInSheet = stageEl.scrollTop + stageEl.clientHeight - sheetOffsetTop;
-          const visibleTopInSheet = stageEl.scrollTop - sheetOffsetTop;
-          const fitsBelow = belowTop + barH <= visibleBottomInSheet - 6;
-          const fitsAbove = aboveTop >= Math.max(4, visibleTopInSheet + 4);
-          if (!fitsBelow && fitsAbove) {
+          const stageRect = stageEl.getBoundingClientRect();
+          const sheetRect = sheetEl.getBoundingClientRect();
+          const sheetOriginY = sheetRect.top + sheetEl.clientTop;
+          const visibleTopInSheet = stageRect.top - sheetOriginY;
+          const visibleBottomInSheet = visibleTopInSheet + stageEl.clientHeight;
+          const minVisTop = visibleTopInSheet + margin;
+          const maxVisTop = Math.max(minVisTop, visibleBottomInSheet - barH - margin);
+
+          const fitsBelow =
+            belowTop >= minVisTop && belowTop + barH <= visibleBottomInSheet - margin;
+          const fitsAbove =
+            aboveTop >= minVisTop && aboveTop + barH <= visibleBottomInSheet - margin;
+
+          if (fitsBelow) {
+            top = belowTop;
+          } else if (fitsAbove) {
             top = aboveTop;
+          } else if (
+            anchorBand.tiersBottomY > visibleTopInSheet &&
+            anchorBand.linearY < visibleBottomInSheet
+          ) {
+            // Band exceeds viewport height (or straddles both viewport edges): clamp within visible bounds
+            const anchorMidY = anchorRect.y + anchorRect.h / 2;
+            const viewMidY = (visibleTopInSheet + visibleBottomInSheet) / 2;
+            const preferred = anchorMidY > viewMidY ? minVisTop : maxVisTop;
+            top = Math.max(minVisTop, Math.min(maxVisTop, preferred));
           }
-        } else if (belowTop + barH > layout.height - 4 && aboveTop >= 4) {
+        } else if (belowTop + barH > layout.height - margin && aboveTop >= margin) {
           top = aboveTop;
         }
 
@@ -2166,14 +2365,29 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       computePos();
       const barEl = floatingBarRef.current;
       const stageEl = stageRef.current;
-      const ro = barEl && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(computePos) : null;
+      const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(computePos) : null;
       if (ro && barEl) ro.observe(barEl);
+      if (ro && stageEl) ro.observe(stageEl);
       if (stageEl) stageEl.addEventListener('scroll', computePos, { passive: true });
+      window.addEventListener('resize', computePos, { passive: true });
       return () => {
         ro?.disconnect();
         if (stageEl) stageEl.removeEventListener('scroll', computePos);
+        window.removeEventListener('resize', computePos);
       };
-    }, [anchorRect?.x, anchorRect?.y, anchorRect?.w, anchorRect?.h, selection, layout.width, layout.height, stageW]);
+    }, [
+      anchorRect?.x,
+      anchorRect?.y,
+      anchorRect?.w,
+      anchorRect?.h,
+      anchorBand?.bandIndex,
+      anchorBand?.linearY,
+      anchorBand?.tiersBottomY,
+      selection,
+      layout.width,
+      layout.height,
+      stageW
+    ]);
 
     const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === 'Enter') {
@@ -2201,6 +2415,9 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             ref={svgRef}
             id="score-svg"
             xmlns="http://www.w3.org/2000/svg"
+            width={layout.width}
+            height={layout.height}
+            viewBox={`0 0 ${layout.width} ${layout.height}`}
             className={`${mode === 'edit' ? 'mode-edit' : ''} cue-${cueMode} ${focusClass}`}
             onPointerDown={handleSvgPointerDown}
             onPointerMove={handleSvgPointerMove}
@@ -2247,14 +2464,14 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           )}
 
           {/* High-Contrast Dark Floating Contextual Bar */}
-          {selection && anchorRect && (
+          {selection && anchorRect && anchorBand && (
             <div
               ref={floatingBarRef}
               className={`floating-bar ${floatingPos ? 'visible' : ''}`}
               style={
                 floatingPos
                   ? { left: floatingPos.left, top: floatingPos.top }
-                  : { left: 6, top: Math.round(anchorRect.y + anchorRect.h + 8) }
+                  : { left: 6, top: Math.round(anchorBand.tiersBottomY + 8) }
               }
             >
               {selection.kind === 'interval' && (() => {

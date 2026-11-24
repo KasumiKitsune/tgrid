@@ -31,6 +31,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
   const scaleMode = useEditorStore((s) => s.scaleMode);
   const targetWidth = useEditorStore((s) => s.targetWidth);
   const tickPrecision = useEditorStore((s) => s.tickPrecision);
+  const tickFixedDecimals = useEditorStore((s) => s.tickFixedDecimals);
   const viewDomain = useEditorStore((s) => s.viewDomain);
   const playRange = useEditorStore((s) => s.playRange);
   const selection = useEditorStore((s) => s.selection);
@@ -432,7 +433,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
                 type="button"
                 className={`compact ${prefs.activePreset === pid ? 'active' : ''}`}
                 onClick={() => {
-                  const next = applyPresetToPrefs(prefs, pid, { tickPrecision, legendOpen });
+                  const next = applyPresetToPrefs(prefs, pid, {
+                    tickPrecision,
+                    tickFixedDecimals,
+                    legendOpen
+                  });
                   setPrefs(next);
                   saveExportPrefs(next);
                 }}
@@ -919,6 +924,21 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
                         ))}
                       </div>
                     </div>
+                    <label
+                      className={`export-check ${
+                        prefs.tickPrecision === 'full' || prefs.tickPrecision === 'none'
+                          ? 'is-disabled'
+                          : ''
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        disabled={prefs.tickPrecision === 'full' || prefs.tickPrecision === 'none'}
+                        checked={prefs.tickFixedDecimals}
+                        onChange={(e) => updatePrefs({ tickFixedDecimals: e.target.checked })}
+                      />
+                      <span>固定小数位补零（如 10.30）</span>
+                    </label>
                     <div className="export-sub-row">
                       <span className="setting-label">四周留白</span>
                       <div className="segmented" role="group">

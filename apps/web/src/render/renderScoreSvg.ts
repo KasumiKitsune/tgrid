@@ -6,6 +6,7 @@ import {
   decodeTrigraphGlossSync,
   formatPraatDouble,
   measurePx,
+  splitGraphemes,
   type RichTextLayout
 } from '../layout/richText';
 import {
@@ -88,6 +89,32 @@ export interface RenderScoreInput {
   dragPreview: DragPreviewState | null;
   screenSpecUrls?: Map<number, string>;
   exportCtx?: RenderScoreExportContext | null;
+}
+
+function truncateTierNameMiddle(name: string, maxW: number, font: string): string {
+  if (measurePx(name, font) <= maxW) return name;
+  const graphemes = splitGraphemes(name);
+  if (graphemes.length <= 1) return name;
+  let lo = 2;
+  let hi = graphemes.length - 1;
+  let best: string | null = null;
+  while (lo <= hi) {
+    const keep = (lo + hi) >> 1;
+    const tailLen = Math.max(1, Math.floor(keep / 2));
+    const headLen = keep - tailLen;
+    const candidate =
+      graphemes.slice(0, headLen).join('') +
+      '…' +
+      graphemes.slice(graphemes.length - tailLen).join('');
+    if (measurePx(candidate, font) <= maxW) {
+      best = candidate;
+      lo = keep + 1;
+    } else {
+      hi = keep - 1;
+    }
+  }
+  if (best !== null) return best;
+  return graphemes[0] + '…';
 }
 
 function renderRichTextSVG(
@@ -351,6 +378,47 @@ export function renderInteractiveOverlay(
     }
   }
 
+  const drawSelectionNeck = (band: BandLayout, t: number, color = '#1D4ED8') => {
+    const linX = band.linearXForTime(t);
+    const elX = elasticXInBand(band, t);
+    const tickTopY = input.hasAudio && band.specH > 0 ? band.anchorY : band.linearY;
+    svgEl(
+      'line',
+      {
+        x1: linX,
+        y1: tickTopY,
+        x2: linX,
+        y2: band.neckTopY,
+        stroke: color,
+        'stroke-width': 1.4,
+        opacity: 0.85
+      },
+      layerG
+    );
+    svgEl(
+      'line',
+      {
+        x1: linX,
+        y1: band.neckTopY,
+        x2: elX,
+        y2: band.neckBotY,
+        stroke: color,
+        'stroke-width': 1.4,
+        opacity: 0.85
+      },
+      layerG
+    );
+  };
+
+  const isPlayRangeEdge = (t: number) =>
+    Boolean(
+      input.playRange &&
+        Number.isFinite(input.playRange.start) &&
+        Number.isFinite(input.playRange.end) &&
+        input.playRange.end > input.playRange.start &&
+        (Math.abs(input.playRange.start - t) <= 1e-6 || Math.abs(input.playRange.end - t) <= 1e-6)
+    );
+
   const sel = input.selection;
   if (sel) {
     for (const band of layout.bands) {
@@ -359,6 +427,12 @@ export function renderInteractiveOverlay(
         if (!tl) continue;
         for (const vi of tl.visibleIvs || []) {
           if (vi.iv.origIdx === sel.itemIndex) {
+            if (!vi.clippedLeft && !isPlayRangeEdge(vi.iv.xmin)) {
+              drawSelectionNeck(band, vi.iv.xmin, '#1D4ED8');
+            }
+            if (!vi.clippedRight && !isPlayRangeEdge(vi.iv.xmax)) {
+              drawSelectionNeck(band, vi.iv.xmax, '#1D4ED8');
+            }
             const ly = tl.y + (tl.laneOffsets?.[vi.iv.lane] || 0);
             const lh = tl.laneHeights?.[vi.iv.lane] || tl.h;
             svgEl(
@@ -391,6 +465,7 @@ export function renderInteractiveOverlay(
         if (!tl || tl.wireY === undefined) continue;
         for (const vp of tl.visiblePts || []) {
           if (vp.pt.origIdx === sel.itemIndex) {
+            drawSelectionNeck(band, vp.pt.number, '#1D4ED8');
             svgEl(
               'polygon',
               {
@@ -426,12 +501,16 @@ export function renderInteractiveOverlay(
         const idx = layout.tToIdx.get(sel.time);
         if (idx === undefined || idx < band.startIdx || idx > band.endIdx) continue;
         const bx = band.spineCols[idx - band.startIdx].x;
+        drawSelectionNeck(band, sel.time, '#1D4ED8');
         svgEl('line', { x1: bx, y1: tl.y - 2, x2: bx, y2: tl.y + tl.h + 2, stroke: '#1D4ED8', 'stroke-width': 2.5 }, layerG);
       } else if (sel.kind === 'spine') {
         if (sel.time < band.startT || sel.time > band.endT) continue;
         const idx = layout.tToIdx.get(sel.time);
-        if (idx === undefined || idx < band.startIdx || idx > band.endIdx) continue;
-        const bx = band.spineCols[idx - band.startIdx].x;
+        const bx =
+          idx !== undefined && idx >= band.startIdx && idx <= band.endIdx
+            ? band.spineCols[idx - band.startIdx].x
+            : elasticXInBand(band, sel.time);
+        drawSelectionNeck(band, sel.time, '#1D4ED8');
         svgEl('line', { x1: bx, y1: band.tiersTopY - 6, x2: bx, y2: band.tiersBottomY, stroke: '#1D4ED8', 'stroke-width': 1.8 }, layerG);
       } else if (sel.kind === 'tier') {
         const tl = band.tiersLayout[sel.tierIndex];
@@ -601,6 +680,14 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
   for (const band of layout.bands) {
     const bNum = band.bandIndex + 1;
     const bG = svgEl('g', isExp ? (sem ? { id: `band-${bNum}` } : {}) : { 'data-band': band.bandIndex }, graphicRoot);
+    const lxs = band.spineCols.map((c) => band.linearXForTime(c.t));
+    const avgLinGap =
+      band.spineCols.length > 1 ? band.bandContentW / (band.spineCols.length - 1) : band.bandContentW;
+    const minLinGapAt = (i: number) =>
+      Math.min(
+        i > 0 ? lxs[i] - lxs[i - 1] : Infinity,
+        i + 1 < lxs.length ? lxs[i + 1] - lxs[i] : Infinity
+      );
 
     // A. Linear Physical Time Track
     if (hasAudio && band.specH > 0) {
@@ -734,11 +821,17 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
         }
       }
 
-      for (const col of band.spineCols) {
-        const lx = band.linearXForTime(col.t);
+      for (let i = 0; i < band.spineCols.length; i++) {
+        const col = band.spineCols[i];
+        const lx = lxs[i];
         const isMajor = col.usage >= 2 || col.t === tg.xmin || col.t === tg.xmax;
-        svgEl('line', { x1: lx, y1: band.specY, x2: lx, y2: band.specY + (isMajor ? 6 : 4), stroke: isMajor ? pal.ink : pal.tickMinor, 'stroke-width': sw(isMajor ? 1.1 : 0.8) }, specContent);
-        svgEl('line', { x1: lx, y1: band.specY + band.specH - (isMajor ? 6 : 4), x2: lx, y2: band.specY + band.specH, stroke: isMajor ? pal.ink : pal.tickMinor, 'stroke-width': sw(isMajor ? 1.1 : 0.8) }, specContent);
+        const notchAttrs: Record<string, string | number> = {
+          stroke: isMajor ? pal.ink : pal.tickMinor,
+          'stroke-width': sw(isMajor ? 1.1 : 0.8)
+        };
+        if (!isMajor && minLinGapAt(i) < 8) notchAttrs.opacity = 0.42;
+        svgEl('line', { x1: lx, y1: band.specY, x2: lx, y2: band.specY + (isMajor ? 6 : 4), ...notchAttrs }, specContent);
+        svgEl('line', { x1: lx, y1: band.specY + band.specH - (isMajor ? 6 : 4), x2: lx, y2: band.specY + band.specH, ...notchAttrs }, specContent);
       }
 
       for (const tl of band.tiersLayout) {
@@ -880,15 +973,115 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
         }, neckG);
       }
     }
-    for (const col of band.spineCols) {
-      const lx = band.linearXForTime(col.t);
-      const isMajor = col.usage >= 2 || col.t === tg.xmin || col.t === tg.xmax;
+    for (let i = 0; i < band.spineCols.length; i++) {
+      const col = band.spineCols[i];
+      const lx = lxs[i];
+      const isMajor =
+        col.usage >= 2 ||
+        col.t === tg.xmin ||
+        col.t === tg.xmax ||
+        i === 0 ||
+        i === band.spineCols.length - 1;
+      const minLinGap = minLinGapAt(i);
+      const slant = Math.abs(col.x - lx);
+      const isUltraDenseMinor = !isMajor && (minLinGap < 8 || (avgLinGap < 12 && slant > 16));
+      const isModDenseMinor = !isMajor && !isUltraDenseMinor && (avgLinGap < 22 || minLinGap < 14);
+
       if (!hasAudio || band.specH === 0) {
-        svgEl('line', { x1: lx, y1: band.linearY, x2: lx, y2: band.neckTopY, stroke: isMajor ? pal.ink : pal.faint, 'stroke-width': sw(isMajor ? 1 : 0.7), opacity: hasAudio ? 0.45 : 0.75 }, neckG);
+        svgEl(
+          'line',
+          {
+            x1: lx,
+            y1: band.linearY,
+            x2: lx,
+            y2: band.neckTopY,
+            stroke: isMajor ? pal.ink : pal.faint,
+            'stroke-width': sw(isMajor ? 1 : 0.7),
+            opacity: isUltraDenseMinor ? 0.45 : hasAudio ? 0.45 : 0.75
+          },
+          neckG
+        );
       } else {
-        svgEl('line', { x1: lx, y1: band.anchorY, x2: lx, y2: band.neckTopY, stroke: isMajor ? pal.ink : pal.faint, 'stroke-width': sw(isMajor ? 1 : 0.7) }, neckG);
+        const ancAttrs: Record<string, string | number> = {
+          x1: lx,
+          y1: band.anchorY,
+          x2: lx,
+          y2: band.neckTopY,
+          stroke: isMajor ? pal.ink : pal.faint,
+          'stroke-width': sw(isMajor ? 1 : 0.7)
+        };
+        if (isUltraDenseMinor) ancAttrs.opacity = 0.45;
+        svgEl('line', ancAttrs, neckG);
       }
-      svgEl('line', { x1: lx, y1: band.neckTopY, x2: col.x, y2: band.neckBotY, stroke: isMajor ? pal.faint : pal.rule, 'stroke-width': sw(isMajor ? 0.9 : 0.7) }, neckG);
+
+      if (isMajor) {
+        svgEl(
+          'line',
+          {
+            x1: lx,
+            y1: band.neckTopY,
+            x2: col.x,
+            y2: band.neckBotY,
+            stroke: pal.faint,
+            'stroke-width': sw(0.9)
+          },
+          neckG
+        );
+      } else if (isUltraDenseMinor) {
+        svgEl(
+          'line',
+          {
+            x1: lx,
+            y1: band.neckTopY,
+            x2: lx,
+            y2: band.neckTopY + 3.5,
+            stroke: pal.rule,
+            'stroke-width': sw(0.65),
+            opacity: 0.55
+          },
+          neckG
+        );
+        svgEl(
+          'line',
+          {
+            x1: col.x,
+            y1: band.neckBotY - 3.5,
+            x2: col.x,
+            y2: band.neckBotY,
+            stroke: pal.rule,
+            'stroke-width': sw(0.65),
+            opacity: 0.55
+          },
+          neckG
+        );
+      } else if (isModDenseMinor) {
+        svgEl(
+          'line',
+          {
+            x1: lx,
+            y1: band.neckTopY,
+            x2: col.x,
+            y2: band.neckBotY,
+            stroke: pal.rule,
+            'stroke-width': sw(0.55),
+            opacity: 0.36
+          },
+          neckG
+        );
+      } else {
+        svgEl(
+          'line',
+          {
+            x1: lx,
+            y1: band.neckTopY,
+            x2: col.x,
+            y2: band.neckBotY,
+            stroke: pal.rule,
+            'stroke-width': sw(0.7)
+          },
+          neckG
+        );
+      }
     }
 
     // C. Timestamp Spine
@@ -971,6 +1164,101 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
       }, spineG);
     }
 
+    for (const ptTick of band.isolatedPointTicks) {
+      const exactTooltip = `${formatPraatDouble(ptTick.t)} s`;
+      svgEl(
+        'line',
+        {
+          x1: ptTick.x,
+          y1: band.tiersTopY - 4,
+          x2: ptTick.x,
+          y2: band.tiersTopY,
+          stroke: pal.tickMinor,
+          'stroke-width': sw(0.8)
+        },
+        spineG
+      );
+      if (!layout.hideTicks) {
+        if (ptTick.labelVisible) {
+          const tAttrs: Record<string, string | number> = {
+            x: ptTick.x + 1,
+            y: band.tiersTopY - 8,
+            transform: `rotate(-52, ${ptTick.x + 1}, ${band.tiersTopY - 8})`,
+            'text-anchor': 'start',
+            'font-family': MONO_FONT_STACK,
+            'font-size': fs(9.5),
+            fill: pal.muted
+          };
+          if (!isExp) {
+            tAttrs['data-role'] = 'spine-tick';
+            tAttrs['data-time'] = String(ptTick.t);
+            tAttrs['data-band'] = band.bandIndex;
+          }
+          const tEl = svgEl('text', tAttrs, spineG);
+          if (!isExp) svgEl('title', {}, tEl).textContent = exactTooltip;
+          svgEl('tspan', {}, tEl).textContent = ptTick.label;
+        } else if (isExp) {
+          svgEl(
+            'rect',
+            {
+              x: ptTick.x - 1,
+              y: band.tiersTopY - 7.5,
+              width: 2,
+              height: 2,
+              fill: pal.faintTick
+            },
+            spineG
+          );
+        } else {
+          const hitG = svgEl(
+            'g',
+            { 'data-role': 'spine-tick', 'data-time': String(ptTick.t), 'data-band': band.bandIndex },
+            spineG
+          );
+          svgEl('title', {}, hitG).textContent = exactTooltip;
+          svgEl(
+            'rect',
+            {
+              x: ptTick.x - 4,
+              y: band.tiersTopY - 14,
+              width: 8,
+              height: 14,
+              fill: 'transparent',
+              'data-ui-only': '1'
+            },
+            hitG
+          );
+          svgEl(
+            'rect',
+            {
+              x: ptTick.x - 1,
+              y: band.tiersTopY - 7.5,
+              width: 2,
+              height: 2,
+              fill: pal.faintTick
+            },
+            hitG
+          );
+        }
+      }
+      if (ptTick.labelVisible) {
+        svgEl(
+          'line',
+          {
+            x1: ptTick.x,
+            y1: band.tiersTopY,
+            x2: ptTick.x,
+            y2: band.tiersBottomY,
+            stroke: pal.gridMinor,
+            'stroke-width': sw(0.65),
+            'stroke-dasharray': '2 3',
+            opacity: 0.45
+          },
+          spineG
+        );
+      }
+    }
+
     // D. Multi-Tier Tracks
     for (const ti of band.displayOrder) {
       const tl = band.tiersLayout[ti];
@@ -1018,15 +1306,9 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             }, nameWrap).textContent = '∅';
           }
         } else {
-          const namePxSize = (isPrimaryBand ? 12 : 11) * fScale;
+          const namePxSize = (isPrimaryBand || !layout.isTinyView ? 12 : 11) * fScale;
           const nameFont = `500 ${namePxSize.toFixed(2)}px ${SANS_FONT_STACK}`;
-          let displayName = tier.name;
-          if (measurePx(displayName, nameFont) > maxNameW) {
-            while (displayName.length > 1 && measurePx(displayName + '…', nameFont) > maxNameW) {
-              displayName = displayName.slice(0, -1);
-            }
-            displayName += '…';
-          }
+          const displayName = truncateTierNameMiddle(tier.name, maxNameW, nameFont);
           svgEl('text', {
             x: nameX, y: midY + 4, 'font-family': SANS_FONT_STACK,
             'font-size': String(Number(namePxSize.toFixed(2))), 'font-weight': '500',
@@ -1228,6 +1510,9 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             'data-role': 'point', 'data-tier': ti, 'data-idx': pt.origIdx, 'data-band': band.bandIndex,
             'data-legend-keys': vp.rich ? 'labeled-point' : 'empty-point'
           }, tG);
+          if (!isExp) {
+            svgEl('title', {}, pG).textContent = `${pt.mark ? pt.mark + '\n' : ''}${formatPraatDouble(pt.number)} s`;
+          }
           if (!vp.rich) {
             if (!isExp) svgEl('rect', { x: px - 8, y: wy - 8, width: 16, height: 16, fill: 'transparent', 'data-ui-only': '1' }, pG);
             svgEl('polygon', {

@@ -40,6 +40,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const setScaleMode = useEditorStore((s) => s.setScaleMode);
   const tickPrecision = useEditorStore((s) => s.tickPrecision);
   const setTickPrecision = useEditorStore((s) => s.setTickPrecision);
+  const tickFixedDecimals = useEditorStore((s) => s.tickFixedDecimals);
+  const setTickFixedDecimals = useEditorStore((s) => s.setTickFixedDecimals);
+  const tickFixedDisabled =
+    tickPrecision !== '2' && tickPrecision !== '3' && tickPrecision !== '4';
 
   const audioName = useEditorStore((s) => s.audioName);
   const audioDuration = useEditorStore((s) => s.audioDuration);
@@ -199,6 +203,16 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               ))}
             </div>
           </div>
+
+          <label className={`export-check ${tickFixedDisabled ? 'is-disabled' : ''}`}>
+            <input
+              type="checkbox"
+              disabled={tickFixedDisabled}
+              checked={tickFixedDecimals}
+              onChange={(e) => setTickFixedDecimals(e.target.checked)}
+            />
+            <span>固定小数位补零（如 10.30）</span>
+          </label>
 
           <div className="sb-hint">
             仅简化画面刻度显示并自动展开相邻冲突小数位；悬停、编辑、复制与导出均保留完整精度。
