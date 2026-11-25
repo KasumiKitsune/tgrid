@@ -105,11 +105,19 @@ export function App() {
     );
   }
 
-  // Sync loop setting into AudioPlayer
+  // Sync loop, rate, and volume settings from store into AudioPlayer
   const loop = useEditorStore((s) => s.loop);
+  const rate = useEditorStore((s) => s.rate);
+  const volume = useEditorStore((s) => s.volume);
   useEffect(() => {
     playerRef.current?.setLoop(loop);
   }, [loop]);
+  useEffect(() => {
+    playerRef.current?.setRate(rate);
+  }, [rate]);
+  useEffect(() => {
+    playerRef.current?.setVolume(volume);
+  }, [volume]);
 
   // Apply persisted global UI scale (75%–200%) & responsive logical viewport guards
   const uiScale = useEditorStore((s) => s.uiScale);

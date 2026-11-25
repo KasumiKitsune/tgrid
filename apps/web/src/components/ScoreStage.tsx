@@ -2223,7 +2223,22 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             tg.xmin,
             Math.min(tg.xmax, Number((base + (isSeekBack ? -0.1 : 0.1)).toFixed(6)))
           );
-          setPlaybackTime(nextT, true);
+          if (playing) {
+            const endT =
+              playRange && playRange.end > nextT
+                ? playRange.end
+                : viewDomain && viewDomain.max > nextT
+                  ? viewDomain.max
+                  : tg.xmax;
+            if (endT > nextT + 0.002) {
+              onStartPlayback(nextT, endT);
+            } else {
+              onStopPlayback();
+              setPlaybackTime(nextT, true);
+            }
+          } else {
+            setPlaybackTime(nextT, true);
+          }
           return;
         }
 
@@ -2622,7 +2637,22 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               tg.xmin,
               Math.min(tg.xmax, Number((base + (isFineBack ? -0.01 : 0.01)).toFixed(6)))
             );
-            setPlaybackTime(nextT, true);
+            if (playing) {
+              const endT =
+                playRange && playRange.end > nextT
+                  ? playRange.end
+                  : viewDomain && viewDomain.max > nextT
+                    ? viewDomain.max
+                    : tg.xmax;
+              if (endT > nextT + 0.002) {
+                onStartPlayback(nextT, endT);
+              } else {
+                onStopPlayback();
+                setPlaybackTime(nextT, true);
+              }
+            } else {
+              setPlaybackTime(nextT, true);
+            }
             return;
           }
         }
