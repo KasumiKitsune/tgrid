@@ -518,6 +518,23 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const altKeyDownRef = useRef(false);
     const shiftKeyDownRef = useRef(false);
     const draggingRef = useRef(false);
+    const spacePanRef = useRef<{
+      held: boolean;
+      dragging: boolean;
+      didDrag: boolean;
+      downAt: number;
+      shouldTogglePlayOnRelease: boolean;
+    }>({
+      held: false,
+      dragging: false,
+      didDrag: false,
+      downAt: 0,
+      shouldTogglePlayOnRelease: false
+    });
+    const spacePanDragCleanupRef = useRef<(() => void) | null>(null);
+    const suppressNextStageClickRef = useRef(false);
+    const onTogglePlayRef = useRef(onTogglePlay);
+    onTogglePlayRef.current = onTogglePlay;
     const lastAutoScrollMsRef = useRef(0);
     const lastPointerRef = useRef<{ clientX: number; clientY: number } | null>(null);
     const hoverSnapRef = useRef<{
@@ -627,6 +644,55 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const refreshHoverGuideRef = useRef<() => void>(() => {});
     const inlineTargetRef = useRef<InlineTarget | null>(null);
     inlineTargetRef.current = inlineTarget;
+
+    const exitSpacePan = useCallback((allowTogglePlay: boolean) => {
+      const pan = spacePanRef.current;
+      if (!pan.held) return;
+      const shouldPlay =
+        allowTogglePlay &&
+        pan.shouldTogglePlayOnRelease &&
+        !pan.didDrag &&
+        performance.now() - pan.downAt < 400;
+      pan.held = false;
+      pan.dragging = false;
+      pan.didDrag = false;
+      pan.shouldTogglePlayOnRelease = false;
+      spacePanDragCleanupRef.current?.();
+      spacePanDragCleanupRef.current = null;
+      stageRef.current?.classList.remove('space-pan', 'space-pan-dragging');
+      if (shouldPlay) {
+        onTogglePlayRef.current();
+      } else if (!draggingRef.current && !inlineTargetRef.current && lastPointerRef.current) {
+        refreshHoverGuideRef.current();
+      }
+    }, []);
+
+    // Dedicated Space-pan release & blur guard (isolated from high-frequency currentTime updates)
+    useEffect(() => {
+      const onSpaceKeyUp = (e: KeyboardEvent) => {
+        if ((e.code === 'Space' || e.key === ' ') && spacePanRef.current.held) {
+          e.preventDefault();
+          exitSpacePan(true);
+        }
+      };
+      const onWindowBlur = () => {
+        exitSpacePan(false);
+      };
+      window.addEventListener('keyup', onSpaceKeyUp);
+      window.addEventListener('blur', onWindowBlur);
+      return () => {
+        window.removeEventListener('keyup', onSpaceKeyUp);
+        window.removeEventListener('blur', onWindowBlur);
+        exitSpacePan(false);
+      };
+    }, [exitSpacePan]);
+
+    // Exit Space-pan cleanly if any modal opens
+    useEffect(() => {
+      if (exportOpen || aboutOpen || shortcutsOpen) {
+        exitSpacePan(false);
+      }
+    }, [exportOpen, aboutOpen, shortcutsOpen, exitSpacePan]);
 
     const handleInlineUnhandledKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (isComposingEvent(e)) return;
@@ -808,19 +874,22 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const layoutRef = useRef<ScoreLayout>(layout);
     layoutRef.current = layout;
 
-    // Playhead Auto-Follow Scroll (throttled cleanly so it never fights manual scroll)
+    // Playhead Auto-Follow Scroll (throttled cleanly; half-open [startT, endT) band lookup + tall-band guard prevents bounce/jitter)
     useEffect(() => {
       if (!playing || !followPlayhead || !Number.isFinite(currentTime)) return;
       const now = performance.now();
-      if (now - lastAutoScrollMsRef.current < 180) return;
+      if (now - lastAutoScrollMsRef.current < 240) return;
 
       const stageEl = stageRef.current;
       const sheetEl = sheetRef.current;
       if (!stageEl || !sheetEl || layout.bands.length === 0) return;
 
+      const lastBandIdx = layout.bands.length - 1;
       const band =
         layout.bands.find(
-          (b) => (b.bandIndex === 0 ? currentTime >= b.startT : currentTime > b.startT) && currentTime <= b.endT
+          (b, idx) =>
+            currentTime >= b.startT &&
+            (idx === lastBandIdx ? currentTime <= b.endT : currentTime < b.endT)
         ) ?? (layout.bands.length === 1 ? layout.bands[0] : undefined);
       if (!band) return;
 
@@ -833,21 +902,49 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       const bandTopInStage = (sheetRect.top + band.linearY * zSheet - stageRect.top) / zStage;
       const bandBotInStage = (sheetRect.top + band.tiersBottomY * zSheet - stageRect.top) / zStage;
 
-      const marginX = Math.min(84, stageEl.clientWidth * 0.18);
+      const viewW = stageEl.clientWidth;
+      const viewH = stageEl.clientHeight;
+      const maxScrollLeft = Math.max(0, stageEl.scrollWidth - viewW);
+      const maxScrollTop = Math.max(0, stageEl.scrollHeight - viewH);
+      const marginX = Math.min(84, viewW * 0.18);
       const marginY = 24;
 
       let nextLeft = stageEl.scrollLeft;
       let nextTop = stageEl.scrollTop;
-      let needsScroll = false;
 
-      if (pxInStage < marginX || pxInStage > stageEl.clientWidth - marginX) {
-        nextLeft = Math.max(0, stageEl.scrollLeft + (pxInStage - stageEl.clientWidth * 0.25));
-        needsScroll = true;
+      if (maxScrollLeft > 0 && (pxInStage < marginX || pxInStage > viewW - marginX)) {
+        nextLeft = Math.max(
+          0,
+          Math.min(maxScrollLeft, stageEl.scrollLeft + (pxInStage - viewW * 0.25))
+        );
       }
-      if (bandTopInStage < marginY || bandBotInStage > stageEl.clientHeight - marginY) {
-        nextTop = Math.max(0, stageEl.scrollTop + (bandTopInStage - 28));
-        needsScroll = true;
+
+      if (maxScrollTop > 0) {
+        const bandH = Math.max(0, bandBotInStage - bandTopInStage);
+        if (bandH >= viewH - marginY * 2) {
+          // Tall band (taller than or nearly filling #stage): only scroll if the band isn't already covering the viewport
+          const alreadyCoveringView = bandTopInStage <= viewH * 0.35 && bandBotInStage >= viewH * 0.65;
+          if (!alreadyCoveringView) {
+            nextTop = Math.max(
+              0,
+              Math.min(maxScrollTop, stageEl.scrollTop + (bandTopInStage - 16))
+            );
+          }
+        } else if (bandTopInStage < marginY) {
+          nextTop = Math.max(
+            0,
+            Math.min(maxScrollTop, stageEl.scrollTop + (bandTopInStage - marginY))
+          );
+        } else if (bandBotInStage > viewH - marginY) {
+          nextTop = Math.max(
+            0,
+            Math.min(maxScrollTop, stageEl.scrollTop + (bandBotInStage - (viewH - marginY)))
+          );
+        }
       }
+
+      const needsScroll =
+        Math.abs(nextLeft - stageEl.scrollLeft) > 8 || Math.abs(nextTop - stageEl.scrollTop) > 8;
 
       if (needsScroll) {
         lastAutoScrollMsRef.current = now;
@@ -1518,21 +1615,16 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             range = { start: iv.xmin, end: iv.xmax };
           }
         }
-        if (!range && st.playRange && st.playRange.end > st.playRange.start) {
-          range = { start: st.playRange.start, end: st.playRange.end };
-        }
-        if (!range && (sel?.kind === 'boundary' || sel?.kind === 'spine')) {
+        if (sel?.kind === 'boundary' || sel?.kind === 'spine') {
           const pad = withContext ? 0.25 : 0.2;
-          range = {
-            start: Math.max(curTg.xmin, sel.time - pad),
-            end: Math.min(curTg.xmax, sel.time + pad)
-          };
-          if (range.end > range.start) {
-            onStartPlayback(range.start, range.end);
+          const start = Math.max(curTg.xmin, sel.time - pad);
+          const end = Math.min(curTg.xmax, sel.time + pad);
+          if (end > start) {
+            onStartPlayback(start, end);
           }
           return;
         }
-        if (!range && sel?.kind === 'point') {
+        if (sel?.kind === 'point') {
           const pt = curTg.tiers[sel.tierIndex]?.points[sel.itemIndex];
           if (pt) {
             const pad = withContext ? 0.25 : 0.2;
@@ -1541,6 +1633,9 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             if (e > s) onStartPlayback(s, e);
             return;
           }
+        }
+        if (!range && st.playRange && st.playRange.end > st.playRange.start) {
+          range = { start: st.playRange.start, end: st.playRange.end };
         }
         if (range) {
           const start = withContext ? Math.max(curTg.xmin, range.start - 0.25) : range.start;
@@ -2053,8 +2148,13 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         const mod = e.ctrlKey || e.metaKey;
         const lower = e.key.toLowerCase();
 
-        // Layered Escape: ctxMenu -> inline -> playRange -> selection (one layer per press)
+        // Layered Escape: spacePan -> ctxMenu -> inline -> playRange -> selection (one layer per press)
         if (e.key === 'Escape' && !mod && !e.altKey && !e.shiftKey) {
+          if (spacePanRef.current.held) {
+            e.preventDefault();
+            exitSpacePan(false);
+            return;
+          }
           if (ctxMenu) {
             e.preventDefault();
             setCtxMenu(null);
@@ -2291,8 +2391,35 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           setPlaybackTime(resetT, true);
           return;
         }
+        // Hold Space + Drag Canvas Panning (quick tap <400ms without drag triggers play-toggle when bound to Space)
+        const isPlainSpace =
+          (e.code === 'Space' || e.key === ' ') &&
+          !e.ctrlKey &&
+          !e.metaKey &&
+          !e.altKey &&
+          !e.shiftKey;
+        if (isPlainSpace) {
+          e.preventDefault();
+          if (document.activeElement instanceof HTMLButtonElement) {
+            document.activeElement.blur();
+          }
+          if (e.repeat || spacePanRef.current.held || draggingRef.current) {
+            return;
+          }
+          const pan = spacePanRef.current;
+          pan.held = true;
+          pan.dragging = false;
+          pan.didDrag = false;
+          pan.downAt = performance.now();
+          pan.shouldTogglePlayOnRelease = matchesShortcut('play-toggle', e, customShortcuts);
+          clearHoverGuide();
+          svgRef.current?.classList.remove('shift-split');
+          stageRef.current?.classList.add('space-pan');
+          return;
+        }
         if (matchesShortcut('play-toggle', e, customShortcuts)) {
           e.preventDefault();
+          if (e.repeat) return;
           if (document.activeElement instanceof HTMLButtonElement) {
             document.activeElement.blur();
           }
@@ -3226,7 +3353,9 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       replayCurrent,
       snapTargetToZeroCrossing,
       copyText,
-      showToast
+      showToast,
+      clearHoverGuide,
+      exitSpacePan
     ]);
 
     const svgPointFromEvent = useCallback((e: { clientX: number; clientY: number }) => {
@@ -3777,6 +3906,10 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
     const handleSvgPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
       lastPointerRef.current = { clientX: e.clientX, clientY: e.clientY };
+      if (spacePanRef.current.held) {
+        clearHoverGuide();
+        return;
+      }
       shiftKeyDownRef.current = e.shiftKey;
       altKeyDownRef.current = e.altKey;
       svgRef.current?.classList.toggle('shift-split', mode === 'edit' && e.shiftKey);
@@ -3971,6 +4104,10 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     };
 
     const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+      if (spacePanRef.current.held) {
+        e.preventDefault();
+        return;
+      }
       // Middle-click direct audition on interval or point (zero mode-switch)
       if (e.button === 1) {
         const midEl = (e.target as Element).closest('[data-role]');
@@ -5084,6 +5221,10 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     };
 
     const handleSvgDoubleClick = (e: React.MouseEvent<SVGSVGElement>) => {
+      if (spacePanRef.current.held) {
+        e.preventDefault();
+        return;
+      }
       const el = (e.target as Element).closest('[data-role]');
       if (!el) return;
       const role = el.getAttribute('data-role');
@@ -5129,6 +5270,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
     const handleContextMenu = (e: React.MouseEvent<SVGSVGElement>) => {
       e.preventDefault();
+      if (spacePanRef.current.held) return;
       if (inlineTarget) closeInline(true);
       const pt = svgPointFromEvent(e);
       const target = (e.target as Element).closest('[data-role]');
@@ -5413,9 +5555,15 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           const p = tg.tiers[ti]?.points[pi];
           if (p) {
             setSelection({ kind: 'point', tierIndex: ti, itemIndex: pi, bandIndex: bandIdx });
+            const playPointContext = () => {
+              const s = Math.max(tg.xmin, p.number - 0.25);
+              const en = Math.min(tg.xmax, p.number + 0.25);
+              if (en > s) onStartPlayback(s, en);
+            };
             if (isEdit) {
               items.push(
                 { label: '编辑标记', icon: 'edit', shortcut: '双击', action: () => openInline({ kind: 'point', tierIndex: ti, itemIndex: pi }) },
+                { label: '带语境播放 (±250 ms)', icon: 'playContext', shortcut: hint('replay-context'), action: playPointContext },
                 { label: '从此点播放', icon: 'play', action: () => { setPlayRange(null); onStartPlayback(p.number, tg.xmax); } },
                 { label: '复制标记文本', icon: 'copy', shortcut: formatKeyCombo('Mod+C'), disabled: p.mark === '', action: () => copyText(p.mark, '标记文本') },
                 { label: '复制时间戳', icon: 'copyTime', action: () => copyText(formatPraatDouble(p.number), '时间戳') },
@@ -5437,6 +5585,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               );
             } else {
               items.push(
+                { label: '带语境播放 (±250 ms)', icon: 'playContext', shortcut: hint('replay-context'), action: playPointContext },
                 { label: '从此点播放', icon: 'play', action: () => { setPlayRange(null); onStartPlayback(p.number, tg.xmax); } },
                 { label: '复制标记文本', icon: 'copy', disabled: p.mark === '', action: () => copyText(p.mark, '标记文本') },
                 { label: '复制时间戳', icon: 'copyTime', action: () => copyText(formatPraatDouble(p.number), '时间戳') },
@@ -6100,6 +6249,26 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                 )
               });
               break;
+            case 'pt-play-ctx':
+              entries.push({
+                id,
+                node: (
+                  <button
+                    type="button"
+                    className="compact"
+                    title="跨越标点带语境试听 (±250 ms)"
+                    onClick={() => {
+                      const s = Math.max(tg.xmin, pt.number - 0.25);
+                      const en = Math.min(tg.xmax, pt.number + 0.25);
+                      if (en > s) onStartPlayback(s, en);
+                    }}
+                  >
+                    <UiIcon name="playContext" size={13} />
+                    <span>±250ms</span>
+                  </button>
+                )
+              });
+              break;
             case 'pt-delete':
               entries.push({
                 id,
@@ -6534,6 +6703,81 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       activeTab?.isBlankPlaceholder && !dismissedBlankTabIds.has(activeTab.id)
     );
 
+    const handleStagePointerDownCapture = (e: React.PointerEvent<HTMLElement>) => {
+      if (!spacePanRef.current.held) return;
+      if ((e.target as HTMLElement | null)?.closest('.modal-backdrop')) return;
+      if (e.button !== 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      const stageEl = stageRef.current;
+      if (!stageEl) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      setCtxMenu(null);
+      if (inlineTargetRef.current) closeInlineRef.current(true);
+
+      spacePanDragCleanupRef.current?.();
+
+      const pan = spacePanRef.current;
+      pan.dragging = true;
+      pan.didDrag = true;
+      suppressNextStageClickRef.current = true;
+      stageEl.classList.add('space-pan-dragging');
+
+      const pointerId = e.pointerId;
+      try {
+        stageEl.setPointerCapture(pointerId);
+      } catch {
+        // ignore if pointer capture is unsupported
+      }
+
+      const startClientX = e.clientX;
+      const startClientY = e.clientY;
+      const startScrollLeft = stageEl.scrollLeft;
+      const startScrollTop = stageEl.scrollTop;
+      const prevBodyCursor = document.body.style.cursor;
+      document.body.style.cursor = 'grabbing';
+
+      let active = true;
+
+      const onMove = (ev: PointerEvent) => {
+        if (!active) return;
+        const z = getElementRectScale(stageEl);
+        stageEl.scrollLeft = startScrollLeft - (ev.clientX - startClientX) / z;
+        stageEl.scrollTop = startScrollTop - (ev.clientY - startClientY) / z;
+      };
+
+      const stopDrag = () => {
+        if (!active) return;
+        active = false;
+        pan.dragging = false;
+        stageEl.classList.remove('space-pan-dragging');
+        document.body.style.cursor = prevBodyCursor;
+        try {
+          if (stageEl.hasPointerCapture(pointerId)) {
+            stageEl.releasePointerCapture(pointerId);
+          }
+        } catch {
+          // ignore
+        }
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', stopDrag);
+        window.removeEventListener('pointercancel', stopDrag);
+        spacePanDragCleanupRef.current = null;
+        window.setTimeout(() => {
+          suppressNextStageClickRef.current = false;
+        }, 0);
+      };
+
+      spacePanDragCleanupRef.current = stopDrag;
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', stopDrag);
+      window.addEventListener('pointercancel', stopDrag);
+    };
+
     return (
       <div
         className="stage-inner-wrap"
@@ -6575,6 +6819,14 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           ref={stageRef}
           id="stage"
           className="stage"
+          onPointerDownCapture={handleStagePointerDownCapture}
+          onClickCapture={(e) => {
+            if (spacePanRef.current.held || suppressNextStageClickRef.current) {
+              e.preventDefault();
+              e.stopPropagation();
+              suppressNextStageClickRef.current = false;
+            }
+          }}
           onClick={(e) => {
             if (e.target === stageRef.current) {
               setCtxMenu(null);

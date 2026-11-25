@@ -1728,6 +1728,19 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
               <button
                 type="button"
                 className="compact"
+                title="前后各扩展 250 ms 跨点试听 (Shift+R / Shift+F4)"
+                onClick={() => {
+                  const start = Math.max(tg.xmin, activePoint.number - 0.25);
+                  const end = Math.min(tg.xmax, activePoint.number + 0.25);
+                  if (end > start) onStartPlayback(start, end);
+                }}
+              >
+                <UiIcon name="playContext" size={13} />
+                <span>语境 ±250ms</span>
+              </button>
+              <button
+                type="button"
+                className="compact"
                 onClick={() => {
                   setPlayRange(null);
                   onStartPlayback(activePoint.number, tg.xmax);

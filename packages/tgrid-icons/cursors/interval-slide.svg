@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <!-- Architectural Pointer + Horizontal Slide Badge (hotspot: 4 3) -->
+  <path
+    d="M4 2.5 L4 16.2 L7.4 12.9 L9.8 17.6 L11.7 16.6 L9.3 11.9 L13.8 11.9 Z"
+    fill="#FFFFFF"
+    stroke="#FFFFFF"
+    stroke-width="2.4"
+    stroke-linejoin="miter"
+    stroke-miterlimit="4"
+  />
+  <path
+    d="M11.6 19.5 L15.2 16.2 L15.2 18.2 L18.8 18.2 L18.8 16.2 L22.4 19.5 L18.8 22.8 L18.8 20.8 L15.2 20.8 L15.2 22.8 Z"
+    fill="#FFFFFF"
+    stroke="#FFFFFF"
+    stroke-width="2"
+    stroke-linejoin="miter"
+  />
+  <path
+    d="M4 2.5 L4 16.2 L7.4 12.9 L9.8 17.6 L11.7 16.6 L9.3 11.9 L13.8 11.9 Z"
+    fill="#141413"
+  />
+  <path
+    d="M12.3 19.5 L15.2 17 L15.2 18.7 L18.8 18.7 L18.8 17 L21.7 19.5 L18.8 22 L18.8 20.3 L15.2 20.3 L15.2 22 Z"
+    fill="#1D4ED8"
+  />
+</svg>

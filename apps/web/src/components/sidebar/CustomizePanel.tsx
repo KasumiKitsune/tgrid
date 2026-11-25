@@ -76,6 +76,7 @@ const FLOATING_ITEM_ICONS: Partial<Record<string, IconName>> = {
   'iv-copy-text': 'copy',
   'pt-time': 'copyTime',
   'pt-edit': 'edit',
+  'pt-play-ctx': 'playContext',
   'pt-play': 'play',
   'pt-delete': 'trash',
   'bnd-time': 'copyTime',

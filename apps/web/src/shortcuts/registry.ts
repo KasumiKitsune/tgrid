@@ -424,6 +424,15 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         rebindable: false
       },
       {
+        id: 'canvas-pan',
+        keys: ['Space + 拖拽'],
+        label: '按住空格拖拽平移画布',
+        description: '任意缩放比例下按住空格拖拽即可 1:1 平移视口；轻按空格仍正常播放 / 暂停',
+        icon: 'navHorizontal',
+        scope: 'all',
+        rebindable: false
+      },
+      {
         id: 'scale-toggle',
         keys: ['V'],
         label: '切换自适应 / 线性比例',
@@ -593,6 +602,13 @@ export const MOUSE_GESTURE_TIPS: MouseGestureTip[] = [
     gesture: 'Mod + 滚轮',
     label: '以指针为锚点缩放画布（50%–200%）',
     description: '与底部状态栏画布缩放同步，不破坏折行排版；按住 Alt + 滚轮可横向拉伸或收窄时间轴宽度',
+    scope: 'all'
+  },
+  {
+    id: 'space-drag-pan',
+    gesture: 'Space + 拖拽',
+    label: '按住空格拖拽平移画布',
+    description: '放大后免滚动条自由平移画布；轻按空格仍正常播放 / 暂停',
     scope: 'all'
   },
   {

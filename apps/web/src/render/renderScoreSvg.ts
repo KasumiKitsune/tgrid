@@ -700,8 +700,17 @@ export function renderInteractiveOverlay(
 
   if (input.showPlayhead && Number.isFinite(input.currentTime)) {
     const t = input.currentTime;
-    for (const band of layout.bands) {
-      const inBand = (band.bandIndex === 0 ? t >= band.startT : t > band.startT) && t <= band.endT;
+    const isRangeEndEdge = Boolean(
+      input.playRange &&
+        input.playRange.end > input.playRange.start &&
+        Math.abs(t - input.playRange.end) < 1e-9
+    );
+    const lastBandIdx = layout.bands.length - 1;
+    for (let bi = 0; bi < layout.bands.length; bi++) {
+      const band = layout.bands[bi];
+      const inBand = isRangeEndEdge
+        ? (bi === 0 ? t >= band.startT : t > band.startT) && t <= band.endT
+        : t >= band.startT && (bi === lastBandIdx ? t <= band.endT : t < band.endT);
       if (!inBand && !(layout.bands.length === 1 && t === band.startT)) continue;
       const lx = band.linearXForTime(t);
       const ex = elasticXInBand(band, t);

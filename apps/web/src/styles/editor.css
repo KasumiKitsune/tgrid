@@ -966,7 +966,7 @@ button.active:not(.sidebar-rail-btn):not(.export-tier-chip),
   cursor: pointer;
 }
 #score-svg.mode-edit [data-role="interval"][data-empty="0"] {
-  cursor: grab;
+  cursor: var(--cursor-interval-slide);
 }
 #score-svg.mode-edit [data-role="interval"][data-empty="1"] {
   cursor: var(--cursor-time-ibeam);
@@ -1072,6 +1072,16 @@ button.active:not(.sidebar-rail-btn):not(.export-tier-chip),
 
 #score-svg [data-role="linear-bar"] {
   cursor: var(--cursor-time-ibeam);
+}
+
+/* Hold Space + Drag Canvas Panning (overrides all interactive child cursors) */
+#stage.space-pan,
+#stage.space-pan * {
+  cursor: grab !important;
+}
+#stage.space-pan-dragging,
+#stage.space-pan-dragging * {
+  cursor: grabbing !important;
 }
 
 /* Tier 3: Docked Zero-Overlap Reading Legend (Bottom) & Hover Cross-Highlighting */

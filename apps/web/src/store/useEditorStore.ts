@@ -55,6 +55,7 @@ export const FLOATING_BAR_CATALOG: Record<FloatingBarTarget, FloatingBarItemMeta
   point: [
     { id: 'pt-time', label: '标点时间框（可拖拽调值）', previewLabel: '时间', defaultVisible: true },
     { id: 'pt-edit', label: '改字', previewLabel: '改字', defaultVisible: true },
+    { id: 'pt-play-ctx', label: '语境播放 (±250ms)', previewLabel: '±250ms', defaultVisible: true },
     { id: 'pt-play', label: '从此处播放', previewLabel: '播放', defaultVisible: true },
     { id: 'pt-delete', label: '删除标点', previewLabel: '删除', defaultVisible: true }
   ],
@@ -119,6 +120,7 @@ export const FLOATING_BAR_PRESETS: Record<FloatingBarPresetKey, FloatingBarConfi
     point: buildFloatingBarSectionFromVisible('point', [
       'pt-time',
       'pt-edit',
+      'pt-play-ctx',
       'pt-play',
       'pt-delete'
     ]),
@@ -146,13 +148,13 @@ export const FLOATING_BAR_PRESETS: Record<FloatingBarPresetKey, FloatingBarConfi
       'iv-play',
       'iv-zoom'
     ]),
-    point: buildFloatingBarSectionFromVisible('point', ['pt-edit', 'pt-play', 'pt-delete']),
+    point: buildFloatingBarSectionFromVisible('point', ['pt-edit', 'pt-play-ctx', 'pt-play', 'pt-delete']),
     boundary: buildFloatingBarSectionFromVisible('boundary', ['bnd-audition', 'bnd-delete']),
     tier: buildFloatingBarSectionFromVisible('tier', ['tier-name', 'tier-move', 'tier-delete'])
   },
   minimal: {
     interval: buildFloatingBarSectionFromVisible('interval', ['iv-edit', 'iv-split', 'iv-play']),
-    point: buildFloatingBarSectionFromVisible('point', ['pt-edit', 'pt-play']),
+    point: buildFloatingBarSectionFromVisible('point', ['pt-edit', 'pt-play-ctx', 'pt-play']),
     boundary: buildFloatingBarSectionFromVisible('boundary', ['bnd-audition', 'bnd-delete']),
     tier: buildFloatingBarSectionFromVisible('tier', ['tier-name', 'tier-delete'])
   }
