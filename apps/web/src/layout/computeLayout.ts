@@ -179,6 +179,8 @@ export interface ComputeLayoutOptions {
   wrapMode: 'auto' | 'single';
   targetWidth: number;
   hasAudio: boolean;
+  audioBuffer?: AudioBuffer | null;
+  audioOffset?: number;
   showSpectrogram?: boolean;
   tierOrder?: 'raw' | 'spec';
   scaleMode?: 'elastic' | 'linear';
@@ -211,11 +213,76 @@ export interface ComputeLayoutOptions {
   } | null;
 }
 
+const audioGlobalPeakCache = new WeakMap<AudioBuffer, number>();
+
+function getAudioGlobalPeak(buffer: AudioBuffer): number {
+  const cached = audioGlobalPeakCache.get(buffer);
+  if (cached !== undefined) return cached;
+  const ch = buffer.getChannelData(0);
+  const len = ch.length;
+  const stride = Math.max(1, Math.floor(len / 8000));
+  let peak = 0;
+  for (let i = 0; i < len; i += stride) {
+    const v = Math.abs(ch[i]);
+    if (v > peak) peak = v;
+  }
+  audioGlobalPeakCache.set(buffer, peak);
+  return peak;
+}
+
+/**
+ * Fast O(1)-capped acoustic energy check: returns true if the audio slice [tStart, tEnd]
+ * contains audible speech/sound energy rather than genuine silence.
+ */
+function hasAudibleEnergy(
+  buffer: AudioBuffer | null | undefined,
+  audioOffset: number,
+  tStart: number,
+  tEnd: number
+): boolean {
+  if (!buffer) return false;
+  const sr = buffer.sampleRate;
+  if (!(sr > 0) || buffer.length === 0) return false;
+  const globalPeak = getAudioGlobalPeak(buffer);
+  if (globalPeak < 1e-4) return false;
+
+  const edgeTrim = Math.min(0.035, Math.max(0, (tEnd - tStart) * 0.1));
+  const s0 = Math.max(0, Math.floor((tStart + edgeTrim - audioOffset) * sr));
+  const s1 = Math.min(buffer.length, Math.ceil((tEnd - edgeTrim - audioOffset) * sr));
+  if (s1 <= s0) return false;
+
+  const ch = buffer.getChannelData(0);
+  const winSamples = Math.max(64, Math.round(sr * 0.025));
+  const totalSamples = s1 - s0;
+  const numWindows = Math.max(1, Math.floor(totalSamples / winSamples));
+  const winStep = Math.max(1, Math.floor(numWindows / 120));
+  const rmsThreshold = Math.max(0.008, globalPeak * 0.055);
+
+  for (let w = 0; w < numWindows; w += winStep) {
+    const ws = s0 + w * winSamples;
+    const we = Math.min(s1, ws + winSamples);
+    const sampleStep = Math.max(1, Math.floor((we - ws) / 64));
+    let sumSq = 0;
+    let count = 0;
+    for (let i = ws; i < we; i += sampleStep) {
+      const v = ch[i];
+      sumSq += v * v;
+      count++;
+    }
+    if (count > 0 && Math.sqrt(sumSq / count) >= rmsThreshold) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): ScoreLayout {
   const {
     wrapMode,
     targetWidth,
     hasAudio,
+    audioBuffer = null,
+    audioOffset = 0,
     showSpectrogram = true,
     tierOrder = 'raw',
     scaleMode = 'elastic',
@@ -543,42 +610,62 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     }
   } else {
     const minSliverW = isTinyView ? 3 : 4;
+    const colHasActiveText = new Array<boolean>(numCols).fill(false);
+    const colExactAtom = new Array<boolean>(numCols).fill(false);
+    const colInteriorPt = new Array<boolean>(numCols).fill(false);
+    let hasAnyActiveText = false;
+
     for (let i = 0; i < numCols; i++) {
       const a = spineT[i];
       const b = spineT[i + 1];
-      const dt = b - a;
-      let hasActiveText = false;
-      let isExactSingleTierAtom = false;
-      let hasInteriorPoint = false;
       for (let ti = 0; ti < tg.tiers.length; ti++) {
         if (!isTierVisible(ti)) continue;
         const tm = tierMeta[ti];
         if (tm.kind === 'intervalTier') {
           for (const iv of tm.normalIvs) {
             if (Math.abs(iv.xmin - a) <= 1e-12 && Math.abs(iv.xmax - b) <= 1e-12) {
-              isExactSingleTierAtom = true;
+              colExactAtom[i] = true;
             }
-            if (!hasActiveText && iv.xmin <= a && iv.xmax >= b && iv.text !== '') {
-              hasActiveText = true;
+            if (!colHasActiveText[i] && iv.xmin <= a && iv.xmax >= b && iv.text !== '') {
+              colHasActiveText[i] = true;
             }
           }
         } else {
           for (const pt of tm.finitePts) {
             if (pt.number >= b) break;
             if (pt.number > a) {
-              hasActiveText = true;
-              if (pt.mark !== '') hasInteriorPoint = true;
+              colHasActiveText[i] = true;
+              if (pt.mark !== '') colInteriorPt[i] = true;
               break;
             }
           }
         }
       }
-      if (!hasActiveText && dt >= SILENCE_THRESHOLD) {
+      if (colHasActiveText[i]) hasAnyActiveText = true;
+    }
+
+    for (let i = 0; i < numCols; i++) {
+      const a = spineT[i];
+      const b = spineT[i + 1];
+      const dt = b - a;
+      const hasActiveText = colHasActiveText[i];
+      const isExactSingleTierAtom = colExactAtom[i];
+      const hasInteriorPoint = colInteriorPt[i];
+
+      // Only fold a pause when the document has actual annotations AND (if audio is loaded)
+      // the segment has no audible speech energy — never fold unannotated audio or blank tabs.
+      const shouldCollapse =
+        hasAnyActiveText &&
+        !hasActiveText &&
+        dt >= SILENCE_THRESHOLD &&
+        !(hasAudio && audioBuffer && hasAudibleEnergy(audioBuffer, audioOffset, a, b));
+
+      if (shouldCollapse) {
         colCollapsed[i] = true;
         dx[i] = SILENCE_COLLAPSE_W;
         colFloor[i] = SILENCE_COLLAPSE_W;
       } else {
-        // Short unfolded empty pauses (< 0.5s) use linear-friendly weight so top/bottom stay cohesive;
+        // Short unfolded empty pauses (< 0.5s) or unannotated audio use linear-friendly weight;
         // labeled segments use gentler dt^0.72 curve (vs 0.55) to suppress baseline drift.
         const naturalW = !hasActiveText
           ? Math.round(8 + 150 * Math.max(dt, 0.001))
@@ -904,7 +991,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     ) {
       const rawTargetActive = maxBandContentW - collapsedSum;
       const targetActive =
-        wrapMode === 'single'
+        wrapMode === 'single' || (hasAudio && activeColCount <= 2)
           ? rawTargetActive
           : Math.min(rawTargetActive, 220 + activeColCount * 145);
       if (activeSum > 0 && targetActive > activeSum) {

@@ -435,6 +435,8 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
     wrapMode,
     targetWidth,
     hasAudio: input.hasAudio,
+    audioBuffer: input.audioBuffer,
+    audioOffset: input.audioOffset,
     showSpectrogram: specAvailable,
     tierOrder: input.tierOrder,
     scaleMode: effectiveScaleMode,

@@ -29,11 +29,11 @@
 
 ## 开放规范与开发者参考
 
-如果你正在开发语音标注工具、语料库检索平台或语音学教学网站，欢迎直接参考并复用本仓库附带的两份独立技术规范（不绑定任何框架或界面实现）：
+如果你正在开发语音标注工具、语料库检索平台或语音学教学网站，欢迎直接参考并复用本仓库附带的独立技术规范（不绑定任何框架或界面实现）：
 
 <div align="center">
   <p>
-    <a href="docs/TEXTGRID_VISUALIZATION_AND_EDITOR_SPEC.md" title="阅读 TextGrid 可视化与交互编辑规范"><img src="docs/pictures/btn-spec-viz.svg" alt="可视化与交互编辑规范" height="42" /></a>
+    <a href="docs/TEXTGRID_VISUALIZATION_SPEC_LITE.md" title="阅读双尺折行标注图核心规范（精简版）"><img src="docs/pictures/btn-spec-viz.svg" alt="双尺折行标注图规范" height="42" /></a>
     &nbsp;&nbsp;
     <a href="docs/PRAAT_TEXTGRID_AND_COLLECTION_SPEC.md" title="阅读 Praat TextGrid 与 Collection 文件格式规范"><img src="docs/pictures/btn-spec-format.svg" alt="Praat 文件格式规范" height="42" /></a>
   </p>
@@ -41,7 +41,8 @@
 
 | 规范文档 | 核心内容 |
 | :--- | :--- |
-| **[TextGrid 可视化与交互编辑规范](docs/TEXTGRID_VISUALIZATION_AND_EDITOR_SPEC.md)** | 说明「上方 1:1 真实时间声学视图 → 时间映射斜线区 → 下方按字宽舒展标注层」的双轨排版设计、长静默折叠、多行均衡折行与跨行续接、配色与符号语义、结构异常诊断及交互与导出规范，可按任意技术栈独立实现。 |
+| **[双尺折行标注图：核心设计规范（精简版）](docs/TEXTGRID_VISUALIZATION_SPEC_LITE.md)** | 5 分钟看懂「上方 1:1 真实时间声学视图 → 对齐连线区 → 下方按字宽舒展标注层」的核心规则与视觉底线，同时为其他开发者保留充足的实现自由度。 |
+| **[双尺折行标注图：完整可视化与交互编辑规范](docs/TEXTGRID_VISUALIZATION_AND_EDITOR_SPEC.md)** | 完整工程蓝图，涵盖就近借宽算法、多行均衡折行、声学计算基准、音频硬件时钟同步、三层独立缩放、交互细节与逐项核验清单。 |
 | **[Praat `.TextGrid` 与 `.Collection` 文件格式规范](docs/PRAAT_TEXTGRID_AND_COLLECTION_SPEC.md)** | 对照 Praat 源码核验的完整读写参考，涵盖标准长文本、短文本、二进制、按时间排序文本、独立单层及 `.Collection` 的解析规则、边界约束与测试用例，便于编写兼容 Praat 的读写库。 |
 
 本项目全部代码（包括核心读写库、声学分析模块与图标库）均以 **MIT 协议**开源，欢迎直接复用或二次开发。
@@ -64,6 +65,7 @@ tgrid/
 │   └── desktop/              # Tauri v2 桌面端外壳（Windows NSIS / macOS DMG）
 ├── docs/
 │   ├── PRAAT_TEXTGRID_AND_COLLECTION_SPEC.md
+│   ├── TEXTGRID_VISUALIZATION_SPEC_LITE.md
 │   ├── TEXTGRID_VISUALIZATION_AND_EDITOR_SPEC.md
 │   └── pictures/             # README 下载与文档入口矢量按钮
 └── .github/workflows/
@@ -99,7 +101,7 @@ npm run build:desktop-exe
 
 - **Desktop Installers (Windows x64 / ARM64 & macOS Apple Silicon / Intel)**: [GitHub Releases](https://github.com/KasumiKitsune/tgrid/releases/latest)
 - **Try in Browser**: [kasumikitsune.github.io/tgrid](https://kasumikitsune.github.io/tgrid/) *(runs locally in your browser; files are never uploaded)*
-- **Open Specifications**: Platform-agnostic [TextGrid Visualization & Editor Spec](docs/TEXTGRID_VISUALIZATION_AND_EDITOR_SPEC.md) and [Praat TextGrid & Collection Format Spec](docs/PRAAT_TEXTGRID_AND_COLLECTION_SPEC.md)
+- **Open Specifications**: Platform-agnostic Dual-Scale Wrapped Score specs ([Lite Core Spec](docs/TEXTGRID_VISUALIZATION_SPEC_LITE.md) / [Full Engineering Spec](docs/TEXTGRID_VISUALIZATION_AND_EDITOR_SPEC.md)) and [Praat TextGrid & Collection Format Spec](docs/PRAAT_TEXTGRID_AND_COLLECTION_SPEC.md)
 
 ## License
 
