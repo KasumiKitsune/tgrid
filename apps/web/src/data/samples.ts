@@ -128,7 +128,7 @@ export function createSample(id: BuiltinSample['id']): BuiltinSample {
       id: 'poem',
       label: '普通话与音标示例',
       tg: {
-        name: '春眠示例.TextGrid',
+        name: '春晓示例.TextGrid',
         xmin: 0,
         xmax: 3.2,
         tiers: [

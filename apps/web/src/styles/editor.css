@@ -3385,6 +3385,9 @@ button.active .export-btn-sub {
   overflow: hidden;
   justify-content: flex-start;
   padding: 0 7px;
+}
+
+.sb-action-grid button:not(.primary):not(.active) {
   background: var(--bg-sheet);
 }
 
