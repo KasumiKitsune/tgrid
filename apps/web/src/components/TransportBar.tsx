@@ -126,24 +126,7 @@ export const TransportBar: React.FC<TransportBarProps> = ({
           title="播放时自动跟随播放头滚动"
           onClick={() => setFollowPlayhead(!followPlayhead)}
         >
-          <svg
-            className="ui-icon"
-            width="13"
-            height="13"
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path d="M8 2.4 V13.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-            <path d="M2.5 8 H5.5 M10.5 8 H13.5" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
-            <path
-              d="M11.6 6.2 L13.6 8 L11.6 9.8"
-              stroke="currentColor"
-              strokeWidth="1.35"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <UiIcon name="followPlayhead" size={13} />
           <span>跟随</span>
         </button>
 

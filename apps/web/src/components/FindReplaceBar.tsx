@@ -536,7 +536,8 @@ export const FindReplaceBar: React.FC = () => {
               title={isReadOnly ? '请先切换至编辑模式' : '替换当前匹配项 (Enter)'}
               onClick={handleReplaceOne}
             >
-              替换
+              <UiIcon name="replace" size={12} />
+              <span>替换</span>
             </button>
             <button
               type="button"
@@ -647,7 +648,7 @@ export const FindReplaceBar: React.FC = () => {
                     <span className="find-replace-tier-option-text">{opt.label}</span>
                     {isSelected && (
                       <span className="find-replace-tier-check" aria-hidden="true">
-                        ✓
+                        <UiIcon name="check" size={11} />
                       </span>
                     )}
                   </button>

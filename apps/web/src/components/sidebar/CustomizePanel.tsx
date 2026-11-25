@@ -17,7 +17,7 @@ import {
   type FloatingBarPresetKey,
   type FloatingBarTarget
 } from '../../store/useEditorStore';
-import { UiIcon } from '../Icons';
+import { UiIcon, type IconName } from '../Icons';
 
 const DragGripIcon: React.FC<{ size?: number }> = ({ size = 12 }) => (
   <svg width={size} height={size} viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
@@ -60,6 +60,33 @@ const FIELD_ITEM_IDS = new Set([
   'tier-name',
   'tier-bounds'
 ]);
+
+const FLOATING_ITEM_ICONS: Partial<Record<string, IconName>> = {
+  'iv-times': 'copyTime',
+  'iv-dur': 'copyTime',
+  'iv-edit': 'edit',
+  'iv-clear': 'clear',
+  'iv-split': 'split',
+  'iv-split-equal': 'splitEqual',
+  'iv-merge-left': 'mergeLeft',
+  'iv-merge-right': 'mergeRight',
+  'iv-play': 'play',
+  'iv-play-ctx': 'playContext',
+  'iv-zoom': 'zoomIn',
+  'iv-copy-text': 'copy',
+  'pt-time': 'copyTime',
+  'pt-edit': 'edit',
+  'pt-play': 'play',
+  'pt-delete': 'trash',
+  'bnd-time': 'copyTime',
+  'bnd-zero': 'zeroCross',
+  'bnd-audition': 'playContext',
+  'bnd-delete': 'delBoundary',
+  'tier-name': 'edit',
+  'tier-bounds': 'copyTime',
+  'tier-move': 'navVertical',
+  'tier-delete': 'trash'
+};
 
 interface PendingConflict {
   actionId: string;
@@ -391,7 +418,8 @@ export const CustomizePanel: React.FC = () => {
           className={subtab === 'floating' ? 'active' : ''}
           onClick={() => setSubtab('floating')}
         >
-          悬浮工具栏
+          <UiIcon name="customize" size={12} />
+          <span>悬浮工具栏</span>
         </button>
         <button
           type="button"
@@ -400,7 +428,8 @@ export const CustomizePanel: React.FC = () => {
           className={subtab === 'shortcuts' ? 'active' : ''}
           onClick={() => setSubtab('shortcuts')}
         >
-          快捷键{customizedCount > 0 ? ` (${customizedCount})` : ''}
+          <UiIcon name="shortcuts" size={12} />
+          <span>快捷键{customizedCount > 0 ? ` (${customizedCount})` : ''}</span>
         </button>
       </div>
 
@@ -447,7 +476,8 @@ export const CustomizePanel: React.FC = () => {
                   style={{ height: 21, padding: '0 7px', fontSize: 10.5 }}
                   onClick={() => resetFloatingBarConfig()}
                 >
-                  恢复默认
+                  <UiIcon name="reset" size={11} />
+                  <span>恢复默认</span>
                 </button>
               </div>
               <div className="cust-preset-row" role="group" aria-label="悬浮工具栏预设">
@@ -577,6 +607,9 @@ export const CustomizePanel: React.FC = () => {
                           aria-label={`显示 ${item.label}`}
                           onChange={() => toggleFloatingBarItem(target, item.id)}
                         />
+                        {FLOATING_ITEM_ICONS[item.id] && (
+                          <UiIcon name={FLOATING_ITEM_ICONS[item.id]!} size={12} />
+                        )}
                         <span className="cust-item-label">{item.label}</span>
                       </label>
                     </div>
@@ -711,7 +744,8 @@ export const CustomizePanel: React.FC = () => {
                                     if (conflictHere) setPendingConflict(null);
                                   }}
                                 >
-                                  重置
+                                  <UiIcon name="reset" size={10} />
+                                  <span>重置</span>
                                 </button>
                               )}
                               <button
@@ -819,7 +853,8 @@ export const CustomizePanel: React.FC = () => {
                 setPendingConflict(null);
               }}
             >
-              恢复全部默认快捷键
+              <UiIcon name="reset" size={12} />
+              <span>恢复全部默认快捷键</span>
             </button>
           </div>
         </>

@@ -15,33 +15,6 @@ const DragGripIcon: React.FC<{ size?: number }> = ({ size = 12 }) => (
   </svg>
 );
 
-const EyeIcon: React.FC<{ hidden?: boolean; size?: number }> = ({ hidden = false, size = 13 }) => (
-  <svg
-    className="ui-icon"
-    width={size}
-    height={size}
-    viewBox="0 0 16 16"
-    fill="none"
-    aria-hidden="true"
-  >
-    <path
-      d="M1.8 8 C3.4 4.9 5.5 3.6 8 3.6 C10.5 3.6 12.6 4.9 14.2 8 C12.6 11.1 10.5 12.4 8 12.4 C5.5 12.4 3.4 11.1 1.8 8 Z"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinejoin="round"
-    />
-    <circle cx="8" cy="8" r="2.1" stroke="currentColor" strokeWidth="1.3" />
-    {hidden && (
-      <path
-        d="M2.6 13.4 L13.4 2.6"
-        stroke="currentColor"
-        strokeWidth="1.45"
-        strokeLinecap="round"
-      />
-    )}
-  </svg>
-);
-
 export const TiersPanel: React.FC = () => {
   const tg = useEditorStore((s) => s.tg);
   const mode = useEditorStore((s) => s.mode);
@@ -285,7 +258,7 @@ export const TiersPanel: React.FC = () => {
               onClick={showAllTiers}
               title="恢复显示全部已隐藏层级"
             >
-              <EyeIcon size={13} />
+              <UiIcon name="showTier" size={13} />
               <span>显示全部 ({hiddenTierIndices.length} 已隐藏)</span>
             </button>
           </div>
@@ -363,7 +336,7 @@ export const TiersPanel: React.FC = () => {
                         }
                       }}
                     >
-                      <EyeIcon hidden={isHidden} size={13} />
+                      <UiIcon name={isHidden ? 'hideTier' : 'showTier'} size={13} />
                     </button>
 
                     <span className="sb-tier-num">{idx + 1}</span>
@@ -475,7 +448,8 @@ export const TiersPanel: React.FC = () => {
                           title="新建区间层并继承当前层全部边界（清空文本）"
                           onClick={() => duplicateTier(idx, { copyText: false })}
                         >
-                          仅复制边界
+                          <UiIcon name="duplicateTier" size={11} />
+                          <span>仅复制边界</span>
                         </button>
                       )}
                       <button
@@ -485,7 +459,8 @@ export const TiersPanel: React.FC = () => {
                         title="复制整层（含边界与全部标注文本）"
                         onClick={() => duplicateTier(idx, { copyText: true })}
                       >
-                        复制层
+                        <UiIcon name="duplicateTier" size={11} />
+                        <span>复制层</span>
                       </button>
                       {isInterval && (
                         <button
@@ -495,7 +470,8 @@ export const TiersPanel: React.FC = () => {
                           title="按当前层所有非空区间中点派生新点层"
                           onClick={() => derivePointTierFromIntervals(idx, 'mid')}
                         >
-                          派生点层
+                          <UiIcon name="derivePointTier" size={11} />
+                          <span>派生点层</span>
                         </button>
                       )}
                     </div>

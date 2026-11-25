@@ -131,7 +131,8 @@ export const UnsavedDialog: React.FC<UnsavedDialogProps> = ({
               disabled={busy}
               onClick={onSave}
             >
-              {busy ? '正在保存…' : '保存为 TextGrid'}
+              <UiIcon name="save" size={13} />
+              <span>{busy ? '正在保存…' : '保存为 TextGrid'}</span>
             </button>
           </div>
         </div>

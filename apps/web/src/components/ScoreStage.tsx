@@ -5746,7 +5746,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                     title="等分为 2 段"
                     onClick={() => splitIntervalEqualN(selection.tierIndex, selection.itemIndex, 2)}
                   >
-                    <UiIcon name="split" size={13} />
+                    <UiIcon name="splitEqual" size={13} />
                     <span>等分</span>
                   </button>
                 )
@@ -5818,7 +5818,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                       if (en > s) onStartPlayback(s, en);
                     }}
                   >
-                    <UiIcon name="play" size={13} />
+                    <UiIcon name="playContext" size={13} />
                     <span>±250ms</span>
                   </button>
                 )
@@ -6055,7 +6055,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                       if (en > s) onStartPlayback(s, en);
                     }}
                   >
-                    <UiIcon name="play" size={13} />
+                    <UiIcon name="playContext" size={13} />
                     <span>试听 ±200ms</span>
                   </button>
                 )

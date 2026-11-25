@@ -161,7 +161,8 @@ export const StatusBar: React.FC = () => {
               title="点击恢复显示所有隐藏层级"
               onClick={showAllTiers}
             >
-              已隐藏 {hiddenTierIndices.length} 层 · 恢复
+              <UiIcon name="showTier" size={11} />
+              <span>已隐藏 {hiddenTierIndices.length} 层 · 恢复</span>
             </button>
           </>
         )}
@@ -193,7 +194,8 @@ export const StatusBar: React.FC = () => {
           }
           onClick={cycleIpaMode}
         >
-          {IPA_LABELS[ipaMode]}
+          <UiIcon name="ipaMode" size={11} />
+          <span>{IPA_LABELS[ipaMode]}</span>
         </button>
 
         <div className="status-zoom-group" role="group" aria-label="界面缩放">
@@ -230,7 +232,7 @@ export const StatusBar: React.FC = () => {
         <button
           type="button"
           className="status-help-btn"
-          style={{ width: 'auto', padding: '0 6px', gap: 3 }}
+          style={{ width: 'auto', padding: '0 6px', gap: 4 }}
           title={
             shortcutsHint
               ? `打开快捷键与交互速查表 (${shortcutsHint})`
@@ -238,7 +240,8 @@ export const StatusBar: React.FC = () => {
           }
           onClick={() => setShortcutsOpen(true)}
         >
-          {shortcutsHint ? `${shortcutsHint} 快捷键` : '快捷键'}
+          <UiIcon name="shortcuts" size={11} />
+          <span>{shortcutsHint ? `${shortcutsHint} 快捷键` : '快捷键'}</span>
         </button>
       </div>
     </footer>

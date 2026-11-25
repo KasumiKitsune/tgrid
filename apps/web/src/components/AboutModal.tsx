@@ -351,7 +351,8 @@ export const AboutModal: React.FC = () => {
                     disabled={updateState.status === 'checking'}
                     onClick={() => void handleCheckUpdate()}
                   >
-                    {updateState.status === 'checking' ? '检查中…' : '检查更新'}
+                    <UiIcon name="reset" size={12} />
+                    <span>{updateState.status === 'checking' ? '检查中…' : '检查更新'}</span>
                   </button>
                 </div>
 

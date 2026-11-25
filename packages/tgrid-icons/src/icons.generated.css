@@ -681,6 +681,212 @@
   transform: translateY(0.35px);
 }
 
+/* Icon: exportPng */
+.tgi.tgi-exportPng .epng-root {
+  transform-origin: 8px 8px;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-exportPng .epng-frame {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.45;
+  stroke-linejoin: round;
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-exportPng .epng-tint {
+  fill: var(--tgi-accent-bg-0, rgba(37, 99, 235, 0));
+  transition: fill 0.22s ease;
+}
+.tgi.tgi-exportPng .epng-peaks {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-exportPng .epng-sun {
+  fill: var(--tgi-stroke, #374151);
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 0.6;
+  transform-origin: 5.5px 5.7px;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+        fill 0.2s ease,
+        stroke 0.2s ease;
+}
+.tgi.tgi-exportPng:hover .epng-frame,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-exportPng .epng-frame {
+  stroke: var(--tgi-stroke-hover, #111827);
+}
+.tgi.tgi-exportPng:hover .epng-tint,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-exportPng .epng-tint {
+  fill: var(--tgi-accent-bg, rgba(37, 99, 235, 0.14));
+}
+.tgi.tgi-exportPng:hover .epng-peaks,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-exportPng .epng-peaks {
+  stroke: var(--tgi-accent, #2563eb);
+}
+.tgi.tgi-exportPng:hover .epng-sun,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-exportPng .epng-sun {
+  fill: var(--tgi-accent, #2563eb);
+  stroke: var(--tgi-accent, #2563eb);
+  transform: translate(0.2px, -0.4px) scale(1.08);
+}
+
+/* Icon: exportSvg */
+.tgi.tgi-exportSvg .esvg-root {
+  transform-origin: 8px 8px;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-exportSvg .esvg-arch {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  transform-origin: 8px 11.3px;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-exportSvg .esvg-end-node {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.35;
+  stroke-linejoin: round;
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-exportSvg .esvg-handles {
+  transform-origin: 8px 4.5px;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-exportSvg .esvg-arm {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-exportSvg .esvg-knob {
+  fill: var(--tgi-stroke, #374151);
+  transition: fill 0.2s ease;
+}
+.tgi.tgi-exportSvg .esvg-top-node {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+  fill: var(--tgi-accent-bg-0, rgba(37, 99, 235, 0));
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+        stroke 0.2s ease,
+        fill 0.2s ease;
+}
+.tgi.tgi-exportSvg:hover .esvg-arch,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-exportSvg .esvg-arch {
+  stroke: var(--tgi-stroke-hover, #111827);
+  transform: scaleY(1.03);
+}
+.tgi.tgi-exportSvg:hover .esvg-end-node,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-exportSvg .esvg-end-node {
+  stroke: var(--tgi-stroke-hover, #111827);
+}
+.tgi.tgi-exportSvg:hover .esvg-handles,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-exportSvg .esvg-handles {
+  transform: translateY(-0.2px) scaleX(1.08);
+}
+.tgi.tgi-exportSvg:hover .esvg-arm,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-exportSvg .esvg-arm {
+  stroke: var(--tgi-accent, #2563eb);
+}
+.tgi.tgi-exportSvg:hover .esvg-knob,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-exportSvg .esvg-knob {
+  fill: var(--tgi-accent, #2563eb);
+}
+.tgi.tgi-exportSvg:hover .esvg-top-node,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-exportSvg .esvg-top-node {
+  stroke: var(--tgi-accent, #2563eb);
+  fill: var(--tgi-accent-bg, rgba(37, 99, 235, 0.15));
+  transform: translateY(-0.2px);
+}
+
+/* Icon: externalLink */
+.tgi.tgi-externalLink .ext-root {
+  transform-origin: 8px 8px;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-externalLink .ext-box {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-externalLink .ext-arrow {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-externalLink:hover .ext-box,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-externalLink .ext-box {
+  stroke: var(--tgi-stroke-hover, #111827);
+}
+.tgi.tgi-externalLink:hover .ext-arrow,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-externalLink .ext-arrow {
+  stroke: var(--tgi-accent, #2563eb);
+  transform: translate(0.85px, -0.85px);
+}
+
+/* Icon: fileCollection */
+.tgi.tgi-fileCollection .fc-root {
+  transform-origin: 8px 8px;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-fileCollection .fc-file {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-fileCollection .fc-wave {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  transform-origin: 7.8px 5.6px;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-fileCollection .fc-tier {
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-fileCollection .fc-tier-box {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.35;
+  stroke-linejoin: round;
+  fill: var(--tgi-accent-bg-0, rgba(37, 99, 235, 0));
+  transition: stroke 0.2s ease, fill 0.2s ease;
+}
+.tgi.tgi-fileCollection .fc-tier-div {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-fileCollection:hover .fc-file,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-fileCollection .fc-file {
+  stroke: var(--tgi-stroke-hover, #111827);
+}
+.tgi.tgi-fileCollection:hover .fc-wave,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-fileCollection .fc-wave {
+  stroke: var(--tgi-accent, #2563eb);
+  transform: translateY(-0.2px) scaleY(1.08);
+}
+.tgi.tgi-fileCollection:hover .fc-tier,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-fileCollection .fc-tier {
+  transform: translateY(0.2px);
+}
+.tgi.tgi-fileCollection:hover .fc-tier-box,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-fileCollection .fc-tier-box {
+  stroke: var(--tgi-stroke-hover, #111827);
+  fill: var(--tgi-accent-bg, rgba(37, 99, 235, 0.13));
+}
+.tgi.tgi-fileCollection:hover .fc-tier-div,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-fileCollection .fc-tier-div {
+  stroke: var(--tgi-accent, #2563eb);
+}
+
 /* Icon: floatWin */
 .tgi.tgi-floatWin .fw-root {
   transform-origin: 8px 8px;
@@ -743,6 +949,53 @@
   transform: skewX(-10deg) scaleY(0.84);
 }
 
+/* Icon: followPlayhead */
+.tgi.tgi-followPlayhead .fp-root {
+  transform-origin: 8px 8px;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-followPlayhead .fp-head {
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-followPlayhead .fp-cap {
+  fill: var(--tgi-stroke, #374151);
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 0.75;
+  stroke-linejoin: round;
+  transition: fill 0.2s ease, stroke 0.2s ease;
+}
+.tgi.tgi-followPlayhead .fp-stem {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-followPlayhead .fp-track {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-followPlayhead:hover .fp-head,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-followPlayhead .fp-head {
+  transform: translateX(0.85px);
+}
+.tgi.tgi-followPlayhead:hover .fp-cap,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-followPlayhead .fp-cap {
+  fill: var(--tgi-accent, #2563eb);
+  stroke: var(--tgi-accent, #2563eb);
+}
+.tgi.tgi-followPlayhead:hover .fp-stem,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-followPlayhead .fp-stem {
+  stroke: var(--tgi-accent, #2563eb);
+}
+.tgi.tgi-followPlayhead:hover .fp-track,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-followPlayhead .fp-track {
+  stroke: var(--tgi-stroke-hover, #111827);
+  transform: translateX(0.85px);
+}
+
 /* Icon: gear */
 .tgi.tgi-gear .gear-press {
   transform-origin: 8px 8px;
@@ -800,6 +1053,44 @@
 .tgi.tgi-hideTier:hover .tg-slash,
 :where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-hideTier .tg-slash {
   transform: scale(1.05);
+}
+
+/* Icon: info */
+.tgi.tgi-info .inf-root {
+  transform-origin: 8px 8px;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-info .inf-ring {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.45;
+  fill: var(--tgi-accent-bg-0, rgba(37, 99, 235, 0));
+  transition: stroke 0.2s ease, fill 0.2s ease;
+}
+.tgi.tgi-info .inf-stem {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-info .inf-dot {
+  fill: var(--tgi-stroke, #374151);
+  transform-origin: 8px 5.05px;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+        fill 0.2s ease;
+}
+.tgi.tgi-info:hover .inf-ring,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-info .inf-ring {
+  stroke: var(--tgi-stroke-hover, #111827);
+  fill: var(--tgi-accent-bg, rgba(37, 99, 235, 0.09));
+}
+.tgi.tgi-info:hover .inf-stem,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-info .inf-stem {
+  stroke: var(--tgi-accent, #2563eb);
+}
+.tgi.tgi-info:hover .inf-dot,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-info .inf-dot {
+  fill: var(--tgi-accent, #2563eb);
+  transform: translateY(-0.4px) scale(1.12);
 }
 
 /* Icon: inspector */
@@ -1729,6 +2020,62 @@
   stroke: var(--tgi-accent, #2563eb);
 }
 
+/* Icon: readMode */
+.tgi.tgi-readMode .rm-root {
+  transform-origin: 8px 8px;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-readMode .rm-book {
+  transform-origin: 8px 8.8px;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-readMode .rm-page-l,
+.tgi.tgi-readMode .rm-page-r {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 0.2s ease, fill 0.2s ease;
+}
+.tgi.tgi-readMode .rm-page-r {
+  fill: var(--tgi-accent-bg-0, rgba(37, 99, 235, 0));
+}
+.tgi.tgi-readMode .rm-spine {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-readMode .rm-mark {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  transform-origin: 11px 3.12px;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-readMode:hover .rm-book,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-readMode .rm-book {
+  transform: scaleX(1.05) translateY(-0.25px);
+}
+.tgi.tgi-readMode:hover .rm-page-l,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-readMode .rm-page-l {
+  stroke: var(--tgi-stroke-hover, #111827);
+}
+.tgi.tgi-readMode:hover .rm-page-r,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-readMode .rm-page-r {
+  stroke: var(--tgi-stroke-hover, #111827);
+  fill: var(--tgi-accent-bg, rgba(37, 99, 235, 0.11));
+}
+.tgi.tgi-readMode:hover .rm-spine,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-readMode .rm-spine {
+  stroke: var(--tgi-accent, #2563eb);
+}
+.tgi.tgi-readMode:hover .rm-mark,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-readMode .rm-mark {
+  stroke: var(--tgi-accent, #2563eb);
+  transform: scaleY(1.25);
+}
+
 /* Icon: redo */
 .tgi.tgi-redo .redo-press {
   transform-origin: 8px 8px;
@@ -1826,6 +2173,93 @@
 .tgi.tgi-replace:hover .tg-rep-bl,
 :where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-replace .tg-rep-bl {
   transform: translate(-0.45px, 0.35px);
+}
+
+/* Icon: reset */
+.tgi.tgi-reset .rst-root {
+  transform-origin: 8px 8px;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-reset .rst-spin {
+  transform-origin: 8.15px 8px;
+  transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-reset .rst-main {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-reset .rst-wake {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-reset:hover .rst-spin,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-reset .rst-spin {
+  transform: rotate(-38deg);
+}
+.tgi.tgi-reset:hover .rst-main,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-reset .rst-main {
+  stroke: var(--tgi-accent, #2563eb);
+}
+.tgi.tgi-reset:hover .rst-wake,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-reset .rst-wake {
+  stroke: var(--tgi-stroke-hover, #111827);
+}
+
+/* Icon: samples */
+.tgi.tgi-samples .smp-root {
+  transform-origin: 8px 8px;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-samples .smp-front {
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-samples .smp-card {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.45;
+  stroke-linejoin: round;
+  fill: var(--tgi-accent-bg-0, rgba(37, 99, 235, 0));
+  transition: stroke 0.2s ease, fill 0.2s ease;
+}
+.tgi.tgi-samples .smp-back {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-samples .smp-play {
+  fill: var(--tgi-stroke, #374151);
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1;
+  stroke-linejoin: round;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+        fill 0.2s ease,
+        stroke 0.2s ease;
+}
+.tgi.tgi-samples:hover .smp-front,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-samples .smp-front {
+  transform: translate(-0.25px, 0.25px);
+}
+.tgi.tgi-samples:hover .smp-card,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-samples .smp-card {
+  stroke: var(--tgi-stroke-hover, #111827);
+  fill: var(--tgi-accent-bg, rgba(37, 99, 235, 0.09));
+}
+.tgi.tgi-samples:hover .smp-back,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-samples .smp-back {
+  stroke: var(--tgi-accent, #2563eb);
+  transform: translate(0.55px, -0.55px);
+}
+.tgi.tgi-samples:hover .smp-play,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-samples .smp-play {
+  fill: var(--tgi-accent, #2563eb);
+  stroke: var(--tgi-accent, #2563eb);
+  transform: translateX(0.3px);
 }
 
 /* Icon: save */
@@ -2189,6 +2623,40 @@
   transform: translateY(0.25px) scale(1.1);
 }
 
+/* Icon: showTier */
+.tgi.tgi-showTier .st-root {
+  transform-origin: 8px 8px;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-showTier .st-lid {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform-origin: 8px 8px;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-showTier .st-iris {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.5;
+  fill: var(--tgi-accent-bg-0, rgba(37, 99, 235, 0));
+  transform-origin: 8px 8px;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+        stroke 0.2s ease,
+        fill 0.2s ease;
+}
+.tgi.tgi-showTier:hover .st-lid,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-showTier .st-lid {
+  stroke: var(--tgi-stroke-hover, #111827);
+  transform: scaleY(1.06);
+}
+.tgi.tgi-showTier:hover .st-iris,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-showTier .st-iris {
+  stroke: var(--tgi-accent, #2563eb);
+  fill: var(--tgi-accent-bg, rgba(37, 99, 235, 0.16));
+  transform: scale(1.08);
+}
+
 /* Icon: sidebarToggle */
 .tgi.tgi-sidebarToggle .tg-fill,
 .tgi.tgi-sidebarToggle .tg-src-fill,
@@ -2427,6 +2895,47 @@
 :where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-toggleScale .tg-head-r {
   transform: translateX(0.65px);
   stroke: var(--tgi-accent, #2563eb);
+}
+
+/* Icon: tools */
+.tgi.tgi-tools .tl-root {
+  transform-origin: 8px 8px;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-tools .tl-tip,
+.tgi.tgi-tools .tl-grip {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-tools .tl-wrench {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: var(--tgi-accent-bg-0, rgba(37, 99, 235, 0));
+  transform-origin: 8px 8px;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+        stroke 0.2s ease,
+        fill 0.2s ease;
+}
+.tgi.tgi-tools:hover .tl-tip,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-tools .tl-tip {
+  stroke: var(--tgi-stroke-hover, #111827);
+  transform: translate(-0.25px, -0.25px);
+}
+.tgi.tgi-tools:hover .tl-grip,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-tools .tl-grip {
+  stroke: var(--tgi-stroke-hover, #111827);
+  transform: translate(0.25px, 0.25px);
+}
+.tgi.tgi-tools:hover .tl-wrench,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-tools .tl-wrench {
+  stroke: var(--tgi-accent, #2563eb);
+  fill: var(--tgi-accent-bg, rgba(37, 99, 235, 0.12));
+  transform: rotate(-7deg);
 }
 
 /* Icon: transport-pause */

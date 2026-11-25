@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .esvg-root {
+      transform-origin: 8px 8px;
+      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .esvg-arch {
+      stroke: #374151;
+      stroke-width: 1.45;
+      stroke-linecap: round;
+      transform-origin: 8px 11.3px;
+      transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+    .esvg-end-node {
+      stroke: #374151;
+      stroke-width: 1.35;
+      stroke-linejoin: round;
+      transition: stroke 0.2s ease;
+    }
+    .esvg-handles {
+      transform-origin: 8px 4.5px;
+      transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .esvg-arm {
+      stroke: #374151;
+      stroke-width: 1.35;
+      stroke-linecap: round;
+      transition: stroke 0.2s ease;
+    }
+    .esvg-knob {
+      fill: #374151;
+      transition: fill 0.2s ease;
+    }
+    .esvg-top-node {
+      stroke: #374151;
+      stroke-width: 1.4;
+      stroke-linejoin: round;
+      fill: rgba(37, 99, 235, 0);
+      transition:
+        transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+        stroke 0.2s ease,
+        fill 0.2s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .esvg-arch {
+      stroke: #111827;
+      transform: scaleY(1.03);
+    }
+    svg:hover .esvg-end-node { stroke: #111827; }
+    svg:hover .esvg-handles {
+      transform: translateY(-0.2px) scaleX(1.08);
+    }
+    svg:hover .esvg-arm { stroke: #2563eb; }
+    svg:hover .esvg-knob { fill: #2563eb; }
+    svg:hover .esvg-top-node {
+      stroke: #2563eb;
+      fill: rgba(37, 99, 235, 0.15);
+      transform: translateY(-0.2px);
+    }
+    svg:active .esvg-root { transform: scale(0.91); }
+  </style>
+
+  <g class="esvg-root">
+    <!-- 贝塞尔拱形曲线与底部端点 -->
+    <path class="esvg-arch" d="M2.8 11.3 C2.8 7.8 4.55 5.05 6.65 4.65 M9.35 4.65 C11.45 5.05 13.2 7.8 13.2 11.3" />
+    <rect class="esvg-end-node" x="1.75" y="11.3" width="2.1" height="2.1" rx="0.45" />
+    <rect class="esvg-end-node" x="12.15" y="11.3" width="2.1" height="2.1" rx="0.45" />
+
+    <!-- 顶部切线控制柄与圆点 -->
+    <g class="esvg-handles">
+      <path class="esvg-arm" d="M3.55 4.5 H6.65 M9.35 4.5 H12.45" />
+      <circle class="esvg-knob" cx="2.7" cy="4.5" r="0.95" />
+      <circle class="esvg-knob" cx="13.3" cy="4.5" r="0.95" />
+    </g>
+
+    <!-- 顶部核心方形锚点 -->
+    <rect class="esvg-top-node" x="6.65" y="3.15" width="2.7" height="2.7" rx="0.55" />
+  </g>
+</svg>

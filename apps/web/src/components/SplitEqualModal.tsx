@@ -294,7 +294,8 @@ export const SplitEqualModal: React.FC<SplitEqualModalProps> = ({
               disabled={tooShort}
               onClick={() => onConfirm(count)}
             >
-              等分为 {count} 段
+              <UiIcon name="splitEqual" size={13} />
+              <span>等分为 {count} 段</span>
             </button>
           </div>
         </div>

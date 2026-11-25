@@ -396,25 +396,43 @@ export const Topbar: React.FC<TopbarProps> = ({
               className="select-trigger"
               onClick={() => setOpenMenu(openMenu === 'samples' ? null : 'samples')}
             >
-              <span>示例</span>
+              <span className="btn-lead">
+                <UiIcon name="samples" size={14} />
+                <span>示例</span>
+              </span>
               <ChevronIcon />
             </button>
             <div className="dropdown left">
               <button type="button" onClick={() => { setOpenMenu(null); onLoadSample('dialogue'); }}>
-                双人对话与声谱（含录音）
+                <span className="btn-lead">
+                  <UiIcon name="waveform" size={13} />
+                  <span>双人对话与声谱（含录音）</span>
+                </span>
               </button>
               <button type="button" onClick={() => { setOpenMenu(null); onLoadSample('poem'); }}>
-                普通话与音标示例
+                <span className="btn-lead">
+                  <UiIcon name="samples" size={13} />
+                  <span>普通话与音标示例</span>
+                </span>
               </button>
               <button type="button" onClick={() => { setOpenMenu(null); onLoadSample('edge'); }}>
-                完整字符与边界示例
+                <span className="btn-lead">
+                  <UiIcon name="samples" size={13} />
+                  <span>完整字符与边界示例</span>
+                </span>
               </button>
               <button type="button" onClick={() => { setOpenMenu(null); onLoadSample('wild'); }}>
-                长停顿与特殊结构示例
+                <span className="btn-lead">
+                  <UiIcon name="samples" size={13} />
+                  <span>长停顿与特殊结构示例</span>
+                </span>
               </button>
               <div className="menu-divider" />
               <button type="button" onClick={() => { setOpenMenu(null); onLoadSample('blank'); }}>
-                <span>新建空白文件</span>
+                <span className="btn-lead">
+                  <UiIcon name="tab-add" size={13} />
+                  <span>新建空白文件</span>
+                </span>
                 <span className="shortcut">{formatKeyCombo('Mod+T')}</span>
               </button>
             </div>
@@ -426,7 +444,10 @@ export const Topbar: React.FC<TopbarProps> = ({
               className="select-trigger"
               onClick={() => setOpenMenu(openMenu === 'tools' ? null : 'tools')}
             >
-              <span>工具</span>
+              <span className="btn-lead">
+                <UiIcon name="tools" size={14} />
+                <span>工具</span>
+              </span>
               <ChevronIcon />
             </button>
             <div className="dropdown left">
@@ -437,7 +458,10 @@ export const Topbar: React.FC<TopbarProps> = ({
                   openFindBar(false);
                 }}
               >
-                <span>查找与替换</span>
+                <span className="btn-lead">
+                  <UiIcon name="search" size={13} />
+                  <span>查找与替换</span>
+                </span>
                 {findOpenHint && <span className="shortcut">{findOpenHint}</span>}
               </button>
               <button
@@ -447,7 +471,10 @@ export const Topbar: React.FC<TopbarProps> = ({
                   openFindBar(true);
                 }}
               >
-                <span>替换标注文本…</span>
+                <span className="btn-lead">
+                  <UiIcon name="replace" size={13} />
+                  <span>替换标注文本…</span>
+                </span>
                 {replaceOpenHint && <span className="shortcut">{replaceOpenHint}</span>}
               </button>
               <div className="menu-divider" />
@@ -472,7 +499,10 @@ export const Topbar: React.FC<TopbarProps> = ({
                   setShortcutsOpen(true);
                 }}
               >
-                <span>快捷键指南</span>
+                <span className="btn-lead">
+                  <UiIcon name="shortcuts" size={13} />
+                  <span>快捷键指南</span>
+                </span>
                 {shortcutsModalHint && <span className="shortcut">{shortcutsModalHint}</span>}
               </button>
             </div>
@@ -486,14 +516,16 @@ export const Topbar: React.FC<TopbarProps> = ({
               className={mode === 'read' ? 'active' : ''}
               onClick={() => setMode('read')}
             >
-              只读
+              <UiIcon name="readMode" size={13} />
+              <span>只读</span>
             </button>
             <button
               type="button"
               className={mode === 'edit' ? 'active' : ''}
               onClick={() => setMode('edit')}
             >
-              编辑
+              <UiIcon name="edit" size={13} />
+              <span>编辑</span>
             </button>
           </div>
 
@@ -533,45 +565,78 @@ export const Topbar: React.FC<TopbarProps> = ({
             </button>
             <div className="dropdown">
               <button type="button" onClick={() => { setOpenMenu(null); onExportAction('save'); }}>
-                <span>{isDesktop && !currentFilePath ? '保存 (.TextGrid)…' : '保存 (.TextGrid)'}</span>
+                <span className="btn-lead">
+                  <UiIcon name="save" size={13} />
+                  <span>{isDesktop && !currentFilePath ? '保存 (.TextGrid)…' : '保存 (.TextGrid)'}</span>
+                </span>
                 {saveFileHint && <span className="shortcut">{saveFileHint}</span>}
               </button>
               {isDesktop && (
                 <button type="button" onClick={() => { setOpenMenu(null); onExportAction('save-as'); }}>
-                  <span>另存为…</span>
+                  <span className="btn-lead">
+                    <UiIcon name="saveAs" size={13} />
+                    <span>另存为…</span>
+                  </span>
                   {saveAsHint && <span className="shortcut">{saveAsHint}</span>}
                 </button>
               )}
               <div className="menu-divider" />
               <button type="button" onClick={() => { setOpenMenu(null); onExportAction('svg'); }}>
-                <span>导出矢量图 (.svg)</span>
+                <span className="btn-lead">
+                  <UiIcon name="exportSvg" size={13} />
+                  <span>导出矢量图 (.svg)</span>
+                </span>
               </button>
               <button type="button" onClick={() => { setOpenMenu(null); onExportAction('png'); }}>
-                <span>导出高清图片 (.png)</span>
+                <span className="btn-lead">
+                  <UiIcon name="exportPng" size={13} />
+                  <span>导出高清图片 (.png)</span>
+                </span>
               </button>
               <button type="button" onClick={() => { setOpenMenu(null); onExportAction('dialog'); }}>
-                <span>自定义导出图像…</span>
+                <span className="btn-lead">
+                  <UiIcon name="export" size={13} />
+                  <span>自定义导出图像…</span>
+                </span>
                 {exportFigureHint && <span className="shortcut">{exportFigureHint}</span>}
               </button>
               <div className="menu-divider" />
               <button type="button" onClick={() => { setOpenMenu(null); onExportAction('long'); }}>
-                <span>保存标准文本 (.TextGrid)</span>
+                <span className="btn-lead">
+                  <UiIcon name="save" size={13} />
+                  <span>保存标准文本 (.TextGrid)</span>
+                </span>
               </button>
               <button type="button" onClick={() => { setOpenMenu(null); onExportAction('short'); }}>
-                <span>保存短文本 (.TextGrid)</span>
+                <span className="btn-lead">
+                  <UiIcon name="save" size={13} />
+                  <span>保存短文本 (.TextGrid)</span>
+                </span>
               </button>
               <button type="button" onClick={() => { setOpenMenu(null); onExportAction('binary'); }}>
-                <span>保存二进制 (.TextGrid)</span>
+                <span className="btn-lead">
+                  <UiIcon name="save" size={13} />
+                  <span>保存二进制 (.TextGrid)</span>
+                </span>
               </button>
               <button type="button" onClick={() => { setOpenMenu(null); onExportAction('chrono'); }}>
-                <span>保存按时间排序文本</span>
+                <span className="btn-lead">
+                  <UiIcon name="save" size={13} />
+                  <span>保存按时间排序文本</span>
+                </span>
               </button>
               <div className="menu-divider" />
               <button type="button" onClick={() => { setOpenMenu(null); onExportAction('col-bin'); }}>
-                <span>保存集合 (.Collection 二进制)</span>
+                <span className="btn-lead">
+                  <UiIcon name="fileCollection" size={13} />
+                  <span>保存集合 (.Collection 二进制)</span>
+                </span>
               </button>
               <button type="button" onClick={() => { setOpenMenu(null); onExportAction('col-text'); }}>
-                <span>保存集合 (.Collection 文本)</span>
+                <span className="btn-lead">
+                  <UiIcon name="fileCollection" size={13} />
+                  <span>保存集合 (.Collection 文本)</span>
+                </span>
               </button>
             </div>
           </div>

@@ -1574,7 +1574,7 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
                   onStartPlayback(start, end);
                 }}
               >
-                <UiIcon name="play" size={13} />
+                <UiIcon name="playContext" size={13} />
                 <span>语境 ±250ms</span>
               </button>
               <button
@@ -2135,7 +2135,7 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
                   if (!isReadOnly) duplicateTier(ti, { copyText: true });
                 }}
               >
-                <UiIcon name="copy" size={13} />
+                <UiIcon name="duplicateTier" size={13} />
                 <span>复制整层</span>
               </button>
               {activeTier.kind === 'intervalTier' && (
@@ -2148,7 +2148,7 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
                     if (!isReadOnly) duplicateTier(ti, { copyText: false });
                   }}
                 >
-                  <UiIcon name="addIntervalTier" size={13} />
+                  <UiIcon name="duplicateTier" size={13} />
                   <span>仅复制边界新建层</span>
                 </button>
               )}

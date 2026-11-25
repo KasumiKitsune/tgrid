@@ -512,14 +512,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
                     className={`compact ${prefs.format === 'svg' ? 'active' : ''}`}
                     onClick={() => updatePrefs({ format: 'svg' }, false)}
                   >
-                    矢量图 (SVG)
+                    <UiIcon name="exportSvg" size={13} />
+                    <span>矢量图 (SVG)</span>
                   </button>
                   <button
                     type="button"
                     className={`compact ${prefs.format === 'png' ? 'active' : ''}`}
                     onClick={() => updatePrefs({ format: 'png' }, false)}
                   >
-                    高清图片 (PNG)
+                    <UiIcon name="exportPng" size={13} />
+                    <span>高清图片 (PNG)</span>
                   </button>
                 </div>
               </div>
@@ -1070,10 +1072,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
           </span>
           <div className="export-foot-actions">
             <button type="button" onClick={handleCopy}>
-              {prefs.format === 'png' ? '复制图片' : '复制 SVG'}
+              <UiIcon name="copy" size={13} />
+              <span>{prefs.format === 'png' ? '复制图片' : '复制 SVG'}</span>
             </button>
             <button type="button" className="primary" onClick={handleDownload}>
-              <UiIcon name="export" size={14} />
+              <UiIcon name={prefs.format === 'png' ? 'exportPng' : 'exportSvg'} size={14} />
               <span>
                 {prefs.format === 'png'
                   ? isTauriRuntime()

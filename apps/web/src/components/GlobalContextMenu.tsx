@@ -2,11 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { isTauriRuntime } from '../bridge/PlatformBridge';
 import { useEditorStore } from '../store/useEditorStore';
 import { getLogicalViewportSize, getViewportZoom } from '../utils/uiScale';
-import { InfoIcon, UiIcon, type IconName } from './Icons';
+import { UiIcon, type IconName } from './Icons';
 
 interface GlobalMenuItem {
   label?: string;
-  icon?: IconName | 'info';
+  icon?: IconName;
   shortcut?: string;
   disabled?: boolean;
   divider?: boolean;
@@ -310,11 +310,7 @@ export const GlobalContextMenu: React.FC<GlobalContextMenuProps> = ({
           >
             <span className="ctx-item-main">
               <span className="ctx-item-icon" aria-hidden="true">
-                {item.icon === 'info' ? (
-                  <InfoIcon size={14} />
-                ) : item.icon ? (
-                  <UiIcon name={item.icon} size={14} />
-                ) : null}
+                {item.icon ? <UiIcon name={item.icon} size={14} /> : null}
               </span>
               <span>{item.label}</span>
             </span>
