@@ -439,7 +439,9 @@ export const CustomizePanel: React.FC = () => {
             className="sb-panel-root"
             style={{
               flex: '1 1 auto',
+              minWidth: 0,
               minHeight: 0,
+              overflowX: 'hidden',
               overflowY: 'auto',
               padding: '10px 12px',
               display: 'flex',
@@ -449,13 +451,13 @@ export const CustomizePanel: React.FC = () => {
           >
             {editInspectorMode !== 'floating' && (
               <div className="sb-readonly-banner" role="status" style={{ margin: 0 }}>
-                <span className="sb-readonly-text">当前选中编辑方式为侧边栏</span>
+                <span className="sb-readonly-text">当前为侧边栏模式</span>
                 <button
                   type="button"
                   className="compact sb-readonly-btn"
                   onClick={() => setEditInspectorMode('floating')}
                 >
-                  切换为浮动条模式
+                  切换为浮动条
                 </button>
               </div>
             )}
@@ -653,7 +655,9 @@ export const CustomizePanel: React.FC = () => {
           <div
             style={{
               flex: '1 1 auto',
+              minWidth: 0,
               minHeight: 0,
+              overflowX: 'hidden',
               overflowY: 'auto',
               padding: '10px 12px'
             }}

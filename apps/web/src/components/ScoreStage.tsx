@@ -43,7 +43,13 @@ import {
   matchesShortcut
 } from '../shortcuts/registry';
 import { rgbaToPngDataUrl } from '../render/exporter';
-import { getElementRectScale, getLogicalViewportSize, getViewportZoom } from '../utils/uiScale';
+import {
+  clampCanvasScale,
+  getElementRectScale,
+  getLogicalViewportSize,
+  getViewportZoom,
+  stepCanvasScale
+} from '../utils/uiScale';
 import {
   getBoundaryBoundsForTier,
   useEditorStore,
@@ -433,6 +439,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const targetWidth = useEditorStore((s) => s.targetWidth);
     const widthAutoFit = useEditorStore((s) => s.widthAutoFit);
     const setTargetWidth = useEditorStore((s) => s.setTargetWidth);
+    const setWidthAutoFit = useEditorStore((s) => s.setWidthAutoFit);
+    const setStageAvailableWidth = useEditorStore((s) => s.setStageAvailableWidth);
     const selection = useEditorStore((s) => s.selection);
     const setSelection = useEditorStore((s) => s.setSelection);
     const lastActiveTierIndex = useEditorStore((s) => s.lastActiveTierIndex);
@@ -458,6 +466,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const editInspectorMode = useEditorStore((s) => s.editInspectorMode);
     const showMicroLoupe = useEditorStore((s) => s.showMicroLoupe);
     const uiScale = useEditorStore((s) => s.uiScale);
+    const canvasScale = useEditorStore((s) => s.canvasScale);
+    const setCanvasScale = useEditorStore((s) => s.setCanvasScale);
     const floatingBarConfig = useEditorStore((s) => s.floatingBarConfig);
     const customShortcuts = useEditorStore((s) => s.customShortcuts);
     const exportOpen = useEditorStore((s) => s.exportOpen);
@@ -709,14 +719,19 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       };
     }, []);
 
-    // Stage ResizeObserver (also re-syncs immediately whenever global uiScale changes)
+    // Stage ResizeObserver (measures unzoomed CSS viewport of #stage so canvasScale is independent of uiScale)
     useEffect(() => {
       const el = stageRef.current;
       if (!el) return;
       const updateSize = () => {
-        const { width: vw, height: vh } = getLogicalViewportSize();
-        setStageW(el.clientWidth || vw);
-        setStageH(el.clientHeight || vh);
+        const z = uiScale > 0 ? uiScale : 1;
+        const rect = el.getBoundingClientRect();
+        const w = el.clientWidth > 0 ? el.clientWidth * z : rect.width || window.innerWidth;
+        const h = el.clientHeight > 0 ? el.clientHeight * z : rect.height || window.innerHeight;
+        setStageW(w);
+        setStageH(h);
+        const sidePad = w < 480 ? 12 : 24;
+        setStageAvailableWidth(Math.max(260, Math.round(w - sidePad)));
       };
       updateSize();
       const raf = requestAnimationFrame(updateSize);
@@ -726,7 +741,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         cancelAnimationFrame(raf);
         ro.disconnect();
       };
-    }, [uiScale]);
+    }, [uiScale, setStageAvailableWidth]);
 
     // Prefetch trigraphs from Rust tg-core whenever document changes
     useEffect(() => {
@@ -748,7 +763,9 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           ? widthAutoFit
             ? availableW
             : Math.min(targetWidth, availableW)
-          : targetWidth;
+          : widthAutoFit
+            ? availableW
+            : targetWidth;
       return computeLayout(tg, {
         wrapMode,
         targetWidth: effWidth,
@@ -762,6 +779,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         mode,
         hiddenTierIndices,
         isInteractive: true,
+        allowSingleCompress: wrapMode === 'single' && !widthAutoFit,
         viewportHeight: stageH
       });
     }, [
@@ -803,13 +821,14 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         ) ?? (layout.bands.length === 1 ? layout.bands[0] : undefined);
       if (!band) return;
 
-      const z = getElementRectScale(sheetEl);
+      const zStage = getElementRectScale(stageEl);
+      const zSheet = getElementRectScale(sheetEl);
       const stageRect = stageEl.getBoundingClientRect();
       const sheetRect = sheetEl.getBoundingClientRect();
       const x = elasticXInBand(band, currentTime);
-      const pxInStage = (sheetRect.left - stageRect.left) / z + x;
-      const bandTopInStage = (sheetRect.top - stageRect.top) / z + band.linearY;
-      const bandBotInStage = (sheetRect.top - stageRect.top) / z + band.tiersBottomY;
+      const pxInStage = (sheetRect.left + x * zSheet - stageRect.left) / zStage;
+      const bandTopInStage = (sheetRect.top + band.linearY * zSheet - stageRect.top) / zStage;
+      const bandBotInStage = (sheetRect.top + band.tiersBottomY * zSheet - stageRect.top) / zStage;
 
       const marginX = Math.min(84, stageEl.clientWidth * 0.18);
       const marginY = 24;
@@ -831,7 +850,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         lastAutoScrollMsRef.current = now;
         stageEl.scrollTo({ left: nextLeft, top: nextTop, behavior: 'smooth' });
       }
-    }, [playing, followPlayhead, currentTime, layout]);
+    }, [playing, followPlayhead, currentTime, layout, canvasScale]);
 
     // P1-4: Preserve visual screen anchor after boundary/point drag commit triggers elastic layout reflow
     useLayoutEffect(() => {
@@ -862,9 +881,9 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       const newSvgY = (updatedBand.tiersTopY + updatedBand.tiersBottomY) / 2;
       const newClientX = rect.left + newSvgX * scaleX;
       const newClientY = rect.top + newSvgY * scaleY;
-      const z = getElementRectScale(sheetRef.current);
-      const dx = (newClientX - anchor.clientX) / z;
-      const dy = (newClientY - anchor.clientY) / z;
+      const zStage = getElementRectScale(stageEl);
+      const dx = (newClientX - anchor.clientX) / zStage;
+      const dy = (newClientY - anchor.clientY) / zStage;
       if (Math.abs(dx) > 4) {
         stageEl.scrollLeft += dx;
       }
@@ -884,7 +903,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         return;
       }
       let cancelled = false;
-      const dpr = Math.min(3, (window.devicePixelRatio || 1) * Math.max(1, uiScale));
+      const dpr = Math.min(3, (window.devicePixelRatio || 1) * Math.max(1, canvasScale));
       const dprKey = dpr.toFixed(2);
       const bridge = getPlatformBridge();
 
@@ -925,7 +944,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       return () => {
         cancelled = true;
       };
-    }, [analysis, showSpectrogram, audioName, layout, maxFreq, uiScale]);
+    }, [analysis, showSpectrogram, audioName, layout, maxFreq, uiScale, canvasScale]);
 
     // Render full SVG whenever structural layout or spectrograms change
     useEffect(() => {
@@ -1012,78 +1031,172 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       el.style.height = `${Math.max(Math.round(inlineBox.h), el.scrollHeight + 2)}px`;
     }, [inlineTarget, inlineVal, inlineBox]);
 
-    // Smooth Ctrl/Meta + Wheel horizontal zoom over #stage (preserves cursor anchor!)
+    const pendingCanvasZoomAnchorRef = useRef<{
+      relX: number;
+      relY: number;
+      pointerXInStage: number;
+      pointerYInStage: number;
+    } | null>(null);
+    const pendingWidthZoomAnchorRef = useRef<{
+      relX: number;
+      pointerXInStage: number;
+    } | null>(null);
+
+    // Apply cursor-anchored scroll synchronously after canvasScale zoom commits (zero 1-frame flicker)
+    useLayoutEffect(() => {
+      const anchor = pendingCanvasZoomAnchorRef.current;
+      if (!anchor) return;
+      pendingCanvasZoomAnchorRef.current = null;
+      const stageEl = stageRef.current;
+      const sheetEl = sheetRef.current;
+      if (!stageEl || !sheetEl) return;
+      const curStageRect = stageEl.getBoundingClientRect();
+      const curSheetRect = sheetEl.getBoundingClientRect();
+      const curZStage = getElementRectScale(stageEl);
+      const sheetLeftInScroll = stageEl.scrollLeft + (curSheetRect.left - curStageRect.left) / curZStage;
+      const sheetTopInScroll = stageEl.scrollTop + (curSheetRect.top - curStageRect.top) / curZStage;
+      const newSheetWInStage = curSheetRect.width / curZStage;
+      const newSheetHInStage = curSheetRect.height / curZStage;
+      stageEl.scrollLeft = Math.max(
+        0,
+        sheetLeftInScroll + anchor.relX * newSheetWInStage - anchor.pointerXInStage
+      );
+      stageEl.scrollTop = Math.max(
+        0,
+        sheetTopInScroll + anchor.relY * newSheetHInStage - anchor.pointerYInStage
+      );
+    }, [canvasScale]);
+
+    // Apply horizontal cursor-anchored scroll synchronously after Alt+Wheel width reflow commits
+    useLayoutEffect(() => {
+      const anchor = pendingWidthZoomAnchorRef.current;
+      if (!anchor) return;
+      pendingWidthZoomAnchorRef.current = null;
+      const stageEl = stageRef.current;
+      const sheetEl = sheetRef.current;
+      if (!stageEl || !sheetEl) return;
+      const curStageRect = stageEl.getBoundingClientRect();
+      const curSheetRect = sheetEl.getBoundingClientRect();
+      const curZStage = getElementRectScale(stageEl);
+      const sheetLeftInScroll = stageEl.scrollLeft + (curSheetRect.left - curStageRect.left) / curZStage;
+      const newSheetWInStage = curSheetRect.width / curZStage;
+      stageEl.scrollLeft = Math.max(
+        0,
+        sheetLeftInScroll + anchor.relX * newSheetWInStage - anchor.pointerXInStage
+      );
+    }, [layout]);
+
+    // Smooth Ctrl/Meta + Wheel canvas zoom (synced with StatusBar 50%–200%, X+Y cursor-anchored)
+    // and Alt + Wheel horizontal timeline width stretch/compress (symmetric, never band-trapped)
     useEffect(() => {
       const stageEl = stageRef.current;
       if (!stageEl) return;
-      let pendingZoom: { relX: number; pointerInStage: number } | null = null;
-      let zoomRaf = 0;
 
       const onWheel = (e: WheelEvent) => {
-        if (!e.ctrlKey && !e.metaKey) return;
+        const isCanvasWheel = (e.ctrlKey || e.metaKey) && !e.altKey;
+        const isWidthWheel = e.altKey && !e.ctrlKey && !e.metaKey;
+        if (!isCanvasWheel && !isWidthWheel) return;
+        if (e.deltaY === 0) return;
+
         e.preventDefault();
         const sheetEl = sheetRef.current;
         if (!sheetEl) return;
 
-        const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-        const z = getElementRectScale(sheetEl);
+        const zStage = getElementRectScale(stageEl);
         const stageRect = stageEl.getBoundingClientRect();
         const sheetRect = sheetEl.getBoundingClientRect();
-        const pointerInStage = (e.clientX - stageRect.left) / z;
-        const oldSheetRectW = Math.max(1, sheetRect.width);
-        const relX = Math.max(0, Math.min(1, (e.clientX - sheetRect.left) / oldSheetRectW));
+        const pointerXInStage = (e.clientX - stageRect.left) / zStage;
+        const pointerYInStage = (e.clientY - stageRect.top) / zStage;
+        const relX = Math.max(0, Math.min(1, (e.clientX - sheetRect.left) / Math.max(1, sheetRect.width)));
+        const relY = Math.max(0, Math.min(1, (e.clientY - sheetRect.top) / Math.max(1, sheetRect.height)));
 
         const st = useEditorStore.getState();
-        const curStageW = stageEl.clientWidth || getLogicalViewportSize().width;
-        const sidePad = curStageW < 480 ? 12 : 24;
-        const availW = Math.max(260, curStageW - sidePad);
-        // Step zoom from actual rendered layout.width so short audio never suffers dead clicks or sudden jumps (P0-1)
-        const renderedW = st.layout && st.layout.width > 0 ? st.layout.width : availW;
-        const curW = renderedW;
-        const nextW = Math.round(curW * factor);
 
-        let nextWrap = st.wrapMode;
-        const singleBandCapped =
-          st.wrapMode === 'auto' &&
-          st.layout?.bands.length === 1 &&
-          renderedW < availW - 8;
-        if (st.wrapMode === 'auto' && factor > 1 && (nextW > availW || singleBandCapped)) {
-          nextWrap = 'single';
-          setWrapMode('single');
+        if (isCanvasWheel) {
+          const curScale = st.canvasScale;
+          const isDiscreteNotch = e.deltaMode !== 0 || Math.abs(e.deltaY) >= 40;
+          let nextScale: number;
+          if (isDiscreteNotch) {
+            nextScale = stepCanvasScale(curScale, e.deltaY < 0 ? 1 : -1);
+          } else {
+            const rawNext = clampCanvasScale(curScale * Math.exp(-e.deltaY * 0.008));
+            const crossedOne = (curScale < 1 && rawNext > 1) || (curScale > 1 && rawNext < 1);
+            nextScale = crossedOne || Math.abs(rawNext - 1) <= 0.012 ? 1 : rawNext;
+          }
+          if (Math.abs(nextScale - curScale) < 0.0005) return;
+          pendingCanvasZoomAnchorRef.current = {
+            relX,
+            relY,
+            pointerXInStage,
+            pointerYInStage
+          };
+          setCanvasScale(nextScale);
+          return;
         }
+
+        // Alt + Wheel: horizontal time-axis width adjustment (always bases on effective targetWidth, never shrunk multi-band layout.width)
+        const dir: -1 | 1 = e.deltaY < 0 ? 1 : -1;
+        const factor = dir > 0 ? 1.15 : 1 / 1.15;
+        const curStageW = (stageEl.clientWidth || getLogicalViewportSize().width) * (st.uiScale || 1);
+        const sidePad = curStageW < 480 ? 12 : 24;
+        const availW = Math.max(260, Math.round(curStageW - sidePad));
+        const renderedW = st.layout && st.layout.width > 0 ? Math.round(st.layout.width) : availW;
         const dom = st.viewDomain || { min: st.tg.xmin, max: st.tg.xmax };
         const dur = Math.max(
           0.1,
           (Number.isFinite(dom.max) ? dom.max : 1) - (Number.isFinite(dom.min) ? dom.min : 0)
         );
-        const maxW =
-          nextWrap === 'single' ? Math.max(4800, Math.min(18000, Math.round(dur * 600))) : 2400;
-        setTargetWidth(Math.max(280, Math.min(maxW, nextW)));
+        const maxSingleW = Math.max(4800, Math.min(18000, Math.round(dur * 600)));
 
-        pendingZoom = { relX, pointerInStage };
-        if (!zoomRaf) {
-          zoomRaf = requestAnimationFrame(() => {
-            zoomRaf = 0;
-            const pz = pendingZoom;
-            pendingZoom = null;
-            if (pz && sheetRef.current && stageRef.current) {
-              const newSheetW = sheetRef.current.offsetWidth;
-              const sheetLeftInScroll = sheetRef.current.offsetLeft;
-              stageRef.current.scrollLeft = Math.max(
-                0,
-                sheetLeftInScroll + pz.relX * newSheetW - pz.pointerInStage
-              );
+        if (st.wrapMode === 'auto') {
+          const curEffW = st.widthAutoFit ? availW : Math.min(st.targetWidth, availW);
+          if (dir > 0) {
+            if (!st.widthAutoFit && curEffW < availW - 4) {
+              const nextW = Math.max(curEffW + 24, Math.round(curEffW * factor));
+              if (nextW >= availW - 4) {
+                setWidthAutoFit(true);
+              } else {
+                setTargetWidth(nextW);
+              }
+            } else {
+              // Already at full viewport auto-wrap width: unfold cleanly into single-line timeline
+              const startW = Math.max(availW, renderedW);
+              const nextW = Math.min(maxSingleW, Math.max(startW + 120, Math.round(startW * factor)));
+              setWrapMode('single');
+              setTargetWidth(nextW);
             }
-          });
+          } else {
+            const nextW = Math.max(280, Math.min(curEffW - 24, Math.round(curEffW * factor)));
+            if (nextW === curEffW && !st.widthAutoFit) return;
+            setTargetWidth(nextW);
+          }
+        } else {
+          // Single-line timeline mode
+          if (dir < 0 && !st.widthAutoFit && st.targetWidth < renderedW - 2) {
+            // Already hit readability floor; zooming back in starts from renderedW with zero dead ticks
+            return;
+          }
+          const baseW = st.widthAutoFit
+            ? renderedW
+            : dir > 0
+              ? Math.max(st.targetWidth, renderedW)
+              : Math.min(st.targetWidth, renderedW);
+          const nextW =
+            dir > 0
+              ? Math.min(maxSingleW, Math.max(baseW + 32, Math.round(baseW * factor)))
+              : Math.max(280, Math.min(baseW - 32, Math.round(baseW * factor)));
+          if (!st.widthAutoFit && nextW === st.targetWidth) return;
+          setTargetWidth(nextW);
         }
+
+        pendingWidthZoomAnchorRef.current = { relX, pointerXInStage };
       };
 
       stageEl.addEventListener('wheel', onWheel, { passive: false });
       return () => {
         stageEl.removeEventListener('wheel', onWheel);
-        if (zoomRaf) cancelAnimationFrame(zoomRaf);
       };
-    }, [setWrapMode, setTargetWidth]);
+    }, [setCanvasScale, setWrapMode, setTargetWidth, setWidthAutoFit]);
 
     const closeInline = useCallback(
       (commit: boolean) => {
@@ -1287,13 +1400,14 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         const stageEl = stageRef.current;
         const sheetEl = sheetRef.current;
         if (!anchor || !stageEl || !sheetEl) return;
-        const z = getElementRectScale(sheetEl);
+        const zStage = getElementRectScale(stageEl);
+        const zSheet = getElementRectScale(sheetEl);
         const sheetRect = sheetEl.getBoundingClientRect();
         const stageRect = stageEl.getBoundingClientRect();
-        const elemLeft = (sheetRect.left - stageRect.left) / z + anchor.x;
-        const elemRight = elemLeft + anchor.w;
-        const elemTop = (sheetRect.top - stageRect.top) / z + anchor.y;
-        const elemBottom = elemTop + anchor.h;
+        const elemLeft = (sheetRect.left + anchor.x * zSheet - stageRect.left) / zStage;
+        const elemRight = (sheetRect.left + (anchor.x + anchor.w) * zSheet - stageRect.left) / zStage;
+        const elemTop = (sheetRect.top + anchor.y * zSheet - stageRect.top) / zStage;
+        const elemBottom = (sheetRect.top + (anchor.y + anchor.h) * zSheet - stageRect.top) / zStage;
         const padX = 48;
         const padY = 48;
         if (elemLeft < padX) {
@@ -6325,10 +6439,11 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           const sheetRect = sheetEl.getBoundingClientRect();
           const sheetOriginX = sheetRect.left + sheetEl.clientLeft * z;
           const visLeftInSheet = (stageRect.left - sheetOriginX) / z;
+          const visRightInSheet = (stageRect.right - sheetOriginX) / z;
           const visMin = Math.max(margin, visLeftInSheet + margin);
           const visMax = Math.min(
             layout.width - barW - margin,
-            visLeftInSheet + stageEl.clientWidth - barW - margin
+            visRightInSheet - barW - margin
           );
           if (visMin <= visMax) {
             minLeft = visMin;
@@ -6348,7 +6463,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           const sheetRect = sheetEl.getBoundingClientRect();
           const sheetOriginY = sheetRect.top + sheetEl.clientTop * z;
           const visibleTopInSheet = (stageRect.top - sheetOriginY) / z;
-          const visibleBottomInSheet = visibleTopInSheet + stageEl.clientHeight;
+          const visibleBottomInSheet = (stageRect.bottom - sheetOriginY) / z;
           const minVisTop = visibleTopInSheet + margin;
           const maxVisTop = Math.max(minVisTop, visibleBottomInSheet - barH - margin);
 
@@ -6404,7 +6519,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       floatingBarConfig,
       layout.width,
       layout.height,
-      stageW
+      stageW,
+      canvasScale
     ]);
 
     const activeTab = useMemo(
@@ -6465,7 +6581,16 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             }
           }}
         >
-          <div ref={sheetRef} id="sheet" className="sheet">
+          <div
+            ref={sheetRef}
+            id="sheet"
+            className="sheet"
+            style={
+              Math.abs(canvasScale / (uiScale || 1) - 1) < 0.001
+                ? undefined
+                : { zoom: Number((canvasScale / (uiScale || 1)).toFixed(4)) }
+            }
+          >
             <svg
               ref={svgRef}
               id="score-svg"

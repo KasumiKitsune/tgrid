@@ -1797,10 +1797,28 @@ button.active:not(.sidebar-rail-btn):not(.export-tier-chip),
   white-space: nowrap;
   flex-shrink: 0;
   background: var(--bg-sheet);
+  border: none;
   border-top: 1px solid var(--rule);
   border-bottom: 1px solid var(--rule);
+  border-radius: 0;
   padding: 0 7px;
   color: var(--ink);
+  cursor: default;
+}
+
+.width-readout:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.width-readout.is-custom {
+  color: var(--accent, #24577a);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.width-readout.is-custom:hover {
+  background: var(--bg-subtle);
 }
 
 .modal-audio-box {
@@ -3032,6 +3050,8 @@ button.active .export-btn-sub {
 .sb-panel-root {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  width: 100%;
 }
 
 .sb-context-strip {
@@ -3063,10 +3083,13 @@ button.active .export-btn-sub {
 
 .sb-readonly-banner {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 5px 12px;
+  gap: 5px 8px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px 10px;
   background: var(--bg-bar);
   border-bottom: 1px solid var(--rule);
   border-left: 2px solid var(--ink-muted);
@@ -3074,8 +3097,9 @@ button.active .export-btn-sub {
 
 .sb-readonly-text {
   font-size: 11px;
+  line-height: 1.35;
   color: var(--ink-muted);
-  white-space: nowrap;
+  min-width: 0;
 }
 
 .sb-readonly-btn {
@@ -3083,6 +3107,8 @@ button.active .export-btn-sub {
   padding: 0 7px !important;
   font-size: 11px !important;
   background: var(--bg-sheet);
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .sb-textarea.is-readonly,
@@ -5249,8 +5275,11 @@ kbd,
 .cust-root {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
+  width: 100%;
   flex: 1 1 auto;
+  overflow-x: hidden;
 }
 
 .cust-subtabs {

@@ -417,7 +417,8 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       {
         id: 'canvas-zoom',
         keys: ['Mod+=', 'Mod+-', 'Mod+0'],
-        label: '画布横向放大 / 缩小 / 复位',
+        label: '画布放大 / 缩小 / 复位 100%',
+        description: '等比缩放谱面画布（50%–200%），与底部状态栏同步，不影响界面与导出尺寸',
         icon: 'zoomIn',
         scope: 'all',
         rebindable: false
@@ -590,7 +591,8 @@ export const MOUSE_GESTURE_TIPS: MouseGestureTip[] = [
   {
     id: 'mod-wheel-zoom',
     gesture: 'Mod + 滚轮',
-    label: '以指针为锚点平滑缩放画布',
+    label: '以指针为锚点缩放画布（50%–200%）',
+    description: '与底部状态栏画布缩放同步，不破坏折行排版；按住 Alt + 滚轮可横向拉伸或收窄时间轴宽度',
     scope: 'all'
   },
   {

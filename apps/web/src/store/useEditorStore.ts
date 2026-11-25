@@ -4,7 +4,14 @@ import { createSample } from '../data/samples';
 import type { EditorSelection } from '../render/renderScoreSvg';
 import type { ScoreLayout } from '../layout/computeLayout';
 import { getShortcutEntry, normalizeKeyCombo } from '../shortcuts/registry';
-import { clampUiScale, loadSavedUiScale, saveUiScale } from '../utils/uiScale';
+import {
+  clampCanvasScale,
+  clampUiScale,
+  loadSavedCanvasScale,
+  loadSavedUiScale,
+  saveCanvasScale,
+  saveUiScale
+} from '../utils/uiScale';
 
 export type IpaInputMode = 'off' | 'yunlong' | 'praat';
 export type SidebarTab = 'inspector' | 'tiers' | 'settings' | 'customize';
@@ -463,6 +470,7 @@ export interface EditorState {
   viewDomain: { min: number; max: number } | null;
   targetWidth: number;
   widthAutoFit: boolean;
+  stageAvailableWidth: number;
   selection: EditorSelection;
   lastActiveTierIndex: number;
   hiddenTierIndices: number[];
@@ -501,6 +509,7 @@ export interface EditorState {
   autoOpenInspectorOnSelect: boolean;
   showMicroLoupe: boolean;
   uiScale: number;
+  canvasScale: number;
 
   // Customization State (Floating Bar & Rebindable Shortcuts)
   floatingBarConfig: FloatingBarConfig;
@@ -565,6 +574,7 @@ export interface EditorState {
   setViewDomain: (domain: { min: number; max: number } | null) => void;
   setTargetWidth: (w: number) => void;
   setWidthAutoFit: (v: boolean) => void;
+  setStageAvailableWidth: (w: number) => void;
   setSelection: (sel: EditorSelection) => void;
   toggleTierVisibility: (tierIndex: number) => void;
   soloTier: (tierIndex: number) => void;
@@ -600,6 +610,7 @@ export interface EditorState {
   setAutoOpenInspectorOnSelect: (auto: boolean) => void;
   setShowMicroLoupe: (show: boolean) => void;
   setUiScale: (scale: number) => void;
+  setCanvasScale: (scale: number) => void;
   toggleFloatingBarItem: (target: FloatingBarTarget, itemId: string) => void;
   reorderFloatingBarItem: (target: FloatingBarTarget, fromId: string, toId: string) => void;
   applyFloatingBarPreset: (preset: FloatingBarPresetKey) => void;
@@ -894,6 +905,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   })(),
   targetWidth: 1120,
   widthAutoFit: true,
+  stageAvailableWidth: 1120,
   showPlayhead: false,
   playing: false,
   loop: false,
@@ -933,6 +945,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   autoOpenInspectorOnSelect: initialSidebarPrefs.autoOpenInspectorOnSelect,
   showMicroLoupe: initialSidebarPrefs.showMicroLoupe,
   uiScale: loadSavedUiScale(),
+  canvasScale: loadSavedCanvasScale(),
 
   floatingBarConfig: loadFloatingBarConfig(),
   customShortcuts: loadCustomShortcuts(),
@@ -1306,10 +1319,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   setMode: (mode) => set({ mode, ...(mode === 'read' ? { ipaDockOpen: false } : {}) }),
   setWrapMode: (wrapMode) =>
-    set((s) => ({
-      wrapMode,
-      ...(wrapMode === 'auto' && s.targetWidth > 2400 ? { targetWidth: 2400 } : {})
-    })),
+    set((s) => {
+      if (s.wrapMode === wrapMode) return s;
+      return {
+        wrapMode,
+        widthAutoFit: true,
+        ...(wrapMode === 'auto' && s.targetWidth > 2400 ? { targetWidth: 2400 } : {})
+      };
+    }),
   setScaleMode: (scaleMode) => set({ scaleMode }),
   setTickPrecision: (tickPrecision) => set({ tickPrecision }),
   setTickFixedDecimals: (tickFixedDecimals) => {
@@ -1327,6 +1344,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       widthAutoFit: false
     }),
   setWidthAutoFit: (widthAutoFit) => set({ widthAutoFit }),
+  setStageAvailableWidth: (w) =>
+    set((s) => {
+      const next = Math.max(260, Math.round(Number.isFinite(w) ? w : 1120));
+      return s.stageAvailableWidth === next ? s : { stageAvailableWidth: next };
+    }),
   setSelection: (selection) =>
     set((s) => {
       const ti = extractTierIndex(selection);
@@ -1472,6 +1494,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const uiScale = clampUiScale(scale);
     saveUiScale(uiScale);
     set({ uiScale });
+  },
+  setCanvasScale: (scale) => {
+    const canvasScale = clampCanvasScale(scale);
+    saveCanvasScale(canvasScale);
+    set({ canvasScale });
   },
   toggleFloatingBarItem: (target, itemId) =>
     set((s) => {

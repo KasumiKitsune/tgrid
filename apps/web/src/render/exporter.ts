@@ -382,7 +382,9 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
         ? input.uiWidthAutoFit
           ? input.stageWidth
           : Math.min(input.uiTargetWidth, input.stageWidth)
-        : input.uiTargetWidth;
+        : input.uiWidthAutoFit
+          ? input.stageWidth
+          : input.uiTargetWidth;
   } else if (prefs.widthPreset === 'single-col') {
     wrapMode = 'auto';
     targetWidth = 380;
@@ -440,6 +442,8 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
     tickFixedDecimals: prefs.tickFixedDecimals,
     viewDomain: null,
     mode: 'read',
+    allowSingleCompress:
+      prefs.widthPreset === 'window' && wrapMode === 'single' && !input.uiWidthAutoFit,
     marginPreset: prefs.marginPreset,
     captionHeight,
     scaleBarExtraH,

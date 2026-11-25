@@ -193,6 +193,7 @@ export interface ComputeLayoutOptions {
   fontScale?: number;
   hiddenTierIndices?: number[];
   isInteractive?: boolean;
+  allowSingleCompress?: boolean;
   viewportHeight?: number;
   legendConfig?: {
     mode: 'full' | 'compact' | 'off';
@@ -229,6 +230,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     fontScale = 1,
     hiddenTierIndices,
     isInteractive = false,
+    allowSingleCompress = false,
     viewportHeight = 0,
     legendConfig = null
   } = options;
@@ -907,6 +909,18 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
           : Math.min(rawTargetActive, 220 + activeColCount * 145);
       if (activeSum > 0 && targetActive > activeSum) {
         bandContentW = Math.max(40, collapsedSum + targetActive);
+      } else if (
+        wrapMode === 'single' &&
+        allowSingleCompress &&
+        activeSum > 0 &&
+        targetActive < activeSum
+      ) {
+        let activeFloorSum = 0;
+        for (let i = b.startIdx; i < b.endIdx; i++) {
+          if (!colCollapsed[i]) activeFloorSum += colFloor[i];
+        }
+        const compressedActive = Math.max(activeFloorSum, targetActive);
+        bandContentW = Math.max(40, collapsedSum + compressedActive);
       }
     }
 

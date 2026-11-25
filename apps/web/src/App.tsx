@@ -24,7 +24,7 @@ import {
 } from './render/exporter';
 import { useEditorStore } from './store/useEditorStore';
 import { isComposingEvent, isEditableTarget, matchesShortcut } from './shortcuts/registry';
-import { applyUiScaleToDom, syncUiScaleViewportAttrs } from './utils/uiScale';
+import { applyUiScaleToDom, stepCanvasScale, syncUiScaleViewportAttrs } from './utils/uiScale';
 import { Topbar, type ExportActionKind } from './components/Topbar';
 import { TransportBar } from './components/TransportBar';
 import { EditStrip } from './components/EditStrip';
@@ -1335,7 +1335,7 @@ export function App() {
         }
       }
 
-      // Reclaim Mod+= / Mod++ / Mod+- / Mod+_ / Mod+0 for #stage horizontal zoom
+      // Reclaim Mod+= / Mod++ / Mod+- / Mod+_ / Mod+0 for #sheet visual canvas zoom (synced with StatusBar 50%–200%)
       const isZoomIn =
         ctrl &&
         !e.altKey &&
@@ -1355,37 +1355,10 @@ export function App() {
         if (anyModalOpen) return;
         const st = useEditorStore.getState();
         if (isZoomReset) {
-          st.setTargetWidth(1120);
-          st.setWidthAutoFit(true);
-          st.setWrapMode('auto');
-          st.setViewDomain(null);
+          st.setCanvasScale(1);
           return;
         }
-        const stageEl = document.getElementById('stage');
-        const curStageW = stageEl?.clientWidth || window.innerWidth;
-        const sidePad = curStageW < 480 ? 12 : 24;
-        const availW = Math.max(260, curStageW - sidePad);
-        const renderedW = st.layout && st.layout.width > 0 ? st.layout.width : availW;
-        const curW = renderedW;
-        const factor = isZoomIn ? 1.15 : 1 / 1.15;
-        const nextW = Math.round(curW * factor);
-        let nextWrap = st.wrapMode;
-        const singleBandCapped =
-          st.wrapMode === 'auto' &&
-          st.layout?.bands.length === 1 &&
-          renderedW < availW - 8;
-        if (st.wrapMode === 'auto' && factor > 1 && (nextW > availW || singleBandCapped)) {
-          nextWrap = 'single';
-          st.setWrapMode('single');
-        }
-        const dom = st.viewDomain || { min: st.tg.xmin, max: st.tg.xmax };
-        const dur = Math.max(
-          0.1,
-          (Number.isFinite(dom.max) ? dom.max : 1) - (Number.isFinite(dom.min) ? dom.min : 0)
-        );
-        const maxW =
-          nextWrap === 'single' ? Math.max(4800, Math.min(18000, Math.round(dur * 600))) : 2400;
-        st.setTargetWidth(Math.max(280, Math.min(maxW, nextW)));
+        st.setCanvasScale(stepCanvasScale(st.canvasScale, isZoomIn ? 1 : -1));
         return;
       }
 

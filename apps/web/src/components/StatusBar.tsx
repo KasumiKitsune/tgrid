@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import type { TextGrid } from '../bridge/types';
 import { getEffectiveShortcutHint } from '../shortcuts/registry';
 import { useEditorStore, type IpaInputMode } from '../store/useEditorStore';
-import { UI_SCALE_MAX, UI_SCALE_MIN, stepUiScale } from '../utils/uiScale';
+import { CANVAS_SCALE_MAX, CANVAS_SCALE_MIN, stepCanvasScale } from '../utils/uiScale';
 import { UiIcon } from './Icons';
 
 interface QuickDiagCounts {
@@ -78,8 +78,8 @@ export const StatusBar: React.FC = () => {
   const setSidebarOpen = useEditorStore((s) => s.setSidebarOpen);
   const setShortcutsOpen = useEditorStore((s) => s.setShortcutsOpen);
   const customShortcuts = useEditorStore((s) => s.customShortcuts);
-  const uiScale = useEditorStore((s) => s.uiScale);
-  const setUiScale = useEditorStore((s) => s.setUiScale);
+  const canvasScale = useEditorStore((s) => s.canvasScale);
+  const setCanvasScale = useEditorStore((s) => s.setCanvasScale);
 
   const ipaCycleHint = getEffectiveShortcutHint('ipa-cycle', customShortcuts);
   const shortcutsHint = getEffectiveShortcutHint('shortcuts-modal', customShortcuts);
@@ -198,32 +198,36 @@ export const StatusBar: React.FC = () => {
           <span>{IPA_LABELS[ipaMode]}</span>
         </button>
 
-        <div className="status-zoom-group" role="group" aria-label="界面缩放">
+        <div className="status-zoom-group" role="group" aria-label="画布缩放">
           <button
             type="button"
             className="status-zoom-btn"
-            disabled={uiScale <= UI_SCALE_MIN + 0.001}
-            title="缩小界面（75%–200%）"
-            aria-label="缩小界面"
-            onClick={() => setUiScale(stepUiScale(uiScale, -1))}
+            disabled={canvasScale <= CANVAS_SCALE_MIN + 0.001}
+            title="缩小画布（50%–200%，Ctrl+- 或 Ctrl+滚轮）"
+            aria-label="缩小画布"
+            onClick={() => setCanvasScale(stepCanvasScale(canvasScale, -1))}
           >
             −
           </button>
           <button
             type="button"
-            className={`status-zoom-val ${uiScale !== 1 ? 'is-scaled' : ''}`}
-            title={uiScale === 1 ? '界面缩放 100%（不改变导出尺寸）' : '点击一键复原为 100%'}
-            onClick={() => setUiScale(1)}
+            className={`status-zoom-val ${canvasScale !== 1 ? 'is-scaled' : ''}`}
+            title={
+              canvasScale === 1
+                ? '画布缩放 100%（Ctrl+滚轮缩放，Ctrl+0 复原，不影响界面与导出尺寸）'
+                : '点击或按 Ctrl+0 一键复原画布缩放为 100%'
+            }
+            onClick={() => setCanvasScale(1)}
           >
-            {Math.round(uiScale * 100)}%
+            {Math.round(canvasScale * 100)}%
           </button>
           <button
             type="button"
             className="status-zoom-btn"
-            disabled={uiScale >= UI_SCALE_MAX - 0.001}
-            title="放大界面（75%–200%）"
-            aria-label="放大界面"
-            onClick={() => setUiScale(stepUiScale(uiScale, 1))}
+            disabled={canvasScale >= CANVAS_SCALE_MAX - 0.001}
+            title="放大画布（50%–200%，Ctrl+= 或 Ctrl+滚轮）"
+            aria-label="放大画布"
+            onClick={() => setCanvasScale(stepCanvasScale(canvasScale, 1))}
           >
             +
           </button>

@@ -1,7 +1,7 @@
 import React from 'react';
 import { isTauriRuntime } from '../../bridge/PlatformBridge';
 import { useEditorStore, type EditInspectorMode, type IpaInputMode } from '../../store/useEditorStore';
-import { UI_SCALE_MAX, UI_SCALE_MIN, stepUiScale } from '../../utils/uiScale';
+import { UI_SCALE_PRESETS } from '../../utils/uiScale';
 import { InfoIcon, TGridIcon, UiIcon } from '../Icons';
 import { CollapsibleSection } from './CollapsibleSection';
 
@@ -39,7 +39,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const setWrapMode = useEditorStore((s) => s.setWrapMode);
   const targetWidth = useEditorStore((s) => s.targetWidth);
   const widthAutoFit = useEditorStore((s) => s.widthAutoFit);
+  const stageAvailableWidth = useEditorStore((s) => s.stageAvailableWidth);
   const setTargetWidth = useEditorStore((s) => s.setTargetWidth);
+  const setWidthAutoFit = useEditorStore((s) => s.setWidthAutoFit);
   const layout = useEditorStore((s) => s.layout);
   const scaleMode = useEditorStore((s) => s.scaleMode);
   const setScaleMode = useEditorStore((s) => s.setScaleMode);
@@ -117,46 +119,30 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <span>显示底部交互图例</span>
           </label>
 
-          <div className="sb-setting-inline">
-            <span className="sb-field-lbl" title="全局缩放界面与谱面视图（75%–200%，不影响导出图像物理尺寸）">
-              界面缩放
+          <div className="sb-setting-block">
+            <span
+              className="sb-field-lbl"
+              title="调整顶部工具栏、侧边栏、弹窗等外部界面大小（不影响导出图像物理尺寸）"
+            >
+              界面大小
             </span>
-            <div className="width-stepper ui-scale-stepper">
-              <button
-                type="button"
-                className="icon-btn compact"
-                disabled={uiScale <= UI_SCALE_MIN + 0.001}
-                title="缩小界面"
-                aria-label="缩小界面"
-                onClick={() => setUiScale(stepUiScale(uiScale, -1))}
-              >
-                <TGridIcon name="stepper-minus" size={13} />
-              </button>
-              <button
-                type="button"
-                className="compact ui-scale-reset-btn"
-                title={uiScale === 1 ? '当前为默认 100% 缩放' : '点击一键复原为 100%'}
-                onClick={() => setUiScale(1)}
-              >
-                {Math.round(uiScale * 100)}%
-              </button>
-              <button
-                type="button"
-                className="icon-btn compact"
-                disabled={uiScale >= UI_SCALE_MAX - 0.001}
-                title="放大界面"
-                aria-label="放大界面"
-                onClick={() => setUiScale(stepUiScale(uiScale, 1))}
-              >
-                <TGridIcon name="stepper-plus" size={13} />
-              </button>
+            <div className="segmented sb-seg-full" role="group" aria-label="界面大小">
+              {UI_SCALE_PRESETS.map((preset) => (
+                <button
+                  key={preset.key}
+                  type="button"
+                  className={`compact ${Math.abs(uiScale - preset.scale) < 0.01 ? 'active' : ''}`}
+                  title={`${preset.label}（${preset.pct}）`}
+                  onClick={() => setUiScale(preset.scale)}
+                >
+                  {preset.label} {preset.pct}
+                </button>
+              ))}
             </div>
           </div>
-          {uiScale !== 1 && (
-            <div className="sb-hint">
-              界面缩放仅影响当前屏幕显示，离线导出 SVG/PNG 仍保持精确出版尺寸。
-            </div>
-          )}
+          <div className="sb-hint">
+            调整外部界面缩放（小 100% / 中 120% / 大 140%）；谱面画布缩放可通过 Ctrl+滚轮、Ctrl+±/0 或底部状态栏控制，均不影响导出尺寸。
+          </div>
         </div>
       </CollapsibleSection>
 
@@ -182,53 +168,119 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </div>
           </div>
 
-          <div className="sb-setting-inline">
-            <span className="sb-field-lbl">单行基准宽度</span>
-            <div className="width-stepper">
-              <button
-                type="button"
-                className="icon-btn compact"
-                title="收窄行宽"
-                onClick={() => {
-                  const baseW =
-                    wrapMode === 'auto' && widthAutoFit && layout?.width
-                      ? Math.round(layout.width)
-                      : targetWidth;
-                  setTargetWidth(baseW - 120);
-                }}
-              >
-                <TGridIcon name="stepper-minus" size={13} />
-              </button>
-              <span
-                className="width-readout"
-                title={
-                  wrapMode === 'auto' && widthAutoFit
-                    ? '自动适配窗口宽度（点击 −/+ 可切换固定宽度）'
-                    : `固定基准宽度 ${targetWidth} px`
+          {(() => {
+            const availW = Math.max(260, stageAvailableWidth);
+            const renderedW = layout?.width ? Math.round(layout.width) : availW;
+            const isAutoMode = wrapMode === 'auto';
+            const isEffectiveAuto = isAutoMode
+              ? widthAutoFit || targetWidth >= availW
+              : widthAutoFit;
+            const curEffectiveW = isAutoMode
+              ? isEffectiveAuto
+                ? availW
+                : targetWidth
+              : isEffectiveAuto
+                ? renderedW
+                : Math.max(targetWidth, renderedW);
+            const singleHitFloor = !isAutoMode && !widthAutoFit && targetWidth < renderedW - 2;
+            const minusDisabled = isAutoMode
+              ? !isEffectiveAuto && targetWidth <= 280
+              : singleHitFloor || (!widthAutoFit && targetWidth <= 280);
+            const plusDisabled = isAutoMode
+              ? isEffectiveAuto
+              : !widthAutoFit && curEffectiveW >= 18000;
+            const singleStep = Math.max(120, Math.round((renderedW * 0.15) / 10) * 10);
+
+            const handleNarrow = () => {
+              if (isAutoMode) {
+                const baseW = isEffectiveAuto ? availW : targetWidth;
+                setTargetWidth(Math.max(280, baseW - 120));
+              } else {
+                const baseW = widthAutoFit ? renderedW : Math.min(targetWidth, renderedW);
+                setTargetWidth(Math.max(280, baseW - singleStep));
+              }
+            };
+
+            const handleWiden = () => {
+              if (isAutoMode) {
+                if (isEffectiveAuto) return;
+                const nextW = targetWidth + 120;
+                if (nextW >= availW - 8) {
+                  setWidthAutoFit(true);
+                } else {
+                  setTargetWidth(nextW);
                 }
-              >
-                {wrapMode === 'auto' && widthAutoFit
-                  ? layout?.width
-                    ? `自动 ${Math.round(layout.width)}px`
-                    : '自动'
-                  : `${targetWidth} px`}
-              </span>
-              <button
-                type="button"
-                className="icon-btn compact"
-                title="加宽行宽"
-                onClick={() => {
-                  const baseW =
-                    wrapMode === 'auto' && widthAutoFit && layout?.width
-                      ? Math.round(layout.width)
-                      : targetWidth;
-                  setTargetWidth(baseW + 120);
-                }}
-              >
-                <TGridIcon name="stepper-plus" size={13} />
-              </button>
-            </div>
-          </div>
+              } else {
+                const baseW = widthAutoFit ? renderedW : Math.max(targetWidth, renderedW);
+                setTargetWidth(Math.min(18000, baseW + singleStep));
+              }
+            };
+
+            const readoutText = isAutoMode
+              ? isEffectiveAuto
+                ? `自动 ${availW}px`
+                : `${targetWidth} px`
+              : widthAutoFit
+                ? `自动 ${renderedW}px`
+                : `${renderedW} px`;
+
+            const readoutTitle = isAutoMode
+              ? isEffectiveAuto
+                ? '已自动适配当前窗口宽度（点击 − 可收窄折行宽度）'
+                : `固定折行宽度 ${targetWidth} px（点击一键恢复自动适配窗口）`
+              : widthAutoFit
+                ? `单行自然宽度 ${renderedW} px（点击 −/+ 或 Alt+滚轮 可收窄/拉宽）`
+                : `自定义单行宽度 ${renderedW} px（点击一键恢复默认自然宽度）`;
+
+            return (
+              <div className="sb-setting-inline">
+                <span className="sb-field-lbl">
+                  {isAutoMode ? '最大折行宽度' : '单行展开宽度'}
+                </span>
+                <div className="width-stepper">
+                  <button
+                    type="button"
+                    className="icon-btn compact"
+                    disabled={minusDisabled}
+                    title={
+                      minusDisabled
+                        ? isAutoMode
+                          ? '已达最小折行宽度 (280 px)'
+                          : '已达当前文本可读下限'
+                        : '收窄宽度'
+                    }
+                    onClick={handleNarrow}
+                  >
+                    <TGridIcon name="stepper-minus" size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className={`width-readout ${!isEffectiveAuto ? 'is-custom' : ''}`}
+                    disabled={isEffectiveAuto}
+                    title={readoutTitle}
+                    onClick={() => setWidthAutoFit(true)}
+                  >
+                    {readoutText}
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn compact"
+                    disabled={plusDisabled}
+                    title={
+                      plusDisabled
+                        ? isAutoMode
+                          ? '已适配窗口最大宽度（如需超宽展开请切至「单行展开」）'
+                          : '已达最大展开宽度 (18000 px)'
+                        : '加宽宽度'
+                    }
+                    onClick={handleWiden}
+                  >
+                    <TGridIcon name="stepper-plus" size={13} />
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="sb-setting-block">
             <span className="sb-field-lbl">时间比例</span>
