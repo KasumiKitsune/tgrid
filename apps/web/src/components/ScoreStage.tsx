@@ -3119,8 +3119,95 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         if (!band) return;
         const pt = svgPointFromEvent({ clientX, clientY });
 
+        const drawHoverSpineSafeVertical = (
+          x: number,
+          yBottom: number,
+          stroke: string,
+          strokeWidth: number,
+          opacity?: number,
+          dashArray?: string
+        ) => {
+          const splitForTicks = !curLayout.hideTicks && band.tiersTopY - band.neckBotY > 8;
+          if (splitForTicks) {
+            svgEl(
+              'line',
+              {
+                x1: x,
+                y1: band.neckBotY,
+                x2: x,
+                y2: band.neckBotY + 3,
+                stroke,
+                'stroke-width': strokeWidth,
+                ...(opacity !== undefined ? { opacity } : {})
+              },
+              hg
+            );
+            svgEl(
+              'line',
+              {
+                x1: x,
+                y1: band.tiersTopY - 3,
+                x2: x,
+                y2: band.tiersTopY,
+                stroke,
+                'stroke-width': strokeWidth,
+                ...(opacity !== undefined ? { opacity } : {})
+              },
+              hg
+            );
+            svgEl(
+              'line',
+              {
+                x1: x,
+                y1: band.tiersTopY,
+                x2: x,
+                y2: yBottom,
+                stroke,
+                'stroke-width': strokeWidth,
+                ...(opacity !== undefined ? { opacity } : {}),
+                ...(dashArray ? { 'stroke-dasharray': dashArray } : {})
+              },
+              hg
+            );
+          } else {
+            svgEl(
+              'line',
+              {
+                x1: x,
+                y1: band.neckBotY,
+                x2: x,
+                y2: yBottom,
+                stroke,
+                'stroke-width': strokeWidth,
+                ...(opacity !== undefined ? { opacity } : {}),
+                ...(dashArray ? { 'stroke-dasharray': dashArray } : {})
+              },
+              hg
+            );
+          }
+        };
+
         const drawHoverNecks = (times: number[]) => {
           const anchorTopY = band.anchorH > 0 ? band.anchorY : band.linearY;
+          if (times.length === 2 && Number.isFinite(times[0]) && Number.isFinite(times[1])) {
+            const t0 = Math.max(band.startT, Math.min(times[0], times[1]));
+            const t1 = Math.min(band.endT, Math.max(times[0], times[1]));
+            if (t1 > t0) {
+              const lx0 = band.linearXForTime(t0);
+              const lx1 = band.linearXForTime(t1);
+              const ex0 = elasticXInBand(band, t0);
+              const ex1 = elasticXInBand(band, t1);
+              svgEl(
+                'polygon',
+                {
+                  points: `${lx0},${band.neckTopY} ${lx1},${band.neckTopY} ${ex1},${band.neckBotY} ${ex0},${band.neckBotY}`,
+                  fill: '#1D4ED8',
+                  'fill-opacity': 0.065
+                },
+                hg
+              );
+            }
+          }
           const drawn: number[] = [];
           for (const t of times) {
             if (!Number.isFinite(t) || t < band.startT || t > band.endT) continue;
@@ -3167,7 +3254,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           isShiftSplit: boolean
         ) => {
           const anchorTopY = band.anchorH > 0 ? band.anchorY : band.linearY;
-          // Sloped amber neck line
+          // Straight sloped amber neck line
           svgEl(
             'path',
             {
@@ -3181,34 +3268,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             },
             hg
           );
-          if (band.tiersTopY > band.neckBotY) {
-            svgEl(
-              'line',
-              {
-                x1: snap.x,
-                y1: band.neckBotY,
-                x2: snap.x,
-                y2: band.tiersTopY,
-                stroke: '#B45309',
-                'stroke-width': 1.15,
-                opacity: 0.55
-              },
-              hg
-            );
-          }
-          // Full-column amber solid guide across all visible tiers
-          svgEl(
-            'line',
-            {
-              x1: snap.x,
-              y1: band.tiersTopY,
-              x2: snap.x,
-              y2: band.tiersBottomY,
-              stroke: '#B45309',
-              'stroke-width': 1.5
-            },
-            hg
-          );
+          // Spine-safe full-column amber solid guide across all visible tiers
+          drawHoverSpineSafeVertical(snap.x, band.tiersBottomY, '#B45309', 1.5);
           // Tier-local anchor glyph
           if (isPointWire && tl.wireY !== undefined) {
             svgEl(
@@ -3375,14 +3436,24 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           svgEl('line', { x1: aimX, y1: Math.min(band.specY + band.specH, gapY + 14), x2: aimX, y2: band.neckTopY, stroke: strokeC, 'stroke-width': nearBnd ? 1.4 : 0.9, opacity: op }, hg);
           svgEl('line', { x1: aimX - 7, y1: gapY, x2: aimX - 3, y2: gapY, stroke: strokeC, 'stroke-width': 1, opacity: op }, hg);
           svgEl('line', { x1: aimX + 3, y1: gapY, x2: aimX + 7, y2: gapY, stroke: strokeC, 'stroke-width': 1, opacity: op }, hg);
-          svgEl('path', {
-            d: `M${aimX},${band.neckTopY} L${ex},${band.neckBotY} L${ex},${band.tiersBottomY}`,
-            fill: 'none',
+          svgEl('line', {
+            x1: aimX,
+            y1: band.neckTopY,
+            x2: ex,
+            y2: band.neckBotY,
             stroke: strokeC,
             'stroke-width': nearBnd ? 1.3 : 0.85,
             opacity: op * 0.85,
             'stroke-dasharray': nearBnd ? 'none' : '2 2'
           }, hg);
+          drawHoverSpineSafeVertical(
+            ex,
+            band.tiersBottomY,
+            strokeC,
+            nearBnd ? 1.3 : 0.85,
+            op * 0.85,
+            nearBnd ? undefined : '2 2'
+          );
 
           // Live t (s) · f (Hz) readout badge inside top of spectrogram
           const freqHz = Math.round(
@@ -3418,13 +3489,14 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           const t = timeFromLinearX(band, clampedX);
           const ex = elasticXInBand(band, t);
           svgEl('path', {
-            d: `M${clampedX},${band.linearY} L${clampedX},${band.neckTopY} L${ex},${band.neckBotY} L${ex},${band.tiersBottomY}`,
+            d: `M${clampedX},${band.linearY} L${clampedX},${band.neckTopY} L${ex},${band.neckBotY}`,
             fill: 'none',
             stroke: '#141413',
             'stroke-width': 0.9,
             opacity: 0.35,
             'stroke-dasharray': '2 2'
           }, hg);
+          drawHoverSpineSafeVertical(ex, band.tiersBottomY, '#141413', 0.9, 0.35, '2 2');
 
           const readoutTxt = `${t.toFixed(3)} s`;
           const rw = Math.ceil(measurePx(readoutTxt, `9.5px ${MONO_FONT_STACK}`)) + 8;

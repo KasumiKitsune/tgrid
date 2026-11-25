@@ -158,7 +158,7 @@ export const LEGEND_CATALOG: Array<{ key: string; zh: string; en: string }> = [
   { key: 'empty-point', zh: '空白标注点', en: 'Unlabeled point' },
   { key: 'boundaries', zh: '多层对齐 / 单层边界', en: 'Shared / tier boundary' },
   { key: 'stretch', zh: '短音段加宽显示', en: 'Widened short segment' },
-  { key: 'collapsed-pause', zh: '长静音省略 (≥0.8 s)', en: 'Folded silence (≥0.8 s)' },
+  { key: 'collapsed-pause', zh: '长静音省略 (≥0.5 s)', en: 'Folded silence (≥0.5 s)' },
   { key: 'continuation', zh: '跨行延续区间', en: 'Wrapped continuation' },
   { key: 'spectrogram', zh: '宽带语谱图', en: 'Broadband spectrogram' },
   { key: 'pitch-f0', zh: '基频曲线 (F₀)', en: 'Pitch contour (F₀)' },

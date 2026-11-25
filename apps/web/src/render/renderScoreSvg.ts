@@ -319,6 +319,110 @@ export function renderInteractiveOverlay(
   if (!layerG) return;
   while (layerG.firstChild) layerG.removeChild(layerG.firstChild);
 
+  // Spine-safe vertical guide: never slashes across rotated -52° timestamp digits in [neckBotY, tiersTopY].
+  // Draws crisp 3px docking ticks at neckBotY and tiersTopY, then resumes cleanly through annotation tiers.
+  const drawSpineSafeVertical = (
+    band: BandLayout,
+    x: number,
+    yBottom: number,
+    opts: {
+      stroke: string;
+      strokeWidth: number;
+      opacity?: number;
+      dashArray?: string;
+      dockOpacity?: number;
+      dockStrokeWidth?: number;
+    }
+  ) => {
+    const spineGap = band.tiersTopY - band.neckBotY;
+    const splitForTicks = !layout.hideTicks && spineGap > 8;
+    const dockSw = opts.dockStrokeWidth ?? opts.strokeWidth;
+    const dockOp = opts.dockOpacity ?? opts.opacity;
+    if (splitForTicks) {
+      svgEl(
+        'line',
+        {
+          x1: x,
+          y1: band.neckBotY,
+          x2: x,
+          y2: band.neckBotY + 3,
+          stroke: opts.stroke,
+          'stroke-width': dockSw,
+          ...(dockOp !== undefined ? { opacity: dockOp } : {})
+        },
+        layerG
+      );
+      svgEl(
+        'line',
+        {
+          x1: x,
+          y1: band.tiersTopY - 3,
+          x2: x,
+          y2: band.tiersTopY,
+          stroke: opts.stroke,
+          'stroke-width': dockSw,
+          ...(dockOp !== undefined ? { opacity: dockOp } : {})
+        },
+        layerG
+      );
+      svgEl(
+        'line',
+        {
+          x1: x,
+          y1: band.tiersTopY,
+          x2: x,
+          y2: yBottom,
+          stroke: opts.stroke,
+          'stroke-width': opts.strokeWidth,
+          ...(opts.dashArray ? { 'stroke-dasharray': opts.dashArray } : {}),
+          ...(opts.opacity !== undefined ? { opacity: opts.opacity } : {})
+        },
+        layerG
+      );
+    } else {
+      svgEl(
+        'line',
+        {
+          x1: x,
+          y1: band.neckBotY,
+          x2: x,
+          y2: yBottom,
+          stroke: opts.stroke,
+          'stroke-width': opts.strokeWidth,
+          ...(opts.dashArray ? { 'stroke-dasharray': opts.dashArray } : {}),
+          ...(opts.opacity !== undefined ? { opacity: opts.opacity } : {})
+        },
+        layerG
+      );
+    }
+  };
+
+  // Straight polygonal focus trapezoid bridging the linear spectrogram span and elastic interval span.
+  const drawNeckFocusTrapezoid = (
+    band: BandLayout,
+    t0: number,
+    t1: number,
+    fillColor = '#1D4ED8',
+    fillOpacity = 0.13
+  ) => {
+    const segT0 = Math.max(band.startT, Math.min(t0, t1));
+    const segT1 = Math.min(band.endT, Math.max(t0, t1));
+    if (segT1 <= segT0) return;
+    const linX0 = band.linearXForTime(segT0);
+    const linX1 = band.linearXForTime(segT1);
+    const elX0 = elasticXInBand(band, segT0);
+    const elX1 = elasticXInBand(band, segT1);
+    svgEl(
+      'polygon',
+      {
+        points: `${linX0},${band.neckTopY} ${linX1},${band.neckTopY} ${elX1},${band.neckBotY} ${elX0},${band.neckBotY}`,
+        fill: fillColor,
+        'fill-opacity': fillOpacity
+      },
+      layerG
+    );
+  };
+
   if (input.playRange) {
     const { start, end } = input.playRange;
     const hasSpan = Number.isFinite(start) && Number.isFinite(end) && end > start;
@@ -340,6 +444,9 @@ export function renderInteractiveOverlay(
         },
         layerG
       );
+      if (hasSpan) {
+        drawNeckFocusTrapezoid(band, start, end, '#1D4ED8', 0.13);
+      }
     }
 
     if (hasSpan) {
@@ -384,7 +491,7 @@ export function renderInteractiveOverlay(
             layerG
           );
 
-          // 2. Sloped projection line through the neck
+          // 2. Straight sloped projection edge through the neck
           svgEl(
             'line',
             {
@@ -399,21 +506,14 @@ export function renderInteractiveOverlay(
             layerG
           );
 
-          // 3. Vertical dashed projection line through spine and all annotation tiers
-          svgEl(
-            'line',
-            {
-              x1: elX,
-              y1: band.neckBotY,
-              x2: elX,
-              y2: band.tiersBottomY + 4,
-              stroke: rangeColor,
-              'stroke-width': 1.35,
-              'stroke-dasharray': '4 3',
-              opacity: tierOpacity
-            },
-            layerG
-          );
+          // 3. Spine-safe dashed projection line through annotation tiers (clean docking ticks around timestamps)
+          drawSpineSafeVertical(band, elX, band.tiersBottomY + 4, {
+            stroke: rangeColor,
+            strokeWidth: 1.35,
+            dashArray: '4 3',
+            opacity: tierOpacity,
+            dockOpacity: mainOpacity
+          });
         }
       };
 
@@ -479,6 +579,16 @@ export function renderInteractiveOverlay(
         (Math.abs(input.playRange.start - t) <= 1e-6 || Math.abs(input.playRange.end - t) <= 1e-6)
     );
 
+  const isSameSpanAsPlayRange = (t0: number, t1: number) =>
+    Boolean(
+      input.playRange &&
+        Number.isFinite(input.playRange.start) &&
+        Number.isFinite(input.playRange.end) &&
+        input.playRange.end > input.playRange.start &&
+        Math.abs(input.playRange.start - t0) <= 1e-6 &&
+        Math.abs(input.playRange.end - t1) <= 1e-6
+    );
+
   const sel = input.selection;
   if (sel) {
     for (const band of layout.bands) {
@@ -487,6 +597,9 @@ export function renderInteractiveOverlay(
         if (!tl) continue;
         for (const vi of tl.visibleIvs || []) {
           if (vi.iv.origIdx === sel.itemIndex) {
+            if (!isSameSpanAsPlayRange(vi.iv.xmin, vi.iv.xmax)) {
+              drawNeckFocusTrapezoid(band, vi.iv.xmin, vi.iv.xmax, '#1D4ED8', 0.13);
+            }
             if (!vi.clippedLeft && !isPlayRangeEdge(vi.iv.xmin)) {
               drawSelectionNeck(band, vi.iv.xmin, '#1D4ED8');
             }
@@ -595,13 +708,17 @@ export function renderInteractiveOverlay(
       svgEl(
         'path',
         {
-          d: `M${lx},${band.linearY - 2} L${lx},${band.neckTopY} L${ex},${band.neckBotY} L${ex},${band.tiersBottomY + 2}`,
+          d: `M${lx},${band.linearY - 2} L${lx},${band.neckTopY} L${ex},${band.neckBotY}`,
           fill: 'none',
           stroke: '#B91C1C',
           'stroke-width': 1.6
         },
         layerG
       );
+      drawSpineSafeVertical(band, ex, band.tiersBottomY + 2, {
+        stroke: '#B91C1C',
+        strokeWidth: 1.6
+      });
       svgEl(
         'polygon',
         { points: `${lx - 4},${band.linearY - 5} ${lx + 4},${band.linearY - 5} ${lx},${band.linearY}`, fill: '#B91C1C' },
@@ -632,18 +749,14 @@ export function renderInteractiveOverlay(
       }
     }
 
-    // Cross-tier magnetic alignment: amber solid full-height guide across ALL tiers in the band
+    // Cross-tier magnetic alignment: amber solid guide across ALL tiers (spine-safe around timestamps)
     if (band && snapX !== null) {
-      svgEl(
-        'line',
-        { x1: snapX, y1: band.neckBotY, x2: snapX, y2: band.tiersTopY, stroke: '#B45309', 'stroke-width': 1.2, opacity: 0.65 },
-        layerG
-      );
-      svgEl(
-        'line',
-        { x1: snapX, y1: band.tiersTopY, x2: snapX, y2: band.tiersBottomY, stroke: '#B45309', 'stroke-width': 1.8 },
-        layerG
-      );
+      drawSpineSafeVertical(band, snapX, band.tiersBottomY, {
+        stroke: '#B45309',
+        strokeWidth: 1.8,
+        dockStrokeWidth: 1.35,
+        dockOpacity: 0.85
+      });
     } else {
       svgEl(
         'line',
@@ -749,6 +862,15 @@ export function renderInteractiveOverlay(
         layerG
       );
       svgEl(
+        'polygon',
+        {
+          points: `${lx0},${band.neckTopY} ${lx1},${band.neckTopY} ${px1},${band.neckBotY} ${px0},${band.neckBotY}`,
+          fill: '#1D4ED8',
+          'fill-opacity': 0.15
+        },
+        layerG
+      );
+      svgEl(
         'line',
         {
           x1: linX0,
@@ -756,8 +878,8 @@ export function renderInteractiveOverlay(
           x2: x0,
           y2: band.neckBotY,
           stroke: startColor,
-          'stroke-width': 1.2,
-          opacity: 0.82
+          'stroke-width': 1.3,
+          opacity: 0.88
         },
         layerG
       );
@@ -769,8 +891,8 @@ export function renderInteractiveOverlay(
           x2: x1,
           y2: band.neckBotY,
           stroke: endColor,
-          'stroke-width': 1.2,
-          opacity: 0.82
+          'stroke-width': 1.3,
+          opacity: 0.88
         },
         layerG
       );
@@ -857,31 +979,12 @@ export function renderInteractiveOverlay(
 
     const drawMagneticGuide = (guideX: number) => {
       if (!band) return;
-      svgEl(
-        'line',
-        {
-          x1: guideX,
-          y1: band.neckBotY,
-          x2: guideX,
-          y2: band.tiersTopY,
-          stroke: '#B45309',
-          'stroke-width': 1.2,
-          opacity: 0.65
-        },
-        layerG
-      );
-      svgEl(
-        'line',
-        {
-          x1: guideX,
-          y1: band.tiersTopY,
-          x2: guideX,
-          y2: band.tiersBottomY,
-          stroke: '#B45309',
-          'stroke-width': 1.6
-        },
-        layerG
-      );
+      drawSpineSafeVertical(band, guideX, band.tiersBottomY, {
+        stroke: '#B45309',
+        strokeWidth: 1.6,
+        dockStrokeWidth: 1.25,
+        dockOpacity: 0.85
+      });
     };
 
     if (sSnap) drawMagneticGuide(sSnap.x);
@@ -1338,8 +1441,14 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
       });
     }
 
-    // B. Projection Neck
+    // B. Projection Neck (strict straight-line academic geometry; denoised silent state)
     const neckG = svgEl('g', isExp && sem ? { id: `band-${bNum}-neck` } : {}, bG);
+    const neckH = Math.max(1, band.neckBotY - band.neckTopY);
+    const bwBoost = pal.isBw ? 0.12 : 0;
+    const hasMultiTierShared = band.spineCols.some(
+      (c, idx) => idx > 0 && idx < band.spineCols.length - 1 && c.usage >= 2
+    );
+
     if (layout.scaleMode !== 'linear' && !hideStretch) {
       for (const seg of band.linearSegs) {
         if (!seg.isStretched) continue;
@@ -1348,12 +1457,13 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
         if (!c0 || !c1) continue;
         svgEl('polygon', {
           points: `${seg.x0},${band.neckTopY} ${seg.x1},${band.neckTopY} ${c1.x},${band.neckBotY} ${c0.x},${band.neckBotY}`,
-          fill: pal.isBw ? '#E5E5E5' : pal.amber,
-          opacity: pal.isBw ? 0.85 : 0.065,
+          fill: pal.isBw ? '#E8E8E8' : pal.amber,
+          opacity: pal.isBw ? 0.72 : 0.05,
           ...(isExp ? {} : { 'data-legend-keys': 'stretch' })
         }, neckG);
       }
     }
+
     for (let i = 0; i < band.spineCols.length; i++) {
       const col = band.spineCols[i];
       const lx = lxs[i];
@@ -1364,19 +1474,12 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
         i === band.spineCols.length - 1;
       const minLinGap = minLinGapAt(i);
       const slant = Math.abs(col.x - lx);
-      const isHighDensitySlant = avgLinGap < 14 && slant > 22;
-      const isMajor = isHighDensitySlant
-        ? isBandEdgeOrGlobal || col.usage >= 3
-        : isBandEdgeOrGlobal || col.usage >= 2;
+      const slantRatio = slant / neckH;
+      const isHighDensitySlant = avgLinGap < 14 && slant > 32;
+      const isMajor = hasMultiTierShared
+        ? isBandEdgeOrGlobal || col.usage >= (isHighDensitySlant ? 3 : 2)
+        : isBandEdgeOrGlobal;
       const isSliverMinor = !isMajor && Boolean(col.isSliverEdge);
-      const isUltraDenseMinor =
-        !isMajor &&
-        (isSliverMinor ||
-          minLinGap < 8 ||
-          (avgLinGap < 12 && slant > 16) ||
-          (isHighDensitySlant && minLinGap < 10));
-      const isModDenseMinor =
-        !isMajor && !isUltraDenseMinor && (isHighDensitySlant || avgLinGap < 22 || minLinGap < 14);
 
       if (!hasAudio || band.specH === 0) {
         svgEl(
@@ -1387,8 +1490,8 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             x2: lx,
             y2: band.neckTopY,
             stroke: isMajor ? pal.ink : pal.faint,
-            'stroke-width': sw(isMajor ? 1 : 0.7),
-            opacity: isUltraDenseMinor ? 0.45 : hasAudio ? 0.45 : 0.75
+            'stroke-width': sw(isMajor ? 1 : 0.65),
+            opacity: !isMajor && (isSliverMinor || minLinGap < 10) ? 0.38 : hasAudio ? 0.45 : 0.72
           },
           neckG
         );
@@ -1399,13 +1502,27 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
           x2: lx,
           y2: band.neckTopY,
           stroke: isMajor ? pal.ink : pal.faint,
-          'stroke-width': sw(isMajor ? 1 : 0.7)
+          'stroke-width': sw(isMajor ? 1 : 0.65)
         };
-        if (isUltraDenseMinor) ancAttrs.opacity = 0.45;
+        if (!isMajor && (isSliverMinor || minLinGap < 10)) ancAttrs.opacity = 0.4;
         svgEl('line', ancAttrs, neckG);
       }
 
-      if (isMajor) {
+      if (layout.scaleMode === 'linear') {
+        svgEl(
+          'line',
+          {
+            x1: lx,
+            y1: band.neckTopY,
+            x2: col.x,
+            y2: band.neckBotY,
+            stroke: isMajor ? pal.faint : pal.rule,
+            'stroke-width': sw(isMajor ? 0.9 : 0.65),
+            opacity: Math.min(1, (isMajor ? 0.78 : 0.5) + bwBoost)
+          },
+          neckG
+        );
+      } else if (isBandEdgeOrGlobal) {
         svgEl(
           'line',
           {
@@ -1414,38 +1531,13 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             x2: col.x,
             y2: band.neckBotY,
             stroke: pal.faint,
-            'stroke-width': sw(0.9)
+            'stroke-width': sw(0.95),
+            opacity: Math.min(1, 0.78 + bwBoost)
           },
           neckG
         );
-      } else if (isUltraDenseMinor) {
-        svgEl(
-          'line',
-          {
-            x1: lx,
-            y1: band.neckTopY,
-            x2: lx,
-            y2: band.neckTopY + 3.5,
-            stroke: pal.rule,
-            'stroke-width': sw(0.65),
-            opacity: 0.55
-          },
-          neckG
-        );
-        svgEl(
-          'line',
-          {
-            x1: col.x,
-            y1: band.neckBotY - 3.5,
-            x2: col.x,
-            y2: band.neckBotY,
-            stroke: pal.rule,
-            'stroke-width': sw(0.65),
-            opacity: 0.55
-          },
-          neckG
-        );
-      } else if (isModDenseMinor) {
+      } else if (isMajor) {
+        const majorOp = slantRatio > 2.8 ? 0.54 : 0.72;
         svgEl(
           'line',
           {
@@ -1453,13 +1545,20 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             y1: band.neckTopY,
             x2: col.x,
             y2: band.neckBotY,
-            stroke: pal.rule,
-            'stroke-width': sw(0.55),
-            opacity: 0.36
+            stroke: pal.faint,
+            'stroke-width': sw(0.9),
+            opacity: Math.min(1, majorOp + bwBoost)
           },
           neckG
         );
       } else {
+        const minorOp = isSliverMinor
+          ? 0.34
+          : minLinGap < 8
+            ? 0.42
+            : slantRatio > 2.8
+              ? 0.42
+              : 0.52;
         svgEl(
           'line',
           {
@@ -1467,8 +1566,9 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             y1: band.neckTopY,
             x2: col.x,
             y2: band.neckBotY,
-            stroke: pal.rule,
-            'stroke-width': sw(0.7)
+            stroke: pal.faint,
+            'stroke-width': sw(0.7),
+            opacity: Math.min(1, minorOp + bwBoost)
           },
           neckG
         );
@@ -1536,7 +1636,15 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             transform: `rotate(-52, ${col.x + 1}, ${band.tiersTopY - 8})`,
             'text-anchor': 'start',
             'font-family': MONO_FONT_STACK,
-            'font-size': fs(10.5)
+            'font-size': fs(10.5),
+            ...(!transparentBg
+              ? {
+                  stroke: pal.paper,
+                  'stroke-width': sw(2.6),
+                  'paint-order': 'stroke',
+                  'stroke-linejoin': 'round'
+                }
+              : {})
           };
           if (!isExp) {
             tAttrs['data-role'] = 'spine-tick';
@@ -1594,7 +1702,15 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             'text-anchor': 'start',
             'font-family': MONO_FONT_STACK,
             'font-size': fs(9.5),
-            fill: pal.muted
+            fill: pal.muted,
+            ...(!transparentBg
+              ? {
+                  stroke: pal.paper,
+                  'stroke-width': sw(2.4),
+                  'paint-order': 'stroke',
+                  'stroke-linejoin': 'round'
+                }
+              : {})
           };
           if (!isExp) {
             tAttrs['data-role'] = 'spine-tick';

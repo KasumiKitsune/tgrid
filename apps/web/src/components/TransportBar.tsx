@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { formatKeyCombo } from '../shortcuts/registry';
+import { formatKeyCombo, getEffectiveShortcutHint } from '../shortcuts/registry';
 import { useEditorStore } from '../store/useEditorStore';
 import { ChevronIcon, TGridIcon, UiIcon } from './Icons';
 
@@ -37,8 +37,13 @@ export const TransportBar: React.FC<TransportBarProps> = ({
   const selection = useEditorStore((s) => s.selection);
   const audioName = useEditorStore((s) => s.audioName);
   const audioDuration = useEditorStore((s) => s.audioDuration);
+  const scaleMode = useEditorStore((s) => s.scaleMode);
+  const setScaleMode = useEditorStore((s) => s.setScaleMode);
+  const customShortcuts = useEditorStore((s) => s.customShortcuts);
   const setSidebarTab = useEditorStore((s) => s.setSidebarTab);
   const setSidebarOpen = useEditorStore((s) => s.setSidebarOpen);
+
+  const scaleToggleHint = getEffectiveShortcutHint('scale-toggle', customShortcuts);
 
   const [rateOpen, setRateOpen] = useState(false);
   const rateWrapRef = useRef<HTMLDivElement>(null);
@@ -213,6 +218,48 @@ export const TransportBar: React.FC<TransportBarProps> = ({
       </div>
 
       <div className="bar-group audio-meta">
+        <div
+          className="segmented scale-mode-switch"
+          role="group"
+          aria-label="时间比例模式"
+          title={
+            scaleToggleHint
+              ? `切换时间比例模式：自适应 / 线性 (${scaleToggleHint})`
+              : '切换时间比例模式：自适应 / 线性'
+          }
+        >
+          <button
+            type="button"
+            className={`compact ${scaleMode === 'elastic' ? 'active' : ''}`}
+            aria-pressed={scaleMode === 'elastic'}
+            title={
+              scaleToggleHint
+                ? `自适应宽度：短音段按字宽展开，≥0.5s 静音同步折叠 (${scaleToggleHint} 快速切换)`
+                : '自适应宽度：短音段按字宽展开，≥0.5s 静音同步折叠'
+            }
+            onClick={() => setScaleMode('elastic')}
+          >
+            <UiIcon name="toggleScale" size={13} />
+            <span>自适应</span>
+          </button>
+          <button
+            type="button"
+            className={`compact ${scaleMode === 'linear' ? 'active' : ''}`}
+            aria-pressed={scaleMode === 'linear'}
+            title={
+              scaleToggleHint
+                ? `线性对齐：全图按 1:1 真实物理时长与语谱图严格垂直对齐 (${scaleToggleHint} 快速切换)`
+                : '线性对齐：全图按 1:1 真实物理时长与语谱图严格垂直对齐'
+            }
+            onClick={() => setScaleMode('linear')}
+          >
+            <span>线性</span>
+            {scaleToggleHint && <kbd className="scale-kbd">{scaleToggleHint}</kbd>}
+          </button>
+        </div>
+
+        <div className="sep" />
+
         {!audioName ? (
           <button
             type="button"

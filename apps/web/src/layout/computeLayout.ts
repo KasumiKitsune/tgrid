@@ -254,13 +254,13 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
   const PAD_BOTTOM = marginPreset === 'tight' ? 12 : marginPreset === 'wide' ? 32 : basePadBot;
 
   const WAVE_H = showSpec ? (isTinyView ? 20 : 24) : hasAudio ? 34 : 0;
-  const NECK_H = isLinear ? 8 : 16;
+  const LINEAR_NECK_H = 8;
   const TIER_GAP = 7;
   const BAND_GAP =
     marginPreset === 'tight' ? 20 : marginPreset === 'wide' ? 40 : isTinyView ? 24 : 32;
   const MIN_COL_W = isTinyView ? 17 : 19;
-  const SILENCE_THRESHOLD = 0.8;
-  const SILENCE_COLLAPSE_W = isTinyView ? 48 : 58;
+  const SILENCE_THRESHOLD = 0.5;
+  const SILENCE_COLLAPSE_W = isTinyView ? 46 : 52;
 
   const fontFamily = richOpts?.fontFamily || IPA_FONT_STACK;
   const textFontMeasure =
@@ -525,6 +525,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
   const colCollapsed = new Array<boolean>(numCols).fill(false);
   const colIsCrossSliver = new Array<boolean>(numCols).fill(false);
   const dx = new Array<number>(numCols).fill(MIN_COL_W);
+  const colFloor = new Array<number>(numCols).fill(MIN_COL_W);
   const maxBandContentW = Math.max(120, targetWidth - PAD_X * 2 - GUTTER_FULL - RIGHT_OVERHANG);
 
   if (isLinear) {
@@ -536,6 +537,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
         : Math.max(basePxPerSec, Math.min(480, Math.max(220, (numCols * 22) / totalSpanT)));
     for (let i = 0; i < numCols; i++) {
       dx[i] = Math.max(0, spineT[i + 1] - spineT[i]) * linearPxPerSec;
+      colFloor[i] = dx[i];
     }
   } else {
     const minSliverW = isTinyView ? 3 : 4;
@@ -572,14 +574,22 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       if (!hasActiveText && dt >= SILENCE_THRESHOLD) {
         colCollapsed[i] = true;
         dx[i] = SILENCE_COLLAPSE_W;
+        colFloor[i] = SILENCE_COLLAPSE_W;
       } else {
-        const naturalW = Math.round(14 + 54 * Math.pow(Math.max(dt, 0.001), 0.55));
+        // Short unfolded empty pauses (< 0.5s) use linear-friendly weight so top/bottom stay cohesive;
+        // labeled segments use gentler dt^0.72 curve (vs 0.55) to suppress baseline drift.
+        const naturalW = !hasActiveText
+          ? Math.round(8 + 150 * Math.max(dt, 0.001))
+          : Math.round(12 + 78 * Math.pow(Math.max(dt, 0.001), 0.72));
         if (!isExactSingleTierAtom && !hasInteriorPoint) {
           // Pure cross-tier overlap sliver: exempt from MIN_COL_W=19px inflation; scale by true duration
           colIsCrossSliver[i] = true;
-          dx[i] = Math.min(naturalW, Math.max(minSliverW, Math.round(dt * 110)));
+          const sliverW = Math.min(naturalW, Math.max(minSliverW, Math.round(dt * 110)));
+          dx[i] = sliverW;
+          colFloor[i] = sliverW;
         } else {
           dx[i] = Math.max(MIN_COL_W, naturalW);
+          colFloor[i] = MIN_COL_W;
         }
       }
     }
@@ -599,12 +609,16 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
           const bIdx = tToIdx.get(Math.min(vMax, iv.xmax));
           if (aIdx === undefined || bIdx === undefined || bIdx <= aIdx) continue;
           let curSpanW = 0;
-          for (let c = aIdx; c < bIdx; c++) curSpanW += dx[c];
+          let curFloorSpanW = 0;
+          for (let c = aIdx; c < bIdx; c++) {
+            curSpanW += dx[c];
+            curFloorSpanW += colFloor[c];
+          }
           const unwrapped = layoutRichText(iv.text, 0, textFontMeasure, mode, effectiveRichOpts);
           const capW = unwrapped.gloss ? MAX_GLOSS_INTERVAL_W : MAX_SINGLE_INTERVAL_W;
           const desiredW = Math.min(unwrapped.width + 22, Math.max(curSpanW, capW));
-          if (curSpanW < desiredW) {
-            const extra = desiredW - curSpanW;
+          const desiredFloorW = Math.min(unwrapped.width + 22, Math.max(curFloorSpanW, capW));
+          if (curSpanW < desiredW || curFloorSpanW < desiredFloorW) {
             let useAll = true;
             for (let c = aIdx; c < bIdx; c++) {
               if (!colCollapsed[c]) {
@@ -615,13 +629,17 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
             let totalWeight = 0;
             for (let c = aIdx; c < bIdx; c++) {
               if (!useAll && colCollapsed[c]) continue;
-              totalWeight += Math.pow(Math.max(1e-4, spineT[c + 1] - spineT[c]), 0.85);
+              totalWeight += Math.max(1e-4, spineT[c + 1] - spineT[c]);
             }
             if (totalWeight > 0) {
+              const extraDx = Math.max(0, desiredW - curSpanW);
+              const extraFloor = Math.max(0, desiredFloorW - curFloorSpanW);
               for (let c = aIdx; c < bIdx; c++) {
                 if (!useAll && colCollapsed[c]) continue;
-                const w = Math.pow(Math.max(1e-4, spineT[c + 1] - spineT[c]), 0.85);
-                dx[c] += extra * (w / totalWeight);
+                const w = Math.max(1e-4, spineT[c + 1] - spineT[c]);
+                const share = w / totalWeight;
+                if (extraDx > 0) dx[c] += extraDx * share;
+                if (extraFloor > 0) colFloor[c] += extraFloor * share;
               }
             }
           }
@@ -693,7 +711,11 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
         }
       }
       for (let c = 0; c < numCols; c++) {
-        if (ptColExtra[c] > 0) dx[c] += ptColExtra[c];
+        if (ptColExtra[c] > 0) {
+          dx[c] += ptColExtra[c];
+          colFloor[c] += ptColExtra[c];
+        }
+        if (colFloor[c] > dx[c]) colFloor[c] = dx[c];
       }
     }
   }
@@ -823,36 +845,6 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     }
   }
 
-  // Single-band horizontal expansion (P0-1):
-  // - In 'single' mode, always expand active columns to fill maxBandContentW.
-  // - In interactive 'auto' mode when the entire document fits on 1 band, smoothly stretch active
-  //   columns to fill available workspace width (with a comfort cap for 1-2 column mini files so a
-  //   single cell never stretches into a giant 1200px box; offline ExportModal remains untouched).
-  if (!isLinear && numCols > 0 && (wrapMode === 'single' || (wrapMode === 'auto' && bands.length === 1 && isInteractive))) {
-    let collapsedSum = 0;
-    let activeSum = 0;
-    let activeColCount = 0;
-    for (let i = 0; i < numCols; i++) {
-      if (colCollapsed[i]) {
-        collapsedSum += dx[i];
-      } else {
-        activeSum += dx[i];
-        activeColCount++;
-      }
-    }
-    const rawTargetActive = maxBandContentW - collapsedSum;
-    const targetActive =
-      wrapMode === 'single'
-        ? rawTargetActive
-        : Math.min(rawTargetActive, 220 + activeColCount * 145);
-    if (activeSum > 0 && targetActive > activeSum) {
-      const factor = targetActive / activeSum;
-      for (let i = 0; i < numCols; i++) {
-        if (!colCollapsed[i]) dx[i] *= factor;
-      }
-    }
-  }
-
   // Elastic spectrogram height in single-band interactive mode: clamp(108px, 28vh, 220px).
   // Multi-band views and offline exports retain fixed publication height.
   const baseSpecH = isTinyView ? 88 : 108;
@@ -887,6 +879,272 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     const originX = PAD_X + gutterW;
     const startT = spineT[b.startIdx];
     const endT = spineT[b.endIdx];
+    const bandCols = Math.max(0, b.endIdx - b.startIdx);
+
+    // 1. Determine band total content width (including single-band interactive expansion)
+    let rawBandW = 0;
+    let collapsedSum = 0;
+    let activeSum = 0;
+    let activeColCount = 0;
+    for (let i = b.startIdx; i < b.endIdx; i++) {
+      rawBandW += dx[i];
+      if (colCollapsed[i]) collapsedSum += dx[i];
+      else {
+        activeSum += dx[i];
+        activeColCount++;
+      }
+    }
+    let bandContentW = Math.max(40, rawBandW);
+    if (
+      !isLinear &&
+      bandCols > 0 &&
+      (wrapMode === 'single' || (wrapMode === 'auto' && bands.length === 1 && isInteractive))
+    ) {
+      const rawTargetActive = maxBandContentW - collapsedSum;
+      const targetActive =
+        wrapMode === 'single'
+          ? rawTargetActive
+          : Math.min(rawTargetActive, 220 + activeColCount * 145);
+      if (activeSum > 0 && targetActive > activeSum) {
+        bandContentW = Math.max(40, collapsedSum + targetActive);
+      }
+    }
+
+    // 2. Compute strictly physical linear track widths and piecewise-anchored elastic column widths
+    const linearSegs: BandLinearSeg[] = [];
+    const colW = new Float64Array(bandCols);
+
+    if (bandCols > 0) {
+      if (isLinear) {
+        let cxLin = originX;
+        for (let k = 0; k < bandCols; k++) {
+          const gi = b.startIdx + k;
+          const w = dx[gi];
+          colW[k] = w;
+          linearSegs.push({
+            globalIdx: gi,
+            t0: spineT[gi],
+            t1: spineT[gi + 1],
+            x0: cxLin,
+            x1: cxLin + w,
+            collapsed: false,
+            isStretched: false
+          });
+          cxLin += w;
+        }
+        bandContentW = Math.max(40, cxLin - originX);
+      } else {
+        let activeTime = 0;
+        let collapsedCount = 0;
+        for (let i = b.startIdx; i < b.endIdx; i++) {
+          if (colCollapsed[i]) collapsedCount++;
+          else activeTime += spineT[i + 1] - spineT[i];
+        }
+        // Keep collapsed silence width identical between linear & elastic tracks whenever feasible
+        const breakLinearW =
+          collapsedCount === 0
+            ? 0
+            : activeColCount === 0
+              ? bandContentW / collapsedCount
+              : Math.min(
+                  SILENCE_COLLAPSE_W,
+                  Math.max(20, Math.floor((bandContentW * 0.4) / collapsedCount)),
+                  Math.max(16, (bandContentW - 20) / collapsedCount)
+                );
+        const availLinearW =
+          activeColCount === 0 ? 0 : Math.max(20, bandContentW - breakLinearW * collapsedCount);
+        const linW = new Float64Array(bandCols);
+        const fl = new Float64Array(bandCols);
+        let totalActiveFloor = 0;
+        for (let k = 0; k < bandCols; k++) {
+          const gi = b.startIdx + k;
+          const dt = spineT[gi + 1] - spineT[gi];
+          if (colCollapsed[gi]) {
+            linW[k] = breakLinearW;
+            fl[k] = breakLinearW;
+          } else {
+            linW[k] =
+              activeTime > 0
+                ? (dt / activeTime) * availLinearW
+                : availLinearW / Math.max(1, bandCols - collapsedCount);
+            fl[k] = colFloor[gi];
+            totalActiveFloor += fl[k];
+          }
+        }
+
+        // Piecewise-anchored bilateral water-filling:
+        // Start from exact linear positions (0 drift), raise text-bound columns to their readability
+        // floor, and absorb deficits symmetrically from nearest slack inside the same anchor block
+        // first (bounded by collapsed silences & shared multi-tier boundaries), spilling outward only
+        // if a dense cluster exceeds its own block's linear budget.
+        if (activeColCount === 0) {
+          for (let k = 0; k < bandCols; k++) colW[k] = linW[k];
+        } else if (totalActiveFloor >= availLinearW - 1e-6) {
+          const scale = availLinearW / Math.max(1e-6, totalActiveFloor);
+          for (let k = 0; k < bandCols; k++) {
+            colW[k] = colCollapsed[b.startIdx + k] ? breakLinearW : fl[k] * scale;
+          }
+        } else {
+          const slack = new Float64Array(bandCols);
+          const deficit = new Float64Array(bandCols);
+          for (let k = 0; k < bandCols; k++) {
+            colW[k] = linW[k];
+            if (!colCollapsed[b.startIdx + k]) {
+              if (linW[k] > fl[k]) slack[k] = linW[k] - fl[k];
+              else if (fl[k] > linW[k]) deficit[k] = fl[k] - linW[k];
+            }
+          }
+
+          const absorb = (center: number, amount: number, lo: number, hi: number): number => {
+            let rem = amount;
+            let dl = 1;
+            let dr = 1;
+            while (rem > 1e-6) {
+              while (
+                center - dl >= lo &&
+                (colCollapsed[b.startIdx + center - dl] || slack[center - dl] <= 1e-6)
+              ) {
+                dl++;
+              }
+              while (
+                center + dr <= hi &&
+                (colCollapsed[b.startIdx + center + dr] || slack[center + dr] <= 1e-6)
+              ) {
+                dr++;
+              }
+              const hasL = center - dl >= lo;
+              const hasR = center + dr <= hi;
+              if (!hasL && !hasR) break;
+              if (hasL && hasR) {
+                if (dl < dr) {
+                  const take = Math.min(rem, slack[center - dl]);
+                  slack[center - dl] -= take;
+                  colW[center - dl] -= take;
+                  rem -= take;
+                } else if (dr < dl) {
+                  const take = Math.min(rem, slack[center + dr]);
+                  slack[center + dr] -= take;
+                  colW[center + dr] -= take;
+                  rem -= take;
+                } else {
+                  const half = rem * 0.5;
+                  const takeL = Math.min(half, slack[center - dl]);
+                  const takeR = Math.min(half, slack[center + dr]);
+                  slack[center - dl] -= takeL;
+                  colW[center - dl] -= takeL;
+                  slack[center + dr] -= takeR;
+                  colW[center + dr] -= takeR;
+                  rem -= takeL + takeR;
+                  if (rem > 1e-6 && slack[center - dl] > 1e-6) {
+                    const extraL = Math.min(rem, slack[center - dl]);
+                    slack[center - dl] -= extraL;
+                    colW[center - dl] -= extraL;
+                    rem -= extraL;
+                  } else if (rem > 1e-6 && slack[center + dr] > 1e-6) {
+                    const extraR = Math.min(rem, slack[center + dr]);
+                    slack[center + dr] -= extraR;
+                    colW[center + dr] -= extraR;
+                    rem -= extraR;
+                  }
+                }
+              } else if (hasL) {
+                const take = Math.min(rem, slack[center - dl]);
+                slack[center - dl] -= take;
+                colW[center - dl] -= take;
+                rem -= take;
+              } else {
+                const take = Math.min(rem, slack[center + dr]);
+                slack[center + dr] -= take;
+                colW[center + dr] -= take;
+                rem -= take;
+              }
+            }
+            return rem;
+          };
+
+          // Build piecewise anchor blocks bounded by collapsed pauses and shared multi-tier anchors
+          const blockLoOf = new Int32Array(bandCols);
+          const blockHiOf = new Int32Array(bandCols);
+          let curLo = 0;
+          for (let k = 0; k < bandCols; k++) {
+            const gi = b.startIdx + k;
+            const isSplitStart =
+              k > 0 &&
+              (colCollapsed[gi] || colCollapsed[gi - 1] || spineUsage[gi] >= 2);
+            if (isSplitStart) {
+              for (let j = curLo; j < k; j++) {
+                blockLoOf[j] = curLo;
+                blockHiOf[j] = k - 1;
+              }
+              curLo = k;
+            }
+          }
+          for (let j = curLo; j < bandCols; j++) {
+            blockLoOf[j] = curLo;
+            blockHiOf[j] = bandCols - 1;
+          }
+
+          // Stage 1: absorb deficits within each column's own anchor block
+          const overflow = new Float64Array(bandCols);
+          for (let k = 0; k < bandCols; k++) {
+            if (deficit[k] <= 1e-6) continue;
+            const rem = absorb(k, deficit[k], blockLoOf[k], blockHiOf[k]);
+            colW[k] += deficit[k] - rem;
+            overflow[k] = rem;
+          }
+
+          // Stage 2: absorb any remaining overflow from nearest neighboring blocks
+          for (let k = 0; k < bandCols; k++) {
+            if (overflow[k] <= 1e-6) continue;
+            const rem2 = absorb(k, overflow[k], 0, bandCols - 1);
+            colW[k] += overflow[k] - rem2;
+          }
+        }
+
+        let lx = originX;
+        for (let k = 0; k < bandCols; k++) {
+          const gi = b.startIdx + k;
+          const w = linW[k];
+          const elasticW = colW[k];
+          const isStretched =
+            !colCollapsed[gi] && w > 0.5 && elasticW / w > 1.6 && elasticW - w >= 8;
+          linearSegs.push({
+            globalIdx: gi,
+            t0: spineT[gi],
+            t1: spineT[gi + 1],
+            x0: lx,
+            x1: lx + w,
+            collapsed: colCollapsed[gi],
+            isStretched
+          });
+          lx += w;
+        }
+      }
+    } else {
+      linearSegs.push({
+        globalIdx: b.startIdx,
+        t0: startT,
+        t1: endT,
+        x0: originX,
+        x1: originX + bandContentW,
+        collapsed: false,
+        isStretched: false
+      });
+    }
+
+    const linearXForTime = (t: number) => {
+      if (!linearSegs.length) return originX;
+      if (t <= linearSegs[0].t0) return linearSegs[0].x0;
+      const last = linearSegs[linearSegs.length - 1];
+      if (t >= last.t1) return last.x1;
+      for (const seg of linearSegs) {
+        if (t >= seg.t0 && t <= seg.t1) {
+          const dt = seg.t1 - seg.t0;
+          return dt <= 0 ? seg.x0 : seg.x0 + ((t - seg.t0) / dt) * (seg.x1 - seg.x0);
+        }
+      }
+      return originX;
+    };
 
     const spineCols: SpineCol[] = [];
     let cx = originX;
@@ -904,9 +1162,9 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
         labelVisible: false,
         ...(isSliverEdge ? { isSliverEdge: true } : {})
       });
-      if (i < b.endIdx) cx += dx[i];
+      if (i < b.endIdx) cx += colW[i - b.startIdx];
     }
-    const bandContentW = Math.max(40, cx - originX);
+    bandContentW = Math.max(40, cx - originX);
     const bandTotalW = originX + bandContentW + RIGHT_OVERHANG + PAD_X;
     if (bandTotalW > totalSvgW) totalSvgW = bandTotalW;
     const xForGlobalIdx = (gi: number) => spineCols[gi - b.startIdx].x;
@@ -990,84 +1248,25 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       isolatedPointTicks.push({ t, x, label, labelVisible });
     }
 
-    const linearSegs: BandLinearSeg[] = [];
-    if (b.endIdx > b.startIdx) {
-      if (isLinear) {
-        for (let i = b.startIdx; i < b.endIdx; i++) {
-          linearSegs.push({
-            globalIdx: i,
-            t0: spineT[i],
-            t1: spineT[i + 1],
-            x0: xForGlobalIdx(i),
-            x1: xForGlobalIdx(i + 1),
-            collapsed: false,
-            isStretched: false
-          });
-        }
-      } else {
-        let activeTime = 0;
-        let collapsedCount = 0;
-        for (let i = b.startIdx; i < b.endIdx; i++) {
-          if (colCollapsed[i]) collapsedCount++;
-          else activeTime += spineT[i + 1] - spineT[i];
-        }
-        const breakLinearW = collapsedCount > 0 ? Math.min(44, Math.max(24, bandContentW * 0.09)) : 0;
-        const availLinearW = Math.max(20, bandContentW - breakLinearW * collapsedCount);
-        let lx = originX;
-        for (let i = b.startIdx; i < b.endIdx; i++) {
-          const dt = spineT[i + 1] - spineT[i];
-          const w = colCollapsed[i]
-            ? breakLinearW
-            : activeTime > 0
-              ? (dt / activeTime) * availLinearW
-              : availLinearW / Math.max(1, b.endIdx - b.startIdx - collapsedCount);
-          const elasticW = dx[i];
-          const isStretched =
-            !colCollapsed[i] && w > 0.5 && elasticW / w > 1.6 && elasticW - w >= 8;
-          linearSegs.push({
-            globalIdx: i,
-            t0: spineT[i],
-            t1: spineT[i + 1],
-            x0: lx,
-            x1: lx + w,
-            collapsed: colCollapsed[i],
-            isStretched
-          });
-          lx += w;
-        }
+    // Dynamic neck height based on maximum horizontal shear in this band (strict straight-line legibility)
+    let maxShear = 0;
+    if (!isLinear) {
+      for (let i = 0; i < spineCols.length; i++) {
+        const col = spineCols[i];
+        const shear = Math.abs(linearXForTime(col.t) - col.x);
+        if (shear > maxShear) maxShear = shear;
       }
-    } else {
-      linearSegs.push({
-        globalIdx: b.startIdx,
-        t0: startT,
-        t1: endT,
-        x0: originX,
-        x1: originX + bandContentW,
-        collapsed: false,
-        isStretched: false
-      });
     }
-
-    const linearXForTime = (t: number) => {
-      if (!linearSegs.length) return originX;
-      if (t <= linearSegs[0].t0) return linearSegs[0].x0;
-      const last = linearSegs[linearSegs.length - 1];
-      if (t >= last.t1) return last.x1;
-      for (const seg of linearSegs) {
-        if (t >= seg.t0 && t <= seg.t1) {
-          const dt = seg.t1 - seg.t0;
-          return dt <= 0 ? seg.x0 : seg.x0 + ((t - seg.t0) / dt) * (seg.x1 - seg.x0);
-        }
-      }
-      return originX;
-    };
+    const bandNeckH = isLinear
+      ? LINEAR_NECK_H
+      : Math.round(Math.max(16, Math.min(42, 16 + Math.max(0, maxShear - 24) * 0.16)));
 
     const linearY = curY;
     const waveY = linearY;
     const specY = linearY + WAVE_H;
     const anchorY = specY + SPEC_H;
     const neckTopY = linearY + LINEAR_H;
-    const neckBotY = neckTopY + NECK_H;
+    const neckBotY = neckTopY + bandNeckH;
     const tiersTopY = neckBotY + SPINE_H;
 
     let ty = tiersTopY;

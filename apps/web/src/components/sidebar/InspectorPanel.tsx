@@ -1289,7 +1289,7 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
               }}
             >
               <UiIcon name="zeroCross" size={13} />
-              <span>对齐微偏 (&lt; 5 ms)</span>
+              <span>对齐微偏边界</span>
             </button>
             <button
               type="button"

@@ -199,9 +199,18 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               >
                 <TGridIcon name="stepper-minus" size={13} />
               </button>
-              <span className="width-readout">
+              <span
+                className="width-readout"
+                title={
+                  wrapMode === 'auto' && widthAutoFit
+                    ? '自动适配窗口宽度（点击 −/+ 可切换固定宽度）'
+                    : `固定基准宽度 ${targetWidth} px`
+                }
+              >
                 {wrapMode === 'auto' && widthAutoFit
-                  ? `自适应${layout?.width ? ` (${Math.round(layout.width)}px)` : ''}`
+                  ? layout?.width
+                    ? `自动 ${Math.round(layout.width)}px`
+                    : '自动'
                   : `${targetWidth} px`}
               </span>
               <button
@@ -343,8 +352,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     <div className="segmented sb-seg-full" role="group">
                       {(
                         [
-                          [5000, '5 kHz (元音)', '5 kHz（聚焦元音与共振峰 F1–F3）'],
-                          [8000, '8 kHz (含擦音)', '8 kHz（兼顾元音与高频擦音 /s, ʃ/）'],
+                          [5000, '5 kHz', '5 kHz（聚焦元音与共振峰 F1–F3）'],
+                          [8000, '8 kHz', '8 kHz（兼顾元音与高频擦音 /s, ʃ/）'],
                           [10000, '10 kHz', '10 kHz（宽频观测高频摩擦与爆破）']
                         ] as const
                       ).map(([hz, label, tip]) => {
