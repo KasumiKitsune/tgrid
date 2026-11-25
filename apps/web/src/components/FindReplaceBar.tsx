@@ -3,6 +3,7 @@ import { getPlatformBridge } from '../bridge/PlatformBridge';
 import { primeTrigraphString } from '../layout/richText';
 import { isComposingEvent } from '../shortcuts/registry';
 import { useEditorStore } from '../store/useEditorStore';
+import { getElementRectScale } from '../utils/uiScale';
 import { CloseIcon, UiIcon } from './Icons';
 
 interface FindMatch {
@@ -39,10 +40,52 @@ export const FindReplaceBar: React.FC = () => {
   const [wholeWord, setWholeWord] = useState(false);
   const [useRegex, setUseRegex] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
+  const [tierMenuOpen, setTierMenuOpen] = useState(false);
+  const [tierFocusIdx, setTierFocusIdx] = useState(0);
 
   const findInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
+  const tierDropdownRef = useRef<HTMLDivElement>(null);
+  const tierTriggerRef = useRef<HTMLButtonElement>(null);
   const hasNavigatedForQueryRef = useRef(false);
+
+  const tierOptions = useMemo<Array<{ value: 'all' | number; label: string }>>(
+    () => [
+      { value: 'all', label: `全部层 (${tg.tiers.length})` },
+      ...tg.tiers.map((tier, idx) => ({
+        value: idx,
+        label: `${idx + 1}. ${tier.name || '未命名'}`
+      }))
+    ],
+    [tg.tiers]
+  );
+
+  // Close tier dropdown when bar closes or clicking outside
+  useEffect(() => {
+    if (!findBarOpen) setTierMenuOpen(false);
+  }, [findBarOpen]);
+
+  useEffect(() => {
+    if (!tierMenuOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (tierDropdownRef.current?.contains(e.target as Node)) return;
+      setTierMenuOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setTierMenuOpen(false);
+        tierTriggerRef.current?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('keydown', onKeyDown, true);
+    };
+  }, [tierMenuOpen]);
 
   // Keep tierScope valid if tiers shrink or tab switches
   useEffect(() => {
@@ -148,19 +191,20 @@ export const FindReplaceBar: React.FC = () => {
         `[data-role="${role}"][data-tier="${match.tierIndex}"][data-idx="${match.itemIndex}"]`
       );
       if (!targetEl) return;
+      const z = getElementRectScale(stageEl);
       const elemRect = targetEl.getBoundingClientRect();
       const stageRect = stageEl.getBoundingClientRect();
-      const padX = 64;
-      const padY = 64;
+      const padX = 64 * z;
+      const padY = 64 * z;
       if (elemRect.left < stageRect.left + padX) {
-        stageEl.scrollLeft += elemRect.left - (stageRect.left + padX);
+        stageEl.scrollLeft += (elemRect.left - (stageRect.left + padX)) / z;
       } else if (elemRect.right > stageRect.right - padX) {
-        stageEl.scrollLeft += elemRect.right - (stageRect.right - padX);
+        stageEl.scrollLeft += (elemRect.right - (stageRect.right - padX)) / z;
       }
       if (elemRect.top < stageRect.top + padY) {
-        stageEl.scrollTop += elemRect.top - (stageRect.top + padY);
+        stageEl.scrollTop += (elemRect.top - (stageRect.top + padY)) / z;
       } else if (elemRect.bottom > stageRect.bottom - padY) {
-        stageEl.scrollTop += elemRect.bottom - (stageRect.bottom - padY);
+        stageEl.scrollTop += (elemRect.bottom - (stageRect.bottom - padY)) / z;
       }
     });
   }, []);
@@ -512,22 +556,106 @@ export const FindReplaceBar: React.FC = () => {
 
       {/* Tier scope & subtle hint */}
       <div className="find-replace-meta-row">
-        <select
-          className="find-replace-tier-select"
-          aria-label="查找层级范围"
-          value={tierScope === 'all' ? 'all' : String(tierScope)}
-          onChange={(e) => {
-            const val = e.target.value;
-            setTierScope(val === 'all' ? 'all' : parseInt(val, 10));
-          }}
-        >
-          <option value="all">全部层 ({tg.tiers.length})</option>
-          {tg.tiers.map((tier, idx) => (
-            <option key={`${idx}-${tier.name}`} value={String(idx)}>
-              {idx + 1}. {tier.name || '未命名'}
-            </option>
-          ))}
-        </select>
+        <div className="find-replace-tier-dropdown" ref={tierDropdownRef}>
+          <button
+            ref={tierTriggerRef}
+            type="button"
+            className={`find-replace-tier-trigger ${tierMenuOpen ? 'open' : ''}`}
+            aria-label="查找层级范围"
+            aria-haspopup="listbox"
+            aria-expanded={tierMenuOpen}
+            onClick={() => {
+              if (tierMenuOpen) {
+                setTierMenuOpen(false);
+              } else {
+                const selIdx = tierOptions.findIndex((o) => o.value === tierScope);
+                setTierFocusIdx(selIdx >= 0 ? selIdx : 0);
+                setTierMenuOpen(true);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!tierMenuOpen) {
+                  const selIdx = tierOptions.findIndex((o) => o.value === tierScope);
+                  setTierFocusIdx(selIdx >= 0 ? selIdx : 0);
+                  setTierMenuOpen(true);
+                } else {
+                  setTierFocusIdx((i) => (i + 1) % tierOptions.length);
+                }
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!tierMenuOpen) {
+                  const selIdx = tierOptions.findIndex((o) => o.value === tierScope);
+                  setTierFocusIdx(selIdx >= 0 ? selIdx : tierOptions.length - 1);
+                  setTierMenuOpen(true);
+                } else {
+                  setTierFocusIdx((i) => (i - 1 + tierOptions.length) % tierOptions.length);
+                }
+              } else if (e.key === 'Home' && tierMenuOpen) {
+                e.preventDefault();
+                e.stopPropagation();
+                setTierFocusIdx(0);
+              } else if (e.key === 'End' && tierMenuOpen) {
+                e.preventDefault();
+                e.stopPropagation();
+                setTierFocusIdx(tierOptions.length - 1);
+              } else if ((e.key === 'Enter' || e.key === ' ') && tierMenuOpen) {
+                e.preventDefault();
+                e.stopPropagation();
+                const chosen = tierOptions[tierFocusIdx];
+                if (chosen) setTierScope(chosen.value);
+                setTierMenuOpen(false);
+              } else if (e.key === 'Escape' && tierMenuOpen) {
+                e.preventDefault();
+                e.stopPropagation();
+                setTierMenuOpen(false);
+              }
+            }}
+          >
+            <span className="find-replace-tier-trigger-label">
+              {tierOptions.find((o) => o.value === tierScope)?.label ?? `全部层 (${tg.tiers.length})`}
+            </span>
+            <span className="find-replace-tier-chevron" aria-hidden="true">
+              <UiIcon name="section-chevron" size={10} />
+            </span>
+          </button>
+
+          {tierMenuOpen && (
+            <div className="find-replace-tier-menu" role="listbox" aria-label="查找层级范围">
+              {tierOptions.map((opt, idx) => {
+                const isSelected = opt.value === tierScope;
+                const isFocused = idx === tierFocusIdx;
+                return (
+                  <button
+                    key={String(opt.value)}
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    className={`find-replace-tier-option ${isSelected ? 'is-selected' : ''} ${
+                      isFocused ? 'is-focused' : ''
+                    }`}
+                    onMouseEnter={() => setTierFocusIdx(idx)}
+                    onClick={() => {
+                      setTierScope(opt.value);
+                      setTierMenuOpen(false);
+                      tierTriggerRef.current?.focus();
+                    }}
+                  >
+                    <span className="find-replace-tier-option-text">{opt.label}</span>
+                    {isSelected && (
+                      <span className="find-replace-tier-check" aria-hidden="true">
+                        ✓
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         <span>
           {findBarReplaceMode && isReadOnly

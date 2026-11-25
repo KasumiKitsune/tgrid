@@ -1,0 +1,32 @@
+<svg class="tg-icon tg-icon--cut" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill { opacity: 0.14; }
+    svg:hover .tg-sub { opacity: 1; }
+    .tg-blade-a, .tg-blade-b {
+      transform-origin: 8.62px 8px;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-blade-a { transform: rotate(-7deg); }
+    svg:hover .tg-blade-b { transform: rotate(7deg); }
+  </style>
+  <!-- 刚体 1：左上指环 + 右下刀刃（绕真实枢轴 8.62,8 旋转） -->
+  <g class="tg-blade-a">
+    <circle class="tg-fill" cx="4.25" cy="4.25" r="2" fill="currentColor" />
+    <circle class="tg-sub" cx="4.25" cy="4.25" r="2" stroke="currentColor" stroke-width="1.5" />
+    <path d="M5.65 5.65L14 12.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  </g>
+  <!-- 刚体 2：左下指环 + 右上刀刃（绕真实枢轴 8.62,8 旋转） -->
+  <g class="tg-blade-b">
+    <circle class="tg-fill" cx="4.25" cy="11.75" r="2" fill="currentColor" />
+    <circle class="tg-sub" cx="4.25" cy="11.75" r="2" stroke="currentColor" stroke-width="1.5" />
+    <path d="M5.65 10.35L14 3.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  </g>
+</svg>

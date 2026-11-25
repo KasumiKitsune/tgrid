@@ -158,7 +158,7 @@ export const LEGEND_CATALOG: Array<{ key: string; zh: string; en: string }> = [
   { key: 'empty-point', zh: '空白标注点', en: 'Unlabeled point' },
   { key: 'boundaries', zh: '多层对齐 / 单层边界', en: 'Shared / tier boundary' },
   { key: 'stretch', zh: '短音段加宽显示', en: 'Widened short segment' },
-  { key: 'collapsed-pause', zh: '长静音省略 (≥1.6 s)', en: 'Folded silence (≥1.6 s)' },
+  { key: 'collapsed-pause', zh: '长静音省略 (≥0.8 s)', en: 'Folded silence (≥0.8 s)' },
   { key: 'continuation', zh: '跨行延续区间', en: 'Wrapped continuation' },
   { key: 'spectrogram', zh: '宽带语谱图', en: 'Broadband spectrogram' },
   { key: 'pitch-f0', zh: '基频曲线 (F₀)', en: 'Pitch contour (F₀)' },
@@ -915,7 +915,11 @@ export function renderSwatchSVG(
     svgEl('rect', { x: x + 1, y: y + 1, width: 20, height: 10, fill: pal.waveBg, stroke: pal.rule, 'stroke-width': sw(0.75) }, g);
     const pts = [[4, 8.2], [8.5, 7.8], [13, 8.1], [17.5, 8.4], [4, 5.2], [8.5, 4.7], [13, 5.1], [17.5, 5.6], [4, 2.5], [8.5, 2.7], [13, 2.3], [17.5, 2.6]];
     for (const [dx, dy] of pts) {
-      svgEl('rect', { x: x + dx - 0.85, y: y + dy - 0.85, width: 1.7, height: 1.7, fill: pal.formant }, g);
+      if (pal.isBw) {
+        svgEl('circle', { cx: x + dx, cy: y + dy, r: 1.35, fill: pal.paper, stroke: pal.formant, 'stroke-width': sw(0.8) }, g);
+      } else {
+        svgEl('circle', { cx: x + dx, cy: y + dy, r: 1.25, fill: pal.formant, stroke: pal.paper, 'stroke-width': sw(0.55), 'paint-order': 'stroke' }, g);
+      }
     }
   } else if (key === 'trigraph') {
     svgEl('text', { x: x + 4.5, y: y + 8.8, 'text-anchor': 'middle', 'font-family': IPA_FONT_STACK, 'font-size': '9.5', fill: pal.ink }, g).textContent = 'ʂ';

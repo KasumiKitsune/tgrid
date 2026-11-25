@@ -1,0 +1,25 @@
+<svg class="tg-icon tg-icon--split-equal" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill { opacity: 0.14; }
+    svg:hover .tg-sub { opacity: 1; }
+    svg:hover .tg-cut-top { transform: translateY(0.6px); }
+    svg:hover .tg-cut-bottom { transform: translateY(-0.6px); }
+  </style>
+  <!-- 按下态子区间微填充 -->
+  <rect class="tg-fill" x="6" y="5" width="4" height="6" fill="currentColor" />
+  <!-- 区间外框 -->
+  <rect x="2" y="5" width="12" height="6" rx="1.25" stroke="currentColor" stroke-width="1.5" />
+  <!-- 内部双等分线 -->
+  <path class="tg-sub" d="M6 5V11M10 5V11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  <!-- 上/下对称切分定位标 -->
+  <path class="tg-sub tg-cut-top" d="M6 1.75V2.5M10 1.75V2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  <path class="tg-sub tg-cut-bottom" d="M6 13.5V14.25M10 13.5V14.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+</svg>

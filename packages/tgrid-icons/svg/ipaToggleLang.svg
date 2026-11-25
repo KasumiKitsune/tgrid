@@ -1,0 +1,28 @@
+<svg class="tg-icon tg-icon--ipa-toggle" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill, .tg-src-fill, .tg-dst-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-pane-fill {
+      opacity: 0.09;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill, svg:hover .tg-src-fill, svg:hover .tg-dst-fill { opacity: 0.14; }
+    svg:hover .tg-pane-fill { opacity: 0.2; }
+    svg:hover .tg-sub { opacity: 1; }
+    svg:hover .tg-swap-tr { transform: translate(0.45px, -0.35px); }
+    svg:hover .tg-swap-bl { transform: translate(-0.45px, 0.35px); }
+  </style>
+  <!-- 左上英文 A -->
+  <path class="tg-lang-en" d="M2 7.75L4.25 2L6.5 7.75M2.9 6H5.6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- 右下音标 ə -->
+  <path class="tg-lang-ipa" d="M13.9 11.4H9.7C9.7 13.05 10.55 14.2 11.8 14.2C13.05 14.2 13.9 13.05 13.9 11.4V11C13.9 9.35 13.05 8.3 11.8 8.3C11.05 8.3 10.45 8.55 10 9" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- 右上 / 左下对角互换箭头 -->
+  <path class="tg-sub tg-swap-tr" d="M9.5 2.75H11.5C12.47 2.75 13.25 3.53 13.25 4.5V5.75M12 4.5L13.25 5.75L14.5 4.5" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" />
+  <path class="tg-sub tg-swap-bl" d="M6.5 13.25H4.5C3.53 13.25 2.75 12.47 2.75 11.5V10.25M1.5 11.5L2.75 10.25L4 11.5" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

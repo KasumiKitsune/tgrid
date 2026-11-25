@@ -1,0 +1,28 @@
+<svg class="tg-icon tg-icon--save" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill, .tg-src-fill, .tg-dst-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-pane-fill {
+      opacity: 0.09;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill, svg:hover .tg-src-fill, svg:hover .tg-dst-fill { opacity: 0.14; }
+    svg:hover .tg-pane-fill { opacity: 0.2; }
+    svg:hover .tg-sub { opacity: 1; }
+    svg:hover .tg-shutter { transform: translateY(0.35px); }
+  </style>
+  <!-- 底部标签写入底纹 -->
+  <path class="tg-fill" d="M4.75 14V9.75C4.75 9.2 5.2 8.75 5.75 8.75H10.25C10.8 8.75 11.25 9.2 11.25 9.75V14H4.75Z" fill="currentColor" />
+  <!-- 切角软盘外框 -->
+  <path d="M3.25 2H11.15L14 4.85V12.75C14 13.44 13.44 14 12.75 14H3.25C2.56 14 2 13.44 2 12.75V3.25C2 2.56 2.56 2 3.25 2Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- 顶部滑窗 -->
+  <path class="tg-sub tg-shutter" d="M5 2V5.25C5 5.66 5.34 6 5.75 6H9.75C10.16 6 10.5 5.66 10.5 5.25V2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- 底部标签框 -->
+  <path class="tg-sub" d="M4.75 14V9.75C4.75 9.2 5.2 8.75 5.75 8.75H10.25C10.8 8.75 11.25 9.2 11.25 9.75V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

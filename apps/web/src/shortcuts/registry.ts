@@ -1,3 +1,6 @@
+import type React from 'react';
+import type { IconName } from '@tgrid/icons';
+
 export const IS_MAC: boolean =
   typeof navigator !== 'undefined' &&
   /Mac|iPod|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '');
@@ -41,7 +44,9 @@ export interface ShortcutEntry {
   keys: string[];
   label: string;
   description?: string;
+  icon?: IconName;
   scope?: ShortcutScope;
+  rebindable?: boolean;
 }
 
 export interface ShortcutGroup {
@@ -69,6 +74,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         id: 'play-toggle',
         keys: ['Space'],
         label: '播放 / 暂停',
+        icon: 'transport-play',
         scope: 'all'
       },
       {
@@ -76,6 +82,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         keys: ['Shift+Space'],
         label: '停止并归位播放头',
         description: '按选区起点 → 视图起点 → 全篇起点顺序归位',
+        icon: 'transport-stop',
         scope: 'all'
       },
       {
@@ -83,6 +90,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         keys: ['R', 'Alt+P', 'F4'],
         label: '重播当前区间或选区',
         description: '输入框内按 Alt+P 或 F4 同样可边打字边听辨',
+        icon: 'play',
         scope: 'input'
       },
       {
@@ -90,26 +98,46 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         keys: ['Shift+R', 'Alt+Shift+P', 'Shift+F4'],
         label: '带语境重播（±250 ms）',
         description: '前后各扩展 250 ms，便于辨听短辅音',
+        icon: 'playContext',
         scope: 'input'
       },
       {
         id: 'loop-toggle',
         keys: ['L'],
         label: '开关循环播放',
+        icon: 'loop',
         scope: 'all'
       },
       {
-        id: 'seek-step',
-        keys: [',', '.'],
-        label: '播放头后退 / 前进 100 ms',
-        description: '加 Alt 精细步进 ±10 ms',
+        id: 'seek-back',
+        keys: [','],
+        label: '播放头后退 100 ms',
+        description: '加 Alt 精细后退 10 ms',
+        icon: 'seekBack',
         scope: 'all'
       },
       {
-        id: 'rate-step',
-        keys: ['<', '>'],
-        label: '降低 / 提高播放倍速',
+        id: 'seek-forward',
+        keys: ['.'],
+        label: '播放头前进 100 ms',
+        description: '加 Alt 精细前进 10 ms',
+        icon: 'seekForward',
+        scope: 'all'
+      },
+      {
+        id: 'rate-down',
+        keys: ['<'],
+        label: '降低播放倍速',
         description: '档位 0.5× / 0.75× / 1.0× / 1.25× / 1.5×',
+        icon: 'rateDown',
+        scope: 'all'
+      },
+      {
+        id: 'rate-up',
+        keys: ['>'],
+        label: '提高播放倍速',
+        description: '档位 0.5× / 0.75× / 1.0× / 1.25× / 1.5×',
+        icon: 'rateUp',
         scope: 'all'
       },
       {
@@ -117,26 +145,41 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         keys: ['←', '→'],
         label: '同层前 / 后一项',
         description: '从边界或时间列按方向键切入相邻区间，并同步选区',
-        scope: 'all'
+        icon: 'navHorizontal',
+        scope: 'all',
+        rebindable: false
       },
       {
         id: 'nav-vertical',
         keys: ['↑', '↓'],
         label: '按时间对齐跳转上 / 下一层',
-        scope: 'all'
+        icon: 'navVertical',
+        scope: 'all',
+        rebindable: false
       },
       {
         id: 'nav-tab',
         keys: ['Tab', 'Shift+Tab'],
         label: '下一格 / 上一格',
         description: '原地编辑时自动提交并进入相邻格',
-        scope: 'input'
+        icon: 'navHorizontal',
+        scope: 'input',
+        rebindable: false
       },
       {
-        id: 'nav-empty',
-        keys: ['N', 'Shift+N'],
-        label: '跳至下一个 / 上一个空白区间',
+        id: 'nav-empty-next',
+        keys: ['N'],
+        label: '跳至下一个空白区间',
         description: '快速逐格补录未标注区间',
+        icon: 'nextEmpty',
+        scope: 'all'
+      },
+      {
+        id: 'nav-empty-prev',
+        keys: ['Shift+N'],
+        label: '跳至上一个空白区间',
+        description: '回溯上一个未标注区间',
+        icon: 'prevEmpty',
         scope: 'all'
       },
       {
@@ -144,12 +187,15 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         keys: ['Home', 'End'],
         label: '本层首项 / 末项',
         description: 'Mod+Home / Mod+End 跳至全篇起点 / 终点',
-        scope: 'all'
+        icon: 'navHorizontal',
+        scope: 'all',
+        rebindable: false
       },
       {
         id: 'locate-playhead',
         keys: ['G'],
         label: '定位到播放头并选中所在区间',
+        icon: 'locatePlayhead',
         scope: 'all'
       }
     ]
@@ -164,6 +210,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         keys: ['B'],
         label: '在播放头时刻向活跃区间层落边界',
         description: '支持边听边敲“打点切音”',
+        icon: 'split',
         scope: 'edit'
       },
       {
@@ -171,12 +218,14 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         keys: ['Shift+B'],
         label: '在播放头时刻向全部区间层同步落边界',
         description: '单步可撤销',
+        icon: 'splitAllTiers',
         scope: 'edit'
       },
       {
         id: 'split-mid',
         keys: ['S'],
         label: '从当前选中区间正中点切分',
+        icon: 'split',
         scope: 'edit'
       },
       {
@@ -184,6 +233,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         keys: ['P'],
         label: '在播放头时刻向活跃点层添加标点',
         description: '暂停时自动进入编辑，播放中静默打点',
+        icon: 'addPointTier',
         scope: 'edit'
       },
       {
@@ -191,12 +241,21 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         keys: ['I'],
         label: '按当前选区在活跃空区间内创建区间',
         description: '语谱图框选后可直接按 I 落区间',
+        icon: 'createFromRange',
         scope: 'edit'
       },
       {
-        id: 'select-interval-edge',
-        keys: ['[', ']'],
-        label: '选中当前区间的左边界 / 右边界',
+        id: 'select-left-edge',
+        keys: ['['],
+        label: '选中当前区间的左边界',
+        icon: 'selectLeftEdge',
+        scope: 'edit'
+      },
+      {
+        id: 'select-right-edge',
+        keys: [']'],
+        label: '选中当前区间的右边界',
+        icon: 'selectRightEdge',
         scope: 'edit'
       }
     ]
@@ -211,6 +270,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         keys: ['Enter', 'F2'],
         label: '打开原地编辑（区间 / 标点 / 层名）',
         description: '只读态按 Enter 直接播放当前选中项',
+        icon: 'edit',
         scope: 'all'
       },
       {
@@ -218,19 +278,31 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         keys: ['Backspace', 'Delete'],
         label: '温和删除（有字先清空；空区间删左/右界）',
         description: '边界：删本层边界；标点：删点并选前/后一点；整层：安全忽略',
-        scope: 'edit'
+        icon: 'clear',
+        scope: 'edit',
+        rebindable: false
       },
       {
         id: 'delete-structural',
         keys: ['Shift+Backspace', 'Shift+Delete'],
         label: '强力删除（清字并删左/右界；跨层删界）',
         description: '边界/时间列：跨层删除全部对齐边界；整层 Shift+Delete：删除整层（可撤销）',
+        icon: 'trash',
+        scope: 'edit',
+        rebindable: false
+      },
+      {
+        id: 'merge-right',
+        keys: ['M'],
+        label: '保留文本向右合并相邻区间',
+        icon: 'mergeRight',
         scope: 'edit'
       },
       {
-        id: 'merge-preserve',
-        keys: ['M', 'Shift+M'],
-        label: '保留文本向右 / 向左合并相邻区间',
+        id: 'merge-left',
+        keys: ['Shift+M'],
+        label: '保留文本向左合并相邻区间',
+        icon: 'mergeLeft',
         scope: 'edit'
       },
       {
@@ -238,26 +310,40 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         keys: ['Mod+C', 'Mod+X', 'Mod+V'],
         label: '复制 / 剪切 / 粘贴选中文本',
         description: 'Mod+Shift+C 复制区间起止时间或声学 TSV',
-        scope: 'edit'
+        icon: 'copy',
+        scope: 'edit',
+        rebindable: false
       },
       {
         id: 'undo-redo',
         keys: ['Mod+Z', 'Mod+Shift+Z', 'Mod+Y'],
         label: '撤销 / 重做',
         description: '提示具体撤销或重做的操作名称',
-        scope: 'edit'
+        icon: 'undo',
+        scope: 'edit',
+        rebindable: false
       },
       {
         id: 'ipa-cycle',
         keys: ['Mod+\\', 'Alt+I'],
         label: '循环切换音标输入模式（关 / 云龙 / Praat）',
         description: '输入框内同样有效',
+        icon: 'ipaMode',
+        scope: 'input'
+      },
+      {
+        id: 'ipa-temp-en',
+        keys: ['Alt+E'],
+        label: '临时切换英文 / 音标输入',
+        description: '输入框内暂停或恢复当前音标输入方案（避开系统输入法 Shift 键）',
+        icon: 'ipaToggleLang',
         scope: 'input'
       },
       {
         id: 'ipa-dock-toggle',
         keys: ['Alt+K'],
         label: '显示 / 隐藏虚拟音标键盘',
+        icon: 'keyboard',
         scope: 'edit'
       }
     ]
@@ -271,26 +357,33 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         id: 'nudge-10ms',
         keys: ['Shift+←', 'Shift+→'],
         label: '微调选中边界 / 标点 / 时间列 ±10 ms',
-        scope: 'edit'
+        icon: 'nudgeBoundary',
+        scope: 'edit',
+        rebindable: false
       },
       {
         id: 'nudge-1ms',
         keys: ['Shift+Alt+←', 'Shift+Alt+→'],
         label: '超精微调 ±1 ms',
-        scope: 'edit'
+        icon: 'nudgeFine',
+        scope: 'edit',
+        rebindable: false
       },
       {
         id: 'nudge-shared',
         keys: ['Mod+Shift+←', 'Mod+Shift+→'],
         label: '跨层联动平移对齐边界（±10 ms）',
         description: '加 Alt 为 ±1 ms 超精跨层平移',
-        scope: 'edit'
+        icon: 'nudgeShared',
+        scope: 'edit',
+        rebindable: false
       },
       {
         id: 'snap-zero-crossing',
         keys: ['Z'],
         label: '将选中边界 / 时间列吸附至最近过零点',
         description: '拖拽中按住 Z 保持实时过零点吸附',
+        icon: 'zeroCross',
         scope: 'edit'
       }
     ]
@@ -304,42 +397,65 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         id: 'mode-toggle',
         keys: ['E'],
         label: '切换只读 / 编辑模式',
+        icon: 'edit',
         scope: 'all'
       },
       {
         id: 'zoom-focus',
-        keys: ['F', 'Shift+F'],
-        label: '局部放大到选中项或选区 / 恢复全长',
+        keys: ['F'],
+        label: '局部放大到选中项或选区',
+        icon: 'zoomIn',
+        scope: 'all'
+      },
+      {
+        id: 'zoom-reset',
+        keys: ['Shift+F'],
+        label: '恢复全长视图',
+        icon: 'zoomReset',
         scope: 'all'
       },
       {
         id: 'canvas-zoom',
         keys: ['Mod+=', 'Mod+-', 'Mod+0'],
         label: '画布横向放大 / 缩小 / 复位',
+        icon: 'zoomIn',
+        scope: 'all',
+        rebindable: false
+      },
+      {
+        id: 'scale-toggle',
+        keys: ['V'],
+        label: '切换自适应 / 线性比例',
+        icon: 'toggleScale',
         scope: 'all'
       },
       {
-        id: 'scale-wrap-toggle',
-        keys: ['V', 'W'],
-        label: '切换自适应/线性比例 · 切换自动折行/单行',
+        id: 'wrap-toggle',
+        keys: ['W'],
+        label: '切换自动折行 / 单行模式',
+        icon: 'wrapToggle',
         scope: 'all'
       },
       {
         id: 'sidebar-toggle',
         keys: ['Mod+B'],
         label: '展开 / 收起右侧任务窗格',
+        icon: 'sidebarToggle',
         scope: 'all'
       },
       {
         id: 'sidebar-tabs',
-        keys: ['Alt+1', 'Alt+2', 'Alt+3'],
-        label: '直达右侧 属性 / 层级 / 设置 页',
-        scope: 'all'
+        keys: ['Alt+1', 'Alt+2', 'Alt+3', 'Alt+4'],
+        label: '直达右侧 属性 / 层级 / 设置 / 自定义 页',
+        icon: 'inspector',
+        scope: 'all',
+        rebindable: false
       },
       {
         id: 'legend-toggle',
         keys: ['Alt+L'],
         label: '开关底部图例栏',
+        icon: 'legend',
         scope: 'all'
       }
     ]
@@ -351,39 +467,68 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     entries: [
       {
         id: 'open-files',
-        keys: ['Mod+O', 'Mod+Shift+O'],
-        label: '打开标注文件 / 载入配套录音',
+        keys: ['Mod+O'],
+        label: '打开标注文件',
+        icon: 'folder',
         scope: 'all'
       },
       {
-        id: 'save-files',
-        keys: ['Mod+S', 'Mod+Shift+S'],
-        label: '保存 / 另存为 TextGrid',
+        id: 'open-audio',
+        keys: ['Mod+Shift+O'],
+        label: '载入配套录音',
+        icon: 'waveform',
+        scope: 'all'
+      },
+      {
+        id: 'save-file',
+        keys: ['Mod+S'],
+        label: '保存 TextGrid',
         description: '输入框内触发时自动先提交当前文本',
+        icon: 'save',
         scope: 'input'
       },
       {
-        id: 'find-replace',
-        keys: ['Mod+F', 'Mod+H'],
-        label: '跨层查找 / 查找并替换',
+        id: 'save-as',
+        keys: ['Mod+Shift+S'],
+        label: '另存为 TextGrid',
+        description: '输入框内触发时自动先提交当前文本',
+        icon: 'saveAs',
+        scope: 'input'
+      },
+      {
+        id: 'find-open',
+        keys: ['Mod+F'],
+        label: '跨层查找',
+        icon: 'search',
+        scope: 'all'
+      },
+      {
+        id: 'replace-open',
+        keys: ['Mod+H'],
+        label: '跨层查找并替换',
+        icon: 'replace',
         scope: 'all'
       },
       {
         id: 'export-figure',
         keys: ['Mod+P', 'Mod+Shift+E'],
         label: '打开导出插图工作台',
+        icon: 'export',
         scope: 'all'
       },
       {
         id: 'tab-manage',
         keys: ['Mod+T', 'Mod+W', 'Mod+1..9'],
         label: '新建标签 / 关闭标签 / 跳转指定标签',
-        scope: 'all'
+        icon: 'tab-add',
+        scope: 'all',
+        rebindable: false
       },
       {
         id: 'shortcuts-modal',
         keys: ['?', 'Mod+/', 'F1'],
         label: '打开快捷键与交互速查表',
+        icon: 'shortcuts',
         scope: 'all'
       },
       {
@@ -391,7 +536,9 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         keys: ['Esc'],
         label: '逐层退栈取消',
         description: '音标候选 → 取消拖拽 → 顶层弹窗/菜单 → 输入框失焦 → 清选区 → 清选中项',
-        scope: 'all'
+        icon: 'CloseIcon',
+        scope: 'all',
+        rebindable: false
       }
     ]
   }
@@ -482,4 +629,306 @@ export function getShortcutHint(id: string): string {
   const entry = ENTRY_MAP.get(id);
   if (!entry || entry.keys.length === 0) return '';
   return formatKeyCombo(entry.keys[0]);
+}
+
+// ============================================================================
+// Rebindable Shortcut Normalization, Recording, Matching & Conflict Detection
+// ============================================================================
+
+const SHIFTED_SYMBOLS = new Set([
+  '<',
+  '>',
+  '?',
+  '!',
+  '@',
+  '#',
+  '$',
+  '%',
+  '^',
+  '&',
+  '*',
+  '(',
+  ')',
+  '_',
+  '+',
+  '{',
+  '}',
+  '|',
+  ':',
+  '"',
+  '~'
+]);
+
+const IGNORED_KEYS = new Set([
+  'Control',
+  'Shift',
+  'Alt',
+  'Meta',
+  'CapsLock',
+  'NumLock',
+  'ScrollLock',
+  'OS',
+  'Fn',
+  'FnLock',
+  'AltGraph',
+  'Dead',
+  'Process',
+  'Unidentified'
+]);
+
+const CODE_TO_PUNCT: Record<string, [string, string]> = {
+  Comma: [',', '<'],
+  Period: ['.', '>'],
+  Slash: ['/', '?'],
+  Backslash: ['\\', '|'],
+  BracketLeft: ['[', '{'],
+  BracketRight: [']', '}'],
+  Minus: ['-', '_'],
+  Equal: ['=', '+'],
+  Semicolon: [';', ':'],
+  Quote: ["'", '"'],
+  Backquote: ['`', '~']
+};
+
+function splitComboTokens(raw: string): string[] {
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+  const tokens: string[] = [];
+  let i = 0;
+  while (i < trimmed.length) {
+    if (trimmed[i] === '+') {
+      tokens.push('+');
+      i++;
+      if (i < trimmed.length && trimmed[i] === '+') i++;
+      continue;
+    }
+    const nextPlus = trimmed.indexOf('+', i);
+    if (nextPlus === -1) {
+      tokens.push(trimmed.slice(i));
+      break;
+    }
+    tokens.push(trimmed.slice(i, nextPlus));
+    i = nextPlus + 1;
+  }
+  return tokens.map((t) => t.trim()).filter((t) => t.length > 0);
+}
+
+function normalizeKeyName(rawKey: string): string {
+  if (!rawKey) return '';
+  if (rawKey === ' ') return 'Space';
+  const trimmed = rawKey.trim();
+  if (!trimmed) return '';
+  if (trimmed.length === 1) {
+    if (/^[a-zA-Z]$/.test(trimmed)) return trimmed.toUpperCase();
+    return trimmed;
+  }
+  const lower = trimmed.toLowerCase();
+  if (lower === 'space' || lower === 'spacebar') return 'Space';
+  if (lower === 'escape' || lower === 'esc') return 'Esc';
+  if (lower === 'enter' || lower === 'return') return 'Enter';
+  if (lower === 'tab') return 'Tab';
+  if (lower === 'backspace') return 'Backspace';
+  if (lower === 'delete' || lower === 'del') return 'Delete';
+  if (lower === 'arrowleft' || lower === 'left') return '←';
+  if (lower === 'arrowright' || lower === 'right') return '→';
+  if (lower === 'arrowup' || lower === 'up') return '↑';
+  if (lower === 'arrowdown' || lower === 'down') return '↓';
+  if (lower === 'home') return 'Home';
+  if (lower === 'end') return 'End';
+  if (lower === 'pageup') return 'PageUp';
+  if (lower === 'pagedown') return 'PageDown';
+  if (lower === 'insert') return 'Insert';
+  const fnMatch = /^f([1-9]|1[0-9]|2[0-4])$/i.exec(trimmed);
+  if (fnMatch) return `F${fnMatch[1]}`;
+  return trimmed;
+}
+
+function buildCanonicalCombo(mod: boolean, alt: boolean, shift: boolean, key: string): string {
+  if (!key) return '';
+  const effectiveShift = SHIFTED_SYMBOLS.has(key) ? false : shift;
+  const parts: string[] = [];
+  if (mod) parts.push('Mod');
+  if (alt) parts.push('Alt');
+  if (effectiveShift) parts.push('Shift');
+  parts.push(key);
+  return parts.join('+');
+}
+
+export function normalizeKeyCombo(combo: string): string {
+  const tokens = splitComboTokens(combo);
+  if (tokens.length === 0) return '';
+  let mod = false;
+  let alt = false;
+  let shift = false;
+  let mainKey = '';
+
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    const isLast = i === tokens.length - 1;
+    const lower = tok.toLowerCase();
+    if (
+      !isLast &&
+      (lower === 'mod' ||
+        lower === 'ctrl' ||
+        lower === 'control' ||
+        lower === 'cmd' ||
+        lower === 'command' ||
+        lower === 'meta' ||
+        tok === '⌘')
+    ) {
+      mod = true;
+    } else if (!isLast && (lower === 'alt' || lower === 'option' || lower === 'opt' || tok === '⌥')) {
+      alt = true;
+    } else if (!isLast && (lower === 'shift' || tok === '⇧')) {
+      shift = true;
+    } else {
+      mainKey = normalizeKeyName(tok);
+    }
+  }
+
+  return buildCanonicalCombo(mod, alt, shift, mainKey);
+}
+
+function resolveEventKey(e: KeyboardEvent | React.KeyboardEvent): string | null {
+  const rawKey = e.key || '';
+  const code = e.code || '';
+  const mod = Boolean(e.ctrlKey || e.metaKey);
+  const alt = Boolean(e.altKey);
+  const shift = Boolean(e.shiftKey);
+
+  // macOS Option+Key (e.g. Option+P -> 'π', Option+I -> 'Dead') or non-Latin Alt/Mod shortcuts:
+  // fall back to physical e.code before rejecting 'Dead'.
+  if (alt || mod) {
+    const letterCode = /^Key([A-Z])$/.exec(code);
+    if (letterCode && !/^[a-zA-Z]$/.test(rawKey)) {
+      return letterCode[1];
+    }
+    const digitCode = /^Digit([0-9])$/.exec(code);
+    if (digitCode && !shift && !/^[0-9]$/.test(rawKey)) {
+      return digitCode[1];
+    }
+    const punctPair = CODE_TO_PUNCT[code];
+    if (punctPair && (rawKey === 'Dead' || rawKey === 'Process' || rawKey.charCodeAt(0) > 127)) {
+      return shift ? punctPair[1] : punctPair[0];
+    }
+  }
+
+  if (!rawKey || IGNORED_KEYS.has(rawKey)) {
+    return null;
+  }
+
+  const normalized = normalizeKeyName(rawKey);
+  return normalized || null;
+}
+
+function extractEventCombo(e: KeyboardEvent | React.KeyboardEvent): string | null {
+  const key = resolveEventKey(e);
+  if (!key) return null;
+  const mod = Boolean(e.ctrlKey || e.metaKey);
+  const alt = Boolean(e.altKey);
+  const shift = Boolean(e.shiftKey);
+  return buildCanonicalCombo(mod, alt, shift, key);
+}
+
+function isReservedRecordingCombo(combo: string): boolean {
+  const norm = normalizeKeyCombo(combo);
+  if (!norm) return true;
+  if (norm === 'Esc' || norm.endsWith('+Esc')) return true;
+  if (norm === 'Tab' || norm.endsWith('+Tab')) return true;
+  if (norm === 'Mod+Q') return true;
+  if (norm === 'Alt+F4') return true;
+  return false;
+}
+
+export function eventToKeyCombo(e: KeyboardEvent | React.KeyboardEvent): string | null {
+  const combo = extractEventCombo(e);
+  if (!combo) return null;
+  if (isReservedRecordingCombo(combo)) return null;
+  return combo;
+}
+
+export function getEffectiveKeys(id: string, overrides?: Record<string, string[]>): string[] {
+  const entry = ENTRY_MAP.get(id);
+  if (!entry) return [];
+  if (entry.rebindable === false) return entry.keys;
+  if (overrides && Object.prototype.hasOwnProperty.call(overrides, id)) {
+    return overrides[id];
+  }
+  return entry.keys;
+}
+
+export function getEffectiveShortcutHint(
+  id: string,
+  overrides?: Record<string, string[]>
+): string {
+  const keys = getEffectiveKeys(id, overrides);
+  if (keys.length === 0) return '';
+  return formatKeyCombo(keys[0]);
+}
+
+export function isShortcutCustomized(id: string, overrides?: Record<string, string[]>): boolean {
+  const entry = ENTRY_MAP.get(id);
+  if (!entry || entry.rebindable === false) return false;
+  if (!overrides || !Object.prototype.hasOwnProperty.call(overrides, id)) return false;
+  const custom = overrides[id].map(normalizeKeyCombo).filter(Boolean);
+  const defaults = entry.keys.map(normalizeKeyCombo).filter(Boolean);
+  if (custom.length !== defaults.length) return true;
+  for (let i = 0; i < custom.length; i++) {
+    if (custom[i] !== defaults[i]) return true;
+  }
+  return false;
+}
+
+export function matchesKeyCombo(combo: string, e: KeyboardEvent | React.KeyboardEvent): boolean {
+  const target = normalizeKeyCombo(combo);
+  if (!target) return false;
+  const actual = extractEventCombo(e);
+  if (!actual) return false;
+  return actual === target;
+}
+
+export function matchesShortcut(
+  id: string,
+  e: KeyboardEvent | React.KeyboardEvent,
+  overrides?: Record<string, string[]>
+): boolean {
+  const keys = getEffectiveKeys(id, overrides);
+  if (keys.length === 0) return false;
+  return keys.some((k) => matchesKeyCombo(k, e));
+}
+
+function scopesOverlap(a: ShortcutScope = 'all', b: ShortcutScope = 'all'): boolean {
+  if (a === 'all' || b === 'all' || a === 'input' || b === 'input') return true;
+  return a === b;
+}
+
+function comboMatchesEntryKey(normCombo: string, entryKey: string): boolean {
+  if (entryKey === 'Mod+1..9') {
+    return /^Mod\+[1-9]$/.test(normCombo);
+  }
+  return normalizeKeyCombo(entryKey) === normCombo;
+}
+
+export function findShortcutConflicts(
+  actionId: string,
+  combo: string,
+  overrides?: Record<string, string[]>
+): ShortcutEntry[] {
+  const normCombo = normalizeKeyCombo(combo);
+  if (!normCombo) return [];
+  const targetEntry = ENTRY_MAP.get(actionId);
+  const targetScope: ShortcutScope = targetEntry?.scope ?? 'all';
+  const conflicts: ShortcutEntry[] = [];
+
+  for (const group of SHORTCUT_GROUPS) {
+    for (const entry of group.entries) {
+      if (entry.id === actionId) continue;
+      if (!scopesOverlap(targetScope, entry.scope ?? 'all')) continue;
+      const effKeys = getEffectiveKeys(entry.id, overrides);
+      if (effKeys.some((k) => comboMatchesEntryKey(normCombo, k))) {
+        conflicts.push(entry);
+      }
+    }
+  }
+  return conflicts;
 }

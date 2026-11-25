@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getPlatformBridge, isTauriRuntime } from '../bridge/PlatformBridge';
 import { useEditorStore } from '../store/useEditorStore';
+import { getElementRectScale } from '../utils/uiScale';
 import {
   applyPresetToPrefs,
   buildExportZipBytes,
@@ -30,6 +31,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
   const wrapMode = useEditorStore((s) => s.wrapMode);
   const scaleMode = useEditorStore((s) => s.scaleMode);
   const targetWidth = useEditorStore((s) => s.targetWidth);
+  const widthAutoFit = useEditorStore((s) => s.widthAutoFit);
   const tickPrecision = useEditorStore((s) => s.tickPrecision);
   const tickFixedDecimals = useEditorStore((s) => s.tickFixedDecimals);
   const viewDomain = useEditorStore((s) => s.viewDomain);
@@ -125,6 +127,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
       uiWrapMode: wrapMode,
       uiScaleMode: scaleMode,
       uiTargetWidth: targetWidth,
+      uiWidthAutoFit: widthAutoFit,
       viewDomain,
       playRange,
       selection,
@@ -145,6 +148,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
       wrapMode,
       scaleMode,
       targetWidth,
+      widthAutoFit,
       viewDomain,
       playRange,
       selection,
@@ -203,9 +207,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
         if (clamped <= 1.001) {
           setPan({ x: 0, y: 0 });
         } else if (stage && clientX !== undefined && clientY !== undefined) {
+          const z = getElementRectScale(stage);
           const rect = stage.getBoundingClientRect();
-          const cx = clientX - (rect.left + rect.width / 2);
-          const cy = clientY - (rect.top + rect.height / 2);
+          const cx = (clientX - (rect.left + rect.width / 2)) / z;
+          const cy = (clientY - (rect.top + rect.height / 2)) / z;
           const ratio = clamped / prevZoom;
           setPan((p) => ({
             x: cx - (cx - p.x) * ratio,
@@ -258,7 +263,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
     const startY = e.clientY;
     const origPan = { ...pan };
     const onMove = (ev: PointerEvent) => {
-      setPan({ x: origPan.x + (ev.clientX - startX), y: origPan.y + (ev.clientY - startY) });
+      const z = getElementRectScale(stageEl);
+      setPan({ x: origPan.x + (ev.clientX - startX) / z, y: origPan.y + (ev.clientY - startY) / z });
     };
     const cleanup = () => {
       setDragging(false);
@@ -971,9 +977,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
                           <div className="segmented" role="group">
                             {(
                               [
-                                [52, '柔和'],
-                                [45, '洁净'],
-                                [40, '高净']
+                                [58, '柔和 58dB'],
+                                [52, '均衡 52dB'],
+                                [45, '洁净 45dB']
                               ] as const
                             ).map(([val, lbl]) => (
                               <button

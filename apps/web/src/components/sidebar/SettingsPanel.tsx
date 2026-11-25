@@ -1,6 +1,7 @@
 import React from 'react';
 import { isTauriRuntime } from '../../bridge/PlatformBridge';
 import { useEditorStore, type EditInspectorMode, type IpaInputMode } from '../../store/useEditorStore';
+import { UI_SCALE_MAX, UI_SCALE_MIN, stepUiScale } from '../../utils/uiScale';
 import { InfoIcon, TGridIcon, UiIcon } from '../Icons';
 import { CollapsibleSection } from './CollapsibleSection';
 
@@ -29,13 +30,17 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const setAutoOpenInspectorOnSelect = useEditorStore((s) => s.setAutoOpenInspectorOnSelect);
   const showMicroLoupe = useEditorStore((s) => s.showMicroLoupe);
   const setShowMicroLoupe = useEditorStore((s) => s.setShowMicroLoupe);
+  const uiScale = useEditorStore((s) => s.uiScale);
+  const setUiScale = useEditorStore((s) => s.setUiScale);
   const legendOpen = useEditorStore((s) => s.legendOpen);
   const toggleLegend = useEditorStore((s) => s.toggleLegend);
 
   const wrapMode = useEditorStore((s) => s.wrapMode);
   const setWrapMode = useEditorStore((s) => s.setWrapMode);
   const targetWidth = useEditorStore((s) => s.targetWidth);
+  const widthAutoFit = useEditorStore((s) => s.widthAutoFit);
   const setTargetWidth = useEditorStore((s) => s.setTargetWidth);
+  const layout = useEditorStore((s) => s.layout);
   const scaleMode = useEditorStore((s) => s.scaleMode);
   const setScaleMode = useEditorStore((s) => s.setScaleMode);
   const tickPrecision = useEditorStore((s) => s.tickPrecision);
@@ -111,6 +116,47 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <input type="checkbox" checked={legendOpen} onChange={() => toggleLegend()} />
             <span>显示底部交互图例</span>
           </label>
+
+          <div className="sb-setting-inline">
+            <span className="sb-field-lbl" title="全局缩放界面与谱面视图（75%–200%，不影响导出图像物理尺寸）">
+              界面缩放
+            </span>
+            <div className="width-stepper ui-scale-stepper">
+              <button
+                type="button"
+                className="icon-btn compact"
+                disabled={uiScale <= UI_SCALE_MIN + 0.001}
+                title="缩小界面"
+                aria-label="缩小界面"
+                onClick={() => setUiScale(stepUiScale(uiScale, -1))}
+              >
+                <TGridIcon name="stepper-minus" size={13} />
+              </button>
+              <button
+                type="button"
+                className="compact ui-scale-reset-btn"
+                title={uiScale === 1 ? '当前为默认 100% 缩放' : '点击一键复原为 100%'}
+                onClick={() => setUiScale(1)}
+              >
+                {Math.round(uiScale * 100)}%
+              </button>
+              <button
+                type="button"
+                className="icon-btn compact"
+                disabled={uiScale >= UI_SCALE_MAX - 0.001}
+                title="放大界面"
+                aria-label="放大界面"
+                onClick={() => setUiScale(stepUiScale(uiScale, 1))}
+              >
+                <TGridIcon name="stepper-plus" size={13} />
+              </button>
+            </div>
+          </div>
+          {uiScale !== 1 && (
+            <div className="sb-hint">
+              界面缩放仅影响当前屏幕显示，离线导出 SVG/PNG 仍保持精确出版尺寸。
+            </div>
+          )}
         </div>
       </CollapsibleSection>
 
@@ -143,16 +189,32 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 type="button"
                 className="icon-btn compact"
                 title="收窄行宽"
-                onClick={() => setTargetWidth(targetWidth - 120)}
+                onClick={() => {
+                  const baseW =
+                    wrapMode === 'auto' && widthAutoFit && layout?.width
+                      ? Math.round(layout.width)
+                      : targetWidth;
+                  setTargetWidth(baseW - 120);
+                }}
               >
                 <TGridIcon name="stepper-minus" size={13} />
               </button>
-              <span className="width-readout">{targetWidth} px</span>
+              <span className="width-readout">
+                {wrapMode === 'auto' && widthAutoFit
+                  ? `自适应${layout?.width ? ` (${Math.round(layout.width)}px)` : ''}`
+                  : `${targetWidth} px`}
+              </span>
               <button
                 type="button"
                 className="icon-btn compact"
                 title="加宽行宽"
-                onClick={() => setTargetWidth(targetWidth + 120)}
+                onClick={() => {
+                  const baseW =
+                    wrapMode === 'auto' && widthAutoFit && layout?.width
+                      ? Math.round(layout.width)
+                      : targetWidth;
+                  setTargetWidth(baseW + 120);
+                }}
               >
                 <TGridIcon name="stepper-plus" size={13} />
               </button>
@@ -279,16 +341,32 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   <div className="sb-setting-block">
                     <span className="sb-field-lbl">频率上限</span>
                     <div className="segmented sb-seg-full" role="group">
-                      {([5000, 8000, 10000] as const).map((hz) => (
-                        <button
-                          key={hz}
-                          type="button"
-                          className={`compact ${maxFreq === hz ? 'active' : ''}`}
-                          onClick={() => setMaxFreq(hz)}
-                        >
-                          {hz} Hz
-                        </button>
-                      ))}
+                      {(
+                        [
+                          [5000, '5 kHz (元音)', '5 kHz（聚焦元音与共振峰 F1–F3）'],
+                          [8000, '8 kHz (含擦音)', '8 kHz（兼顾元音与高频擦音 /s, ʃ/）'],
+                          [10000, '10 kHz', '10 kHz（宽频观测高频摩擦与爆破）']
+                        ] as const
+                      ).map(([hz, label, tip]) => {
+                        const nyquist = audioSampleRate > 0 ? audioSampleRate / 2 : Infinity;
+                        const exceedsNyquist = audioSampleRate > 0 && hz > nyquist;
+                        const disabled = exceedsNyquist && hz > 5000;
+                        const title = exceedsNyquist
+                          ? `超出当前音频 Nyquist 上限 (${(nyquist / 1000).toFixed(1)} kHz)`
+                          : tip;
+                        return (
+                          <button
+                            key={hz}
+                            type="button"
+                            className={`compact ${maxFreq === hz ? 'active' : ''}`}
+                            disabled={disabled}
+                            title={title}
+                            onClick={() => setMaxFreq(hz)}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -402,7 +480,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 onClick={() => onBatchConvertIpa('toPraat')}
               >
                 <UiIcon name="convertPraat" size={13} />
-                <span>全部转为 Praat \xx</span>
+                <span>全部转为 Praat 编码</span>
               </button>
             </div>
           </div>

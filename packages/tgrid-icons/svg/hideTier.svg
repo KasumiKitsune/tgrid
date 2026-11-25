@@ -1,0 +1,27 @@
+<svg class="tg-icon tg-icon--hide-tier" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill { opacity: 0.14; }
+    svg:hover .tg-sub { opacity: 1; }
+    .tg-slash {
+      transform-origin: 8px 8px;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-slash { transform: scale(1.05); }
+  </style>
+  <!-- 眼部轮廓与虹膜（沿 45° 斜线精确留出光学断口） -->
+  <g class="tg-sub tg-eye">
+    <path d="M6.7 3.15C7.1 3.05 7.55 3 8 3C10.5 3 12.7 4.3 14.25 8C13.95 8.65 13.65 9.25 13.35 9.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+    <path d="M9.3 12.85C8.9 12.95 8.45 13 8 13C5.5 13 3.3 11.7 1.75 8C2.05 7.35 2.35 6.75 2.65 6.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+    <path d="M9 5.85A2.4 2.4 0 0 1 10.15 7M7 10.15A2.4 2.4 0 0 1 5.85 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  </g>
+  <!-- 45° 隐藏斜线 -->
+  <path class="tg-slash" d="M2.25 2.25L13.75 13.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+</svg>

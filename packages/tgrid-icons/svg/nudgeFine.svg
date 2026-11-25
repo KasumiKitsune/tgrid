@@ -1,0 +1,32 @@
+<svg class="tg-icon tg-icon--nudge-fine" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill, .tg-src-fill, .tg-dst-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-pane-fill {
+      opacity: 0.09;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill, svg:hover .tg-src-fill, svg:hover .tg-dst-fill { opacity: 0.14; }
+    svg:hover .tg-pane-fill { opacity: 0.2; }
+    svg:hover .tg-sub { opacity: 1; }
+    .tg-node { transform-origin: 8px 8px; transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease; }
+    svg:hover .tg-arr-l { transform: translateX(-0.5px); }
+    svg:hover .tg-arr-r { transform: translateX(0.5px); }
+    svg:hover .tg-node { transform: scale(1.1); stroke: #2563eb; }
+  </style>
+  <!-- 中央纵边界（为空心精密靶环留出干净断口） -->
+  <path d="M8 1.75V5.45M8 9.05V14.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  <!-- 中心精密靶环 / 标点节点 -->
+  <circle class="tg-node" cx="8" cy="7.25" r="1.8" stroke="currentColor" stroke-width="1.5" />
+  <!-- 紧凑超精微步尖角 -->
+  <path class="tg-sub tg-arr-l" d="M3.5 5.5L1.75 7.25L3.5 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+  <path class="tg-sub tg-arr-r" d="M12.5 5.5L14.25 7.25L12.5 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- 底部 ±1ms 游标精密刻度 -->
+  <path class="tg-sub" d="M2.5 13V14.25M5.25 13V14.25M10.75 13V14.25M13.5 13V14.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+</svg>

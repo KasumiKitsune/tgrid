@@ -1,0 +1,27 @@
+<svg class="tg-icon tg-icon--paste" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill { opacity: 0.14; }
+    svg:hover .tg-sub { opacity: 1; }
+    .tg-clip {
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-clip { transform: translateY(-0.45px); }
+    svg:hover .tg-lines { transform: translateY(0.35px); }
+  </style>
+  <!-- 按下态剪贴板底纹 -->
+  <rect class="tg-fill" x="3.5" y="4.5" width="9" height="9" rx="0.75" fill="currentColor" />
+  <!-- 顶部金属夹扣 -->
+  <rect class="tg-clip" x="5.5" y="1.75" width="5" height="2.75" rx="0.85" stroke="currentColor" stroke-width="1.5" />
+  <!-- 剪贴板外框（顶部自然衔接夹扣） -->
+  <path d="M5.5 3.25H4.25C3.42 3.25 2.75 3.92 2.75 4.75V12.75C2.75 13.58 3.42 14.25 4.25 14.25H11.75C12.58 14.25 13.25 13.58 13.25 12.75V4.75C13.25 3.92 12.58 3.25 11.75 3.25H10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- 板内文本内容行 -->
+  <path class="tg-sub tg-lines" d="M5.5 8H10.5M5.5 10.75H8.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+</svg>

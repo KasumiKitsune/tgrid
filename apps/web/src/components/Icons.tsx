@@ -16,6 +16,28 @@ export const CloseIcon: React.FC<{ size?: number }> = ({ size = 12 }) => (
   <TGridIcon name="CloseIcon" size={size} />
 );
 
+export const ShortcutsIcon: React.FC<{ size?: number; className?: string }> = ({
+  size = 16,
+  className
+}) => (
+  <TGridIcon
+    name="shortcuts"
+    size={size}
+    className={className ? `ui-icon ${className}` : 'ui-icon'}
+  />
+);
+
+export const SubmenuChevronIcon: React.FC<{ size?: number; className?: string }> = ({
+  size = 12,
+  className
+}) => (
+  <TGridIcon
+    name="submenuChevron"
+    size={size}
+    className={className ? `ui-icon ${className}` : 'ui-icon'}
+  />
+);
+
 export const InfoIcon: React.FC<{ size?: number }> = ({ size = 16 }) => (
   <svg
     className="ui-icon"

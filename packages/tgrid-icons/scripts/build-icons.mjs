@@ -28,6 +28,7 @@ const DIRECTIONAL_PRESS = {
   down: 'translateY(0.8px) scale(0.93)',
   mergeLeft: 'translateX(-0.8px) scale(0.93)',
   mergeRight: 'translateX(0.8px) scale(0.93)',
+  submenuChevron: 'translateX(0.8px) scale(0.93)',
   export: 'translateY(0.7px) scale(0.93)'
 };
 
@@ -238,9 +239,10 @@ function compileIconCss(name, rawStyle) {
     const rawDecls = parseDeclarations(b.body);
     if (selectors.length === 0 || rawDecls.length === 0) continue;
 
-    // Group selectors by kind (base / bare-svg / hover / active)
+    // Group selectors by kind (base / bare-svg / hover / open / active)
     const normalSels = [];
     const hoverSels = [];
+    const openSels = [];
     const activeSels = [];
     const bareSvgSels = [];
 
@@ -250,6 +252,8 @@ function compileIconCss(name, rawStyle) {
         bareSvgSels.push(cleanSel);
       } else if (/^svg:hover(?=$|[\s.#:>~+[])/.test(cleanSel)) {
         hoverSels.push(cleanSel);
+      } else if (/^svg\.is-open(?=$|[\s.#:>~+[])/.test(cleanSel)) {
+        openSels.push(cleanSel);
       } else if (/^svg:active(?=$|[\s.#:>~+[])/.test(cleanSel)) {
         activeSels.push(cleanSel);
       } else {
@@ -280,17 +284,24 @@ function compileIconCss(name, rawStyle) {
       outLines.push(`${scoped} {\n${formatDecls(rawDecls)}\n}`);
     }
 
-    // Hover selectors (self hover + non-disabled interactive parent hover)
-    if (hoverSels.length > 0) {
-      const scoped = hoverSels
-        .flatMap((s) => {
+    // Hover & .is-open selectors (self + non-disabled interactive parent)
+    if (hoverSels.length > 0 || openSels.length > 0) {
+      const scoped = [
+        ...hoverSels.flatMap((s) => {
           const rest = s.slice('svg:hover'.length);
           return [
             `.tgi.tgi-${name}:hover${rest}`,
             `${TRIGGER}:hover .tgi.tgi-${name}${rest}`
           ];
+        }),
+        ...openSels.flatMap((s) => {
+          const rest = s.slice('svg.is-open'.length);
+          return [
+            `.tgi.tgi-${name}.is-open${rest}`,
+            `${TRIGGER}.is-open .tgi.tgi-${name}${rest}`
+          ];
         })
-        .join(',\n');
+      ].join(',\n');
       outLines.push(`${scoped} {\n${formatDecls(rawDecls)}\n}`);
     }
 

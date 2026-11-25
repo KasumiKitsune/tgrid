@@ -166,23 +166,29 @@ function renderRichTextSVG(
   const textWrap = svgEl('g', isExport ? {} : { 'data-text-node': '1' }, parent);
   let curY = y;
 
-  if (rich.gloss && !rich.glossIsRaw) {
-    const gt = svgEl(
-      'text',
-      {
-        x,
-        y: curY + Math.round(9 * fScale),
-        'text-anchor': align,
-        'font-family': fontFamily,
-        'font-size': String(glossSize),
-        'font-style': 'italic',
-        fill: pal.gloss,
-        ...(isExport ? {} : { 'data-legend-keys': 'trigraph' })
-      },
-      textWrap
-    );
-    gt.textContent = rich.gloss;
-    curY += rich.glossH;
+  const glossLines = rich.glossLines?.length ? rich.glossLines : rich.gloss ? [rich.gloss] : [];
+  const glossLineH = rich.glossLineH || Math.round(12.5 * fScale);
+
+  if (glossLines.length > 0 && !rich.glossIsRaw) {
+    for (const gl of glossLines) {
+      const gt = svgEl(
+        'text',
+        {
+          x,
+          y: curY + Math.round(9 * fScale),
+          'text-anchor': align,
+          'font-family': fontFamily,
+          'font-size': String(glossSize),
+          'font-style': 'italic',
+          fill: pal.gloss,
+          ...(isExport ? {} : { 'data-legend-keys': 'trigraph' })
+        },
+        textWrap
+      );
+      gt.textContent = gl;
+      curY += glossLineH;
+    }
+    curY += Math.round(1 * fScale);
   }
 
   for (const line of rich.lines) {
@@ -220,22 +226,25 @@ function renderRichTextSVG(
     curY += rich.lineH;
   }
 
-  if (rich.gloss && rich.glossIsRaw) {
-    const gt = svgEl(
-      'text',
-      {
-        x,
-        y: curY + Math.round(9 * fScale),
-        'text-anchor': align,
-        'font-family': MONO_FONT_STACK,
-        'font-size': String(glossRawSize),
-        fill: pal.gloss,
-        opacity: '0.78',
-        ...(isExport ? {} : { 'data-legend-keys': 'trigraph' })
-      },
-      textWrap
-    );
-    gt.textContent = rich.gloss;
+  if (glossLines.length > 0 && rich.glossIsRaw) {
+    for (const gl of glossLines) {
+      const gt = svgEl(
+        'text',
+        {
+          x,
+          y: curY + Math.round(9 * fScale),
+          'text-anchor': align,
+          'font-family': MONO_FONT_STACK,
+          'font-size': String(glossRawSize),
+          fill: pal.gloss,
+          opacity: '0.78',
+          ...(isExport ? {} : { 'data-legend-keys': 'trigraph' })
+        },
+        textWrap
+      );
+      gt.textContent = gl;
+      curY += glossLineH;
+    }
   }
 }
 
@@ -417,6 +426,22 @@ export function renderInteractiveOverlay(
     const linX = band.linearXForTime(t);
     const elX = elasticXInBand(band, t);
     const tickTopY = input.hasAudio && band.specH > 0 ? band.anchorY : band.linearY;
+    if (input.hasAudio && band.specH > 0) {
+      svgEl(
+        'line',
+        {
+          x1: linX,
+          y1: band.specY,
+          x2: linX,
+          y2: band.anchorY,
+          stroke: color,
+          'stroke-width': 1,
+          'stroke-dasharray': '3 2.5',
+          opacity: 0.5
+        },
+        layerG
+      );
+    }
     svgEl(
       'line',
       {
@@ -1061,7 +1086,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
               : { class: 'formant-layer', 'data-legend-keys': 'formants' },
             specContent
           );
-          const dotHalf = 1.1 * sScale;
+          const dotR = (pal.isBw ? 1.45 : 1.35) * sScale;
           for (const frame of analysis.formantTrack) {
             if (frame.t < band.startT || frame.t > band.endT) continue;
             const seg = band.linearSegs.find((s) => frame.t >= s.t0 && frame.t <= s.t1);
@@ -1070,23 +1095,55 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             for (const freq of frame.freqs) {
               if (freq > maxFreq) continue;
               const fy = band.specY + band.specH * (1 - freq / maxFreq);
-              svgEl('rect', { x: fx - dotHalf, y: fy - dotHalf, width: dotHalf * 2, height: dotHalf * 2, fill: pal.formant }, formG);
+              if (pal.isBw) {
+                svgEl(
+                  'circle',
+                  {
+                    cx: fx,
+                    cy: fy,
+                    r: dotR,
+                    fill: pal.paper,
+                    stroke: pal.formant,
+                    'stroke-width': sw(0.85)
+                  },
+                  formG
+                );
+              } else {
+                svgEl(
+                  'circle',
+                  {
+                    cx: fx,
+                    cy: fy,
+                    r: dotR,
+                    fill: pal.formant,
+                    stroke: pal.paper,
+                    'stroke-width': sw(0.65),
+                    'paint-order': 'stroke'
+                  },
+                  formG
+                );
+              }
             }
           }
         }
 
         // F0 Pitch contour
         if (!isExp || pitchOpacity > 0.001) {
+          // Keep pitchHalo at 100% solid paper opacity so dark spectrogram energy never bleeds
+          // through the halo; only soften the foreground F0 stroke itself (P1-1).
           const pitchG = svgEl(
             'g',
             isExp
-              ? { ...(sem ? { id: `band-${bNum}-pitch-f0` } : {}), ...(pitchOpacity < 0.999 ? { opacity: String(pitchOpacity) } : {}) }
+              ? sem
+                ? { id: `band-${bNum}-pitch-f0` }
+                : {}
               : { class: 'pitch-layer', 'data-legend-keys': 'pitch-f0' },
             specContent
           );
           let pathD = '';
           let penDown = false;
-          const f0Ceil = analysis.f0Ceil || 500;
+          const f0Floor = analysis.f0Floor ?? 65;
+          const f0Ceil = Math.max(f0Floor + 50, analysis.f0Ceil || 500);
           for (const p of analysis.pitchTrack) {
             if (p.t < band.startT || p.t > band.endT || p.f0 === null || !Number.isFinite(p.f0)) {
               penDown = false;
@@ -1098,13 +1155,41 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
               continue;
             }
             const px = band.linearXForTime(p.t);
-            const py = band.specY + band.specH - 8 - ((Math.max(65, Math.min(f0Ceil, p.f0)) - 65) / (f0Ceil - 65)) * (band.specH - 16);
+            const py =
+              band.specY +
+              band.specH -
+              8 -
+              ((Math.max(f0Floor, Math.min(f0Ceil, p.f0)) - f0Floor) / (f0Ceil - f0Floor)) *
+                (band.specH - 16);
             pathD += penDown ? ` L${px.toFixed(1)},${py.toFixed(1)}` : ` M${px.toFixed(1)},${py.toFixed(1)}`;
             penDown = true;
           }
           if (pathD) {
-            svgEl('path', { d: pathD, fill: 'none', stroke: pal.pitchHalo, 'stroke-width': sw(3.2), 'stroke-linejoin': 'miter' }, pitchG);
-            svgEl('path', { d: pathD, fill: 'none', stroke: pal.pitch, 'stroke-width': sw(1.5), 'stroke-linejoin': 'miter' }, pitchG);
+            svgEl(
+              'path',
+              {
+                ...(isExp ? {} : { class: 'pitch-halo' }),
+                d: pathD,
+                fill: 'none',
+                stroke: pal.pitchHalo,
+                'stroke-width': sw(3.2),
+                'stroke-linejoin': 'miter'
+              },
+              pitchG
+            );
+            svgEl(
+              'path',
+              {
+                ...(isExp ? {} : { class: 'pitch-stroke' }),
+                d: pathD,
+                fill: 'none',
+                stroke: pal.pitch,
+                'stroke-width': sw(1.5),
+                'stroke-linejoin': 'miter',
+                ...(isExp && pitchOpacity < 0.999 ? { 'stroke-opacity': String(pitchOpacity) } : {})
+              },
+              pitchG
+            );
           }
         }
       }
@@ -1148,17 +1233,22 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
 
       // F0 Range Readout
       if (analysis && band.bandContentW >= 90 && (!isExp || pitchOpacity > 0.001)) {
-        const f0Ceil = analysis.f0Ceil || 500;
-        const f0Lbl = `F0 65–${f0Ceil} Hz`;
+        const f0Floor = analysis.f0Floor ?? 65;
+        const f0Ceil = Math.max(f0Floor + 50, analysis.f0Ceil || 500);
+        const f0Lbl = `F0 ${Math.round(f0Floor)}–${Math.round(f0Ceil)} Hz`;
         const f0LblW = Math.ceil(measurePx(f0Lbl, `${(8.5 * fScale).toFixed(1)}px ${MONO_FONT_STACK}`)) + 8;
         const f0BoxX = band.originX + band.bandContentW - f0LblW - 4;
         const f0BoxY = band.specY + 4;
         const f0AxisG = svgEl(
           'g',
-          isExp ? (pitchOpacity < 0.999 ? { opacity: String(pitchOpacity) } : {}) : { class: 'pitch-layer', 'data-legend-keys': 'pitch-f0' },
+          isExp
+            ? pitchOpacity < 0.999
+              ? { opacity: String(Math.max(0.55, pitchOpacity)) }
+              : {}
+            : { class: 'pitch-layer pitch-badge', 'data-legend-keys': 'pitch-f0' },
           specG
         );
-        svgEl('rect', { x: f0BoxX, y: f0BoxY, width: f0LblW, height: Math.round(13 * fScale), fill: pal.paper, 'fill-opacity': '0.86', stroke: pal.pitch, 'stroke-opacity': '0.28', 'stroke-width': '0.6' }, f0AxisG);
+        svgEl('rect', { x: f0BoxX, y: f0BoxY, width: f0LblW, height: Math.round(13 * fScale), fill: pal.paper, 'fill-opacity': '0.88', stroke: pal.pitch, 'stroke-opacity': '0.28', 'stroke-width': '0.6' }, f0AxisG);
         svgEl('text', { x: f0BoxX + f0LblW - 4, y: f0BoxY + Math.round(9.5 * fScale), 'text-anchor': 'end', 'font-family': MONO_FONT_STACK, 'font-size': fs(8.5), fill: pal.pitch }, f0AxisG).textContent = f0Lbl;
       }
 
@@ -1267,16 +1357,26 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
     for (let i = 0; i < band.spineCols.length; i++) {
       const col = band.spineCols[i];
       const lx = lxs[i];
-      const isMajor =
-        col.usage >= 2 ||
+      const isBandEdgeOrGlobal =
         col.t === tg.xmin ||
         col.t === tg.xmax ||
         i === 0 ||
         i === band.spineCols.length - 1;
       const minLinGap = minLinGapAt(i);
       const slant = Math.abs(col.x - lx);
-      const isUltraDenseMinor = !isMajor && (minLinGap < 8 || (avgLinGap < 12 && slant > 16));
-      const isModDenseMinor = !isMajor && !isUltraDenseMinor && (avgLinGap < 22 || minLinGap < 14);
+      const isHighDensitySlant = avgLinGap < 14 && slant > 22;
+      const isMajor = isHighDensitySlant
+        ? isBandEdgeOrGlobal || col.usage >= 3
+        : isBandEdgeOrGlobal || col.usage >= 2;
+      const isSliverMinor = !isMajor && Boolean(col.isSliverEdge);
+      const isUltraDenseMinor =
+        !isMajor &&
+        (isSliverMinor ||
+          minLinGap < 8 ||
+          (avgLinGap < 12 && slant > 16) ||
+          (isHighDensitySlant && minLinGap < 10));
+      const isModDenseMinor =
+        !isMajor && !isUltraDenseMinor && (isHighDensitySlant || avgLinGap < 22 || minLinGap < 14);
 
       if (!hasAudio || band.specH === 0) {
         svgEl(
@@ -1373,6 +1473,22 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
           neckG
         );
       }
+    }
+    // Subtle horizontal separator below projection neck breaks `\` vs `-52° /` X-clashes (P1-3)
+    if (!layout.hideTicks) {
+      svgEl(
+        'line',
+        {
+          x1: band.originX,
+          y1: band.neckBotY + 0.5,
+          x2: band.originX + band.bandContentW,
+          y2: band.neckBotY + 0.5,
+          stroke: pal.rule,
+          'stroke-width': sw(0.75),
+          opacity: 0.45
+        },
+        neckG
+      );
     }
 
     // C. Timestamp Spine
@@ -1671,16 +1787,68 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             svgEl('line', { x1: vi.x0, y1: ly + lh, x2: vi.x1, y2: ly + lh, stroke: pal.border, 'stroke-width': sw(1) }, ivG);
 
             if (isEmpty) {
+              const formatSilenceDur = (dt: number): string => {
+                if (dt >= 10) return `${dt.toFixed(1)}s`;
+                if (dt >= 0.1) return `${dt.toFixed(2)}s`;
+                return `${Math.round(dt * 1000)}ms`;
+              };
+              let hasCollapsedChild = false;
               for (let c = band.startIdx; c < band.endIdx; c++) {
                 if (!layout.colCollapsed[c]) continue;
                 const ct0 = layout.spineT[c];
                 const ct1 = layout.spineT[c + 1];
                 if (iv.xmin <= ct0 && iv.xmax >= ct1) {
-                  const mx = (band.spineCols[c - band.startIdx].x + band.spineCols[c + 1 - band.startIdx].x) / 2;
+                  hasCollapsedChild = true;
+                  const cx0 = band.spineCols[c - band.startIdx].x;
+                  const cx1 = band.spineCols[c + 1 - band.startIdx].x;
+                  const colW = cx1 - cx0;
+                  const mx = (cx0 + cx1) / 2;
                   const my = ly + lh / 2;
                   const cpTarget = isExp ? ivG : svgEl('g', { 'data-legend-keys': 'collapsed-pause', 'pointer-events': 'none' }, ivG);
-                  svgEl('line', { x1: mx - 4, y1: my + 5, x2: mx - 0.5, y2: my - 5, stroke: pal.anchorStroke, 'stroke-width': sw(1) }, cpTarget);
-                  svgEl('line', { x1: mx + 1.5, y1: my + 5, x2: mx + 5, y2: my - 5, stroke: pal.anchorStroke, 'stroke-width': sw(1) }, cpTarget);
+                  const durStr = formatSilenceDur(ct1 - ct0);
+                  const durFont = `${(9 * fScale).toFixed(2)}px ${MONO_FONT_STACK}`;
+                  const txtW = measurePx(durStr, durFont);
+                  const slashW = 8;
+                  const gap = 3;
+                  if (colW >= slashW + gap + txtW + 6) {
+                    const startX = mx - (slashW + gap + txtW) / 2;
+                    svgEl('line', { x1: startX, y1: my + 4.5, x2: startX + 3, y2: my - 4.5, stroke: pal.anchorStroke, 'stroke-width': sw(1) }, cpTarget);
+                    svgEl('line', { x1: startX + 4.5, y1: my + 4.5, x2: startX + 7.5, y2: my - 4.5, stroke: pal.anchorStroke, 'stroke-width': sw(1) }, cpTarget);
+                    svgEl(
+                      'text',
+                      {
+                        x: startX + slashW + gap,
+                        y: my + 3.1 * fScale,
+                        'text-anchor': 'start',
+                        'font-family': MONO_FONT_STACK,
+                        'font-size': fs(9),
+                        fill: pal.mutedAlt
+                      },
+                      cpTarget
+                    ).textContent = durStr;
+                  } else {
+                    svgEl('line', { x1: mx - 4, y1: my + 5, x2: mx - 0.5, y2: my - 5, stroke: pal.anchorStroke, 'stroke-width': sw(1) }, cpTarget);
+                    svgEl('line', { x1: mx + 1.5, y1: my + 5, x2: mx + 5, y2: my - 5, stroke: pal.anchorStroke, 'stroke-width': sw(1) }, cpTarget);
+                  }
+                }
+              }
+              // P1-4: Subtle duration hint inside unfolded empty silence cells (hidden when export purification hideStretchCues is active)
+              if (!hasCollapsedChild && !vi.clippedLeft && !vi.clippedRight && !hideStretch && vi.w >= 44) {
+                const dt = iv.xmax - iv.xmin;
+                if (dt > 1e-4) {
+                  svgEl(
+                    'text',
+                    {
+                      x: vi.x0 + vi.w / 2,
+                      y: ly + lh / 2 + 3.2 * fScale,
+                      'text-anchor': 'middle',
+                      'font-family': MONO_FONT_STACK,
+                      'font-size': fs(9.5),
+                      fill: pal.faintTick,
+                      ...(isExp ? {} : { 'pointer-events': 'none' })
+                    },
+                    ivG
+                  ).textContent = formatSilenceDur(dt);
                 }
               }
             }
@@ -1763,8 +1931,13 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             if (vz.rich) {
               const bw = vz.rich.width + 8;
               const bh = vz.rich.height + 4;
-              svgEl('rect', { x: cx - bw / 2, y: cy - bh / 2, width: bw, height: bh, fill: pal.zeroBg, stroke: zeroStroke, 'stroke-width': sw(1) }, zG);
-              renderRichTextSVG(zG, vz.rich, cx, cy - vz.rich.height / 2, 'middle', 11, richStyle);
+              const bandLeft = band.originX;
+              const bandRight = band.originX + band.bandContentW;
+              let bx = cx - bw / 2;
+              if (bx + bw > bandRight) bx = bandRight - bw;
+              if (bx < bandLeft) bx = bandLeft;
+              svgEl('rect', { x: bx, y: cy - bh / 2, width: bw, height: bh, fill: pal.zeroBg, stroke: zeroStroke, 'stroke-width': sw(1) }, zG);
+              renderRichTextSVG(zG, vz.rich, bx + bw / 2, cy - vz.rich.height / 2, 'middle', 11, richStyle);
             }
           }
 

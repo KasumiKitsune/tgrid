@@ -23,7 +23,8 @@ import {
   triggerBlobDownload
 } from './render/exporter';
 import { useEditorStore } from './store/useEditorStore';
-import { isComposingEvent } from './shortcuts/registry';
+import { isComposingEvent, isEditableTarget, matchesShortcut } from './shortcuts/registry';
+import { applyUiScaleToDom, syncUiScaleViewportAttrs } from './utils/uiScale';
 import { Topbar, type ExportActionKind } from './components/Topbar';
 import { TransportBar } from './components/TransportBar';
 import { EditStrip } from './components/EditStrip';
@@ -109,6 +110,15 @@ export function App() {
   useEffect(() => {
     playerRef.current?.setLoop(loop);
   }, [loop]);
+
+  // Apply persisted global UI scale (75%–200%) & responsive logical viewport guards
+  const uiScale = useEditorStore((s) => s.uiScale);
+  useEffect(() => {
+    applyUiScaleToDom(uiScale);
+    const onResize = () => syncUiScaleViewportAttrs(uiScale);
+    window.addEventListener('resize', onResize, { passive: true });
+    return () => window.removeEventListener('resize', onResize);
+  }, [uiScale]);
 
   // Stop playback cleanly when switching between objects inside a Collection
   const collectionActiveIdx = useEditorStore((s) => s.collectionActiveIdx);
@@ -961,7 +971,7 @@ export function App() {
       }
 
       if (changedCount === 0) {
-        showToast(direction === 'toUnicode' ? '未发现可转换的 Praat \\xx 编码' : '未发现可转换的 Unicode 音标');
+        showToast(direction === 'toUnicode' ? '未发现可转换的 Praat 音标编码' : '未发现可转换的 Unicode 音标');
         return;
       }
       await prefetchTrigraphCache(draft, bridge);
@@ -971,7 +981,7 @@ export function App() {
       showToast(
         direction === 'toUnicode'
           ? `已转换 ${changedCount} 处为 Unicode IPA`
-          : `已转换 ${changedCount} 处为 Praat \\xx`
+          : `已转换 ${changedCount} 处为 Praat 编码`
       );
     },
     [showToast]
@@ -994,6 +1004,7 @@ export function App() {
         uiWrapMode: st.wrapMode,
         uiScaleMode: st.scaleMode,
         uiTargetWidth: st.targetWidth,
+        uiWidthAutoFit: st.widthAutoFit,
         viewDomain: st.viewDomain,
         playRange: st.playRange,
         selection: st.selection,
@@ -1232,6 +1243,7 @@ export function App() {
   useEffect(() => {
     const onKeyDownCapture = (e: KeyboardEvent) => {
       if (isComposingEvent(e)) return;
+      if (document.querySelector('.cust-key-btn.is-recording')) return;
 
       const ctrl = e.ctrlKey || e.metaKey;
       const lower = e.key.toLowerCase();
@@ -1263,6 +1275,9 @@ export function App() {
           return;
         }
         if (st.findBarOpen) {
+          if (document.querySelector('.find-replace-tier-menu')) {
+            return;
+          }
           e.preventDefault();
           e.stopPropagation();
           st.closeFindBar();
@@ -1271,6 +1286,7 @@ export function App() {
       }
 
       const stNow = useEditorStore.getState();
+      const customShortcuts = stNow.customShortcuts;
       const anyModalOpen = Boolean(
         unsavedDialogRef.current ||
           stNow.exportOpen ||
@@ -1278,6 +1294,14 @@ export function App() {
           stNow.shortcutsOpen ||
           document.querySelector('.modal-backdrop.open')
       );
+
+      const isFnKey = /^F([1-9]|1[0-2])$/i.test(e.key);
+      const isBareEvent = !ctrl && !e.altKey && !isFnKey;
+      const isEditingInput = isEditableTarget(e.target);
+      const matchGlobalShortcut = (id: string): boolean => {
+        if (isBareEvent && isEditingInput) return false;
+        return matchesShortcut(id, e, customShortcuts);
+      };
 
       if (isDesktop) {
         // Block WebView2 / Edge browser chrome shortcuts
@@ -1324,19 +1348,25 @@ export function App() {
         const st = useEditorStore.getState();
         if (isZoomReset) {
           st.setTargetWidth(1120);
+          st.setWidthAutoFit(true);
           st.setWrapMode('auto');
           st.setViewDomain(null);
           return;
         }
         const stageEl = document.getElementById('stage');
         const curStageW = stageEl?.clientWidth || window.innerWidth;
-        const sidePad = curStageW < 480 ? 12 : curStageW < 760 ? 24 : 56;
+        const sidePad = curStageW < 480 ? 12 : 24;
         const availW = Math.max(260, curStageW - sidePad);
-        const curW = st.wrapMode === 'auto' ? Math.min(st.targetWidth, availW) : st.targetWidth;
+        const renderedW = st.layout && st.layout.width > 0 ? st.layout.width : availW;
+        const curW = renderedW;
         const factor = isZoomIn ? 1.15 : 1 / 1.15;
         const nextW = Math.round(curW * factor);
         let nextWrap = st.wrapMode;
-        if (st.wrapMode === 'auto' && factor > 1 && nextW > availW) {
+        const singleBandCapped =
+          st.wrapMode === 'auto' &&
+          st.layout?.bands.length === 1 &&
+          renderedW < availW - 8;
+        if (st.wrapMode === 'auto' && factor > 1 && (nextW > availW || singleBandCapped)) {
           nextWrap = 'single';
           st.setWrapMode('single');
         }
@@ -1351,12 +1381,10 @@ export function App() {
         return;
       }
 
-      // Shortcuts modal (Mod+/ and F1)
-      if (
-        (e.key === 'F1' && !ctrl && !e.altKey && !e.shiftKey) ||
-        (ctrl && !e.altKey && !e.shiftKey && (e.key === '/' || e.code === 'Slash'))
-      ) {
+      // Shortcuts modal (default: ? / Mod+/ / F1, or custom binding)
+      if (matchGlobalShortcut('shortcuts-modal')) {
         e.preventDefault();
+        e.stopPropagation();
         if (!unsavedDialogRef.current && !stNow.exportOpen && !stNow.aboutOpen) {
           stNow.setShortcutsOpen(!stNow.shortcutsOpen);
         }
@@ -1379,7 +1407,17 @@ export function App() {
           e.key === 'Tab' ||
           (!e.shiftKey && /^[1-9]$/.test(e.key)));
 
-      if (anyModalOpen && isModalBlockedShortcut) {
+      const matchesRebindableGlobal =
+        matchGlobalShortcut('find-open') ||
+        matchGlobalShortcut('replace-open') ||
+        matchGlobalShortcut('open-files') ||
+        matchGlobalShortcut('open-audio') ||
+        matchGlobalShortcut('save-file') ||
+        matchGlobalShortcut('save-as') ||
+        matchGlobalShortcut('export-figure') ||
+        matchGlobalShortcut('sidebar-toggle');
+
+      if (anyModalOpen && (isModalBlockedShortcut || matchesRebindableGlobal)) {
         e.preventDefault();
         return;
       }
@@ -1416,50 +1454,59 @@ export function App() {
         return;
       }
 
-      // Find & Replace (Mod+F / Mod+H)
-      if (ctrl && !e.altKey && !e.shiftKey && lower === 'f') {
+      // Find & Replace
+      if (matchGlobalShortcut('find-open')) {
         e.preventDefault();
+        e.stopPropagation();
         useEditorStore.getState().openFindBar(false);
         return;
       }
-      if (ctrl && !e.altKey && !e.shiftKey && lower === 'h') {
+      if (matchGlobalShortcut('replace-open')) {
         e.preventDefault();
+        e.stopPropagation();
         useEditorStore.getState().openFindBar(true);
         return;
       }
 
       // Open files & companion audio (Desktop & Web)
-      if (ctrl && !e.altKey && !e.shiftKey && lower === 'o') {
+      if (matchGlobalShortcut('open-files')) {
         e.preventDefault();
+        e.stopPropagation();
         void handleOpenTextGridPicker();
         return;
       }
-      if (ctrl && !e.altKey && e.shiftKey && lower === 'o') {
+      if (matchGlobalShortcut('open-audio')) {
         e.preventDefault();
+        e.stopPropagation();
         void handleOpenAudioPicker();
         return;
       }
 
       // Save & Export & Sidebar
-      if (ctrl && !e.altKey && lower === 's') {
+      if (matchGlobalShortcut('save-as')) {
         e.preventDefault();
-        void handleExportAction(e.shiftKey ? 'save-as' : 'save');
+        e.stopPropagation();
+        void handleExportAction('save-as');
         return;
       }
-      if (ctrl && !e.altKey && !e.shiftKey && lower === 'p') {
+      if (matchGlobalShortcut('save-file')) {
         e.preventDefault();
+        e.stopPropagation();
+        void handleExportAction('save');
+        return;
+      }
+      if (matchGlobalShortcut('export-figure')) {
+        e.preventDefault();
+        e.stopPropagation();
         setExportOpen(true);
         return;
       }
-      if (ctrl && !e.altKey && e.shiftKey && lower === 'e') {
+      if (matchGlobalShortcut('sidebar-toggle')) {
         e.preventDefault();
-        setExportOpen(true);
-        return;
-      }
-      if (ctrl && !e.altKey && !e.shiftKey && lower === 'b') {
-        e.preventDefault();
+        e.stopPropagation();
         const st = useEditorStore.getState();
         st.setSidebarOpen(!st.sidebarOpen);
+        return;
       }
     };
 

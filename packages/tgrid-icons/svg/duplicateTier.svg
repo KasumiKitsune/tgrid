@@ -1,0 +1,31 @@
+<svg class="tg-icon tg-icon--duplicate-tier" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill { opacity: 0.14; }
+    svg:hover .tg-sub { opacity: 1; }
+    .tg-plus {
+      transform-origin: 12.5px 11.5px;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+    svg:hover .tg-clone { transform: translateY(0.5px); }
+    svg:hover .tg-plus { transform: scale(1.12); stroke: #2563eb; }
+  </style>
+  <!-- 上方源层级（含区间边界） -->
+  <rect x="2" y="2" width="12" height="4" rx="1" stroke="currentColor" stroke-width="1.5" />
+  <path d="M6 2V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  <!-- 下方克隆新层（边界 x=6 精确垂直对齐） -->
+  <g class="tg-sub tg-clone">
+    <rect class="tg-fill" x="2" y="9.5" width="6.25" height="4" rx="0.75" fill="currentColor" />
+    <path d="M8.25 9.5H3C2.45 9.5 2 9.95 2 10.5V12.5C2 13.05 2.45 13.5 3 13.5H8.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M6 9.5V13.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  </g>
+  <!-- 右下新建加号 -->
+  <path class="tg-plus" d="M12.5 9.75V13.25M10.75 11.5H14.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+</svg>

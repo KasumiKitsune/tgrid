@@ -123,6 +123,7 @@ export interface AudioAnalysisSummary {
   offset: number;
   peakAmplitude: number;
   specMaxDb: number;
+  f0Floor: number;
   f0Ceil: number;
   pitchTrack: PitchPoint[];
   formantTrack: FormantPoint[];

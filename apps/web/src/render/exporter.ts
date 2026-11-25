@@ -39,7 +39,7 @@ export interface ExportPrefs {
   tickPrecision: '2' | '3' | 'full' | 'none';
   tickFixedDecimals: boolean;
   marginPreset: 'tight' | 'standard' | 'wide';
-  specDynRange: 40 | 45 | 52;
+  specDynRange: 45 | 52 | 58;
   contourLevels: 4 | 6 | 8;
   semanticGroups: boolean;
   roundCoords: boolean;
@@ -74,7 +74,7 @@ export const DEFAULT_EXPORT_PREFS: ExportPrefs = {
   tickPrecision: '3',
   tickFixedDecimals: false,
   marginPreset: 'standard',
-  specDynRange: 45,
+  specDynRange: 52,
   contourLevels: 6,
   semanticGroups: true,
   roundCoords: true,
@@ -88,7 +88,12 @@ export function loadExportPrefs(): ExportPrefs {
   try {
     const raw = JSON.parse(localStorage.getItem(EXPORT_STORAGE_KEY) || 'null');
     if (raw && typeof raw === 'object') {
-      return { ...DEFAULT_EXPORT_PREFS, ...raw };
+      const merged = { ...DEFAULT_EXPORT_PREFS, ...raw } as ExportPrefs;
+      const dr = Number((raw as { specDynRange?: unknown }).specDynRange);
+      if (dr !== 45 && dr !== 52 && dr !== 58) {
+        merged.specDynRange = dr === 40 ? 45 : 52;
+      }
+      return merged;
     }
   } catch {
     // ignore storage failures
@@ -143,7 +148,7 @@ export function applyPresetToPrefs(
     next.hideStretchCues = true;
     next.specMode = 'contour';
     next.contourLevels = 6;
-    next.specDynRange = 45;
+    next.specDynRange = 52;
     next.pngScale = 6;
     next.pngShowBackdrop = true;
     next.showLinearScaleBar = true;
@@ -160,7 +165,7 @@ export function applyPresetToPrefs(
     next.hideStretchCues = true;
     next.specMode = 'contour';
     next.contourLevels = 6;
-    next.specDynRange = 45;
+    next.specDynRange = 52;
     next.pngScale = 3;
     next.pngShowBackdrop = true;
     next.legendMode = 'full';
@@ -299,6 +304,7 @@ export interface ExportSceneInput {
   uiWrapMode: 'auto' | 'single';
   uiScaleMode: 'elastic' | 'linear';
   uiTargetWidth: number;
+  uiWidthAutoFit?: boolean;
   viewDomain: { min: number; max: number } | null;
   playRange: { start: number; end: number } | null;
   selection: EditorSelection;
@@ -371,7 +377,12 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
   let targetWidth = 740;
   if (prefs.widthPreset === 'window') {
     wrapMode = input.uiWrapMode;
-    targetWidth = input.uiWrapMode === 'auto' ? Math.min(input.uiTargetWidth, input.stageWidth) : input.uiTargetWidth;
+    targetWidth =
+      input.uiWrapMode === 'auto'
+        ? input.uiWidthAutoFit
+          ? input.stageWidth
+          : Math.min(input.uiTargetWidth, input.stageWidth)
+        : input.uiTargetWidth;
   } else if (prefs.widthPreset === 'single-col') {
     wrapMode = 'auto';
     targetWidth = 380;
@@ -410,7 +421,8 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
   const captionHeight = prefs.showCaption ? 26 : 0;
   const scaleBarExtraH = prefs.showLinearScaleBar && effectiveScaleMode === 'linear' ? 22 : 0;
 
-  const sc = resolveScreenCueOpacities(input.cueMode, input.selection?.kind);
+  // Decouple exported layer opacities from transient editor selection state (P0-2)
+  const sc = resolveScreenCueOpacities(input.cueMode, null);
   const cueOps = {
     spec: specStrategy === 'curves-only' ? 0 : sc.spec,
     pitch: specStrategy === 'curves-only' && sc.pitch <= 0.01 && sc.formant <= 0.01 ? 0.95 : sc.pitch,

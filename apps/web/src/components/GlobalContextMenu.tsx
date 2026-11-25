@@ -1,9 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { isTauriRuntime } from '../bridge/PlatformBridge';
 import { useEditorStore } from '../store/useEditorStore';
+import { getLogicalViewportSize, getViewportZoom } from '../utils/uiScale';
+import { InfoIcon, UiIcon, type IconName } from './Icons';
 
 interface GlobalMenuItem {
   label?: string;
+  icon?: IconName | 'info';
   shortcut?: string;
   disabled?: boolean;
   divider?: boolean;
@@ -101,6 +104,7 @@ export const GlobalContextMenu: React.FC<GlobalContextMenuProps> = ({
         const items: GlobalMenuItem[] = [
           {
             label: '剪切',
+            icon: 'cut',
             shortcut: 'Ctrl+X',
             disabled: readonlyOrDisabled || (!hasSel && sel.supported),
             action: () => {
@@ -123,6 +127,7 @@ export const GlobalContextMenu: React.FC<GlobalContextMenuProps> = ({
           },
           {
             label: '复制',
+            icon: 'copy',
             shortcut: 'Ctrl+C',
             disabled: !hasSel && !(!sel.supported && hasValue),
             action: () => {
@@ -135,6 +140,7 @@ export const GlobalContextMenu: React.FC<GlobalContextMenuProps> = ({
           },
           {
             label: '粘贴',
+            icon: 'paste',
             shortcut: 'Ctrl+V',
             disabled: readonlyOrDisabled,
             action: () => {
@@ -164,6 +170,7 @@ export const GlobalContextMenu: React.FC<GlobalContextMenuProps> = ({
           { divider: true },
           {
             label: '全选',
+            icon: 'selectAll',
             shortcut: 'Ctrl+A',
             disabled: !hasValue,
             action: () => {
@@ -173,8 +180,10 @@ export const GlobalContextMenu: React.FC<GlobalContextMenuProps> = ({
           }
         ];
 
-        const x = Math.max(8, Math.min(e.clientX, window.innerWidth - 204));
-        const y = Math.max(8, Math.min(e.clientY, window.innerHeight - items.length * 32 - 16));
+        const z = getViewportZoom();
+        const { width: vw, height: vh } = getLogicalViewportSize();
+        const x = Math.max(8, Math.min(e.clientX / z, vw - 204));
+        const y = Math.max(8, Math.min(e.clientY / z, vh - items.length * 32 - 16));
         setMenu({ x, y, items });
         return;
       }
@@ -189,11 +198,13 @@ export const GlobalContextMenu: React.FC<GlobalContextMenuProps> = ({
         const items: GlobalMenuItem[] = [
           {
             label: '打开文件…',
+            icon: 'folder',
             shortcut: isDesktop ? 'Ctrl+O' : undefined,
             action: onOpenTextGridPicker
           },
           {
             label: '加载音频…',
+            icon: 'waveform',
             action: onOpenAudioPicker
           },
           { divider: true }
@@ -202,6 +213,7 @@ export const GlobalContextMenu: React.FC<GlobalContextMenuProps> = ({
         if (st.viewDomain) {
           items.push({
             label: '显示全长',
+            icon: 'zoomReset',
             action: () => useEditorStore.getState().setViewDomain(null)
           });
         }
@@ -209,6 +221,7 @@ export const GlobalContextMenu: React.FC<GlobalContextMenuProps> = ({
         items.push(
           {
             label: st.scaleMode === 'linear' ? '切换自适应宽度' : '切换线性对齐',
+            icon: 'toggleScale',
             action: () =>
               useEditorStore
                 .getState()
@@ -216,23 +229,28 @@ export const GlobalContextMenu: React.FC<GlobalContextMenuProps> = ({
           },
           {
             label: st.legendOpen ? '隐藏图例导读' : '图例导读',
+            icon: 'legend',
             action: () => useEditorStore.getState().toggleLegend()
           },
           { divider: true },
           {
             label: '导出谱面图像…',
+            icon: 'export',
             shortcut: isDesktop ? 'Ctrl+P' : undefined,
             action: () => useEditorStore.getState().setExportOpen(true)
           },
           { divider: true },
           {
             label: '关于 T·Grid…',
+            icon: 'info',
             action: () => useEditorStore.getState().setAboutOpen(true)
           }
         );
 
-        const x = Math.max(8, Math.min(e.clientX, window.innerWidth - 210));
-        const y = Math.max(8, Math.min(e.clientY, window.innerHeight - items.length * 32 - 20));
+        const z = getViewportZoom();
+        const { width: vw, height: vh } = getLogicalViewportSize();
+        const x = Math.max(8, Math.min(e.clientX / z, vw - 210));
+        const y = Math.max(8, Math.min(e.clientY / z, vh - items.length * 32 - 20));
         setMenu({ x, y, items });
         return;
       }
@@ -290,7 +308,16 @@ export const GlobalContextMenu: React.FC<GlobalContextMenuProps> = ({
               item.action?.();
             }}
           >
-            <span>{item.label}</span>
+            <span className="ctx-item-main">
+              <span className="ctx-item-icon" aria-hidden="true">
+                {item.icon === 'info' ? (
+                  <InfoIcon size={14} />
+                ) : item.icon ? (
+                  <UiIcon name={item.icon} size={14} />
+                ) : null}
+              </span>
+              <span>{item.label}</span>
+            </span>
             {item.shortcut && <span className="shortcut">{item.shortcut}</span>}
           </button>
         )

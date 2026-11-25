@@ -1,0 +1,28 @@
+<svg class="tg-icon tg-icon--nav-v" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill, .tg-src-fill, .tg-dst-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-pane-fill {
+      opacity: 0.09;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill, svg:hover .tg-src-fill, svg:hover .tg-dst-fill { opacity: 0.14; }
+    svg:hover .tg-pane-fill { opacity: 0.2; }
+    svg:hover .tg-sub { opacity: 1; }
+    svg:hover .tg-chev-t { transform: translateY(-0.6px); }
+    svg:hover .tg-chev-b { transform: translateY(0.6px); }
+  </style>
+  <!-- 按下态聚焦层级底纹 -->
+  <rect class="tg-fill" x="2.25" y="6" width="11.5" height="4" rx="1.1" fill="currentColor" />
+  <!-- 当前层级条 -->
+  <rect x="2.25" y="6" width="11.5" height="4" rx="1.1" stroke="currentColor" stroke-width="1.5" />
+  <!-- 上 / 下切层尖角 -->
+  <path class="tg-sub tg-chev-t" d="M5.75 3.5L8 1.75L10.25 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+  <path class="tg-sub tg-chev-b" d="M5.75 12.5L8 14.25L10.25 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

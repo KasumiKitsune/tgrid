@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import type { TextGrid } from '../bridge/types';
-import { formatKeyCombo } from '../shortcuts/registry';
+import { getEffectiveShortcutHint } from '../shortcuts/registry';
 import { useEditorStore, type IpaInputMode } from '../store/useEditorStore';
+import { UI_SCALE_MAX, UI_SCALE_MIN, stepUiScale } from '../utils/uiScale';
 import { UiIcon } from './Icons';
 
 interface QuickDiagCounts {
@@ -63,7 +64,7 @@ function scanQuickDiagnostics(tg: TextGrid): QuickDiagCounts {
 const IPA_LABELS: Record<IpaInputMode, string> = {
   off: '音标：关',
   yunlong: '云龙 IPA',
-  praat: 'Praat \\xx'
+  praat: 'Praat 音标'
 };
 
 export const StatusBar: React.FC = () => {
@@ -76,6 +77,12 @@ export const StatusBar: React.FC = () => {
   const setSidebarTab = useEditorStore((s) => s.setSidebarTab);
   const setSidebarOpen = useEditorStore((s) => s.setSidebarOpen);
   const setShortcutsOpen = useEditorStore((s) => s.setShortcutsOpen);
+  const customShortcuts = useEditorStore((s) => s.customShortcuts);
+  const uiScale = useEditorStore((s) => s.uiScale);
+  const setUiScale = useEditorStore((s) => s.setUiScale);
+
+  const ipaCycleHint = getEffectiveShortcutHint('ipa-cycle', customShortcuts);
+  const shortcutsHint = getEffectiveShortcutHint('shortcuts-modal', customShortcuts);
 
   const diag = useMemo(() => scanQuickDiagnostics(tg), [tg]);
 
@@ -179,20 +186,59 @@ export const StatusBar: React.FC = () => {
         <button
           type="button"
           className={ipaClass}
-          title={`点击切换音标输入模式 (${formatKeyCombo('Mod+\\')} / Alt+I)`}
+          title={
+            ipaCycleHint
+              ? `点击切换音标输入模式 (${ipaCycleHint})`
+              : '点击切换音标输入模式'
+          }
           onClick={cycleIpaMode}
         >
           {IPA_LABELS[ipaMode]}
         </button>
 
+        <div className="status-zoom-group" role="group" aria-label="界面缩放">
+          <button
+            type="button"
+            className="status-zoom-btn"
+            disabled={uiScale <= UI_SCALE_MIN + 0.001}
+            title="缩小界面（75%–200%）"
+            aria-label="缩小界面"
+            onClick={() => setUiScale(stepUiScale(uiScale, -1))}
+          >
+            −
+          </button>
+          <button
+            type="button"
+            className={`status-zoom-val ${uiScale !== 1 ? 'is-scaled' : ''}`}
+            title={uiScale === 1 ? '界面缩放 100%（不改变导出尺寸）' : '点击一键复原为 100%'}
+            onClick={() => setUiScale(1)}
+          >
+            {Math.round(uiScale * 100)}%
+          </button>
+          <button
+            type="button"
+            className="status-zoom-btn"
+            disabled={uiScale >= UI_SCALE_MAX - 0.001}
+            title="放大界面（75%–200%）"
+            aria-label="放大界面"
+            onClick={() => setUiScale(stepUiScale(uiScale, 1))}
+          >
+            +
+          </button>
+        </div>
+
         <button
           type="button"
           className="status-help-btn"
           style={{ width: 'auto', padding: '0 6px', gap: 3 }}
-          title={`打开快捷键与交互速查表 (? / ${formatKeyCombo('Mod+/')} / F1)`}
+          title={
+            shortcutsHint
+              ? `打开快捷键与交互速查表 (${shortcutsHint})`
+              : '打开快捷键与交互速查表'
+          }
           onClick={() => setShortcutsOpen(true)}
         >
-          ? 快捷键
+          {shortcutsHint ? `${shortcutsHint} 快捷键` : '快捷键'}
         </button>
       </div>
     </footer>

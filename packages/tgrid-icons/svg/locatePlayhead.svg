@@ -1,0 +1,33 @@
+<svg class="tg-icon tg-icon--locate-playhead" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill, .tg-src-fill, .tg-dst-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-pane-fill {
+      opacity: 0.09;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill, svg:hover .tg-src-fill, svg:hover .tg-dst-fill { opacity: 0.14; }
+    svg:hover .tg-pane-fill { opacity: 0.2; }
+    svg:hover .tg-sub { opacity: 1; }
+    .tg-head { transition: stroke 0.2s ease, fill 0.2s ease; }
+    svg:hover .tg-br-l { transform: translateX(-0.5px); }
+    svg:hover .tg-br-r { transform: translateX(0.5px); }
+    svg:hover .tg-head { stroke: #2563eb; }
+  </style>
+  <!-- 按下态所在区间选中高亮 -->
+  <rect class="tg-fill" x="2.5" y="6.25" width="11" height="6.5" rx="1" fill="currentColor" />
+  <!-- 左 / 右区间锁定括弧（呼应示例 3） -->
+  <path class="tg-sub tg-br-l" d="M4.5 6.25H3.25C2.56 6.25 2 6.81 2 7.5V11.5C2 12.19 2.56 12.75 3.25 12.75H4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+  <path class="tg-sub tg-br-r" d="M11.5 6.25H12.75C13.44 6.25 14 6.81 14 7.5V11.5C14 12.19 13.44 12.75 12.75 12.75H11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- 播放头标与纵线 -->
+  <g class="tg-head">
+    <path d="M5.75 1.75H10.25L8 4.65Z" fill="currentColor" stroke="currentColor" stroke-width="0.75" stroke-linejoin="round" />
+    <path d="M8 4.25V14.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  </g>
+</svg>

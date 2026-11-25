@@ -1,6 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { formatPraatDouble } from '../layout/richText';
-import { IS_MAC, formatKeyCombo, isComposingEvent } from '../shortcuts/registry';
+import {
+  IS_MAC,
+  formatKeyCombo,
+  getEffectiveShortcutHint,
+  isComposingEvent
+} from '../shortcuts/registry';
 import {
   getLatestRedoLabel,
   getLatestUndoLabel,
@@ -23,6 +28,13 @@ export const EditStrip: React.FC = () => {
   const setIpaMode = useEditorStore((s) => s.setIpaMode);
   const ipaDockOpen = useEditorStore((s) => s.ipaDockOpen);
   const setIpaDockOpen = useEditorStore((s) => s.setIpaDockOpen);
+  const customShortcuts = useEditorStore((s) => s.customShortcuts);
+
+  const ipaCycleHint = getEffectiveShortcutHint('ipa-cycle', customShortcuts);
+  const ipaTempEnHint = getEffectiveShortcutHint('ipa-temp-en', customShortcuts);
+  const ipaDockHint = getEffectiveShortcutHint('ipa-dock-toggle', customShortcuts);
+  const tapSplitHint = getEffectiveShortcutHint('tap-split-playhead', customShortcuts);
+  const shortcutsHint = getEffectiveShortcutHint('shortcuts-modal', customShortcuts);
 
   const [minText, setMinText] = useState(formatPraatDouble(tg.xmin));
   const [maxText, setMaxText] = useState(formatPraatDouble(tg.xmax));
@@ -211,7 +223,11 @@ export const EditStrip: React.FC = () => {
           <div
             className="segmented ipa-ctrl-noblur"
             role="group"
-            title={`国际音标输入方案 (${formatKeyCombo('Mod+\\')} 或 Alt+I 切换)`}
+            title={
+              ipaCycleHint
+                ? `国际音标输入方案 (${ipaCycleHint} 切换)`
+                : '国际音标输入方案'
+            }
             onMouseDown={(e) => e.preventDefault()}
           >
             <button
@@ -225,7 +241,11 @@ export const EditStrip: React.FC = () => {
             <button
               type="button"
               className={`compact ${ipaMode === 'yunlong' ? 'active' : ''}`}
-              title="云龙国际音标输入方案 (按 Shift 临时切英文)"
+              title={
+                ipaTempEnHint
+                  ? `云龙国际音标输入方案 (${ipaTempEnHint} 临时切英文)`
+                  : '云龙国际音标输入方案'
+              }
               onClick={() => setIpaMode('yunlong')}
             >
               云龙
@@ -233,17 +253,25 @@ export const EditStrip: React.FC = () => {
             <button
               type="button"
               className={`compact ${ipaMode === 'praat' ? 'active' : ''}`}
-              title="Praat 反斜杠三字符 (\xx 即时转 Unicode IPA)"
+              title={
+                ipaTempEnHint
+                  ? `Praat 音标转义输入（即时转 Unicode IPA，${ipaTempEnHint} 临时切英文）`
+                  : 'Praat 音标转义输入（即时转 Unicode IPA）'
+              }
               onClick={() => setIpaMode('praat')}
             >
-              \xx
+              Praat
             </button>
           </div>
 
           <button
             type="button"
             className={`compact ipa-ctrl-noblur ${ipaDockOpen ? 'active' : ''}`}
-            title="打开 / 关闭交互式国际音标虚拟键盘 (Alt+K)"
+            title={
+              ipaDockHint
+                ? `打开 / 关闭交互式国际音标虚拟键盘 (${ipaDockHint})`
+                : '打开 / 关闭交互式国际音标虚拟键盘'
+            }
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => setIpaDockOpen(!ipaDockOpen)}
           >
@@ -253,7 +281,14 @@ export const EditStrip: React.FC = () => {
         </div>
 
         <span className="hint-text">
-          拖拽划建/平移 · 悬停自动磁吸 · B 播头切分 · ? 快捷键
+          {[
+            '拖拽划建/平移',
+            '悬停自动磁吸',
+            tapSplitHint ? `${tapSplitHint} 播头切分` : null,
+            shortcutsHint ? `${shortcutsHint} 快捷键` : null
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </span>
       </div>
     </div>

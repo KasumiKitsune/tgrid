@@ -20,10 +20,15 @@ import {
   primeTrigraphString
 } from '../../layout/richText';
 import type { EditorSelection } from '../../render/renderScoreSvg';
-import { formatKeyCombo, isComposingEvent } from '../../shortcuts/registry';
+import {
+  formatKeyCombo,
+  isComposingEvent,
+  matchesShortcut
+} from '../../shortcuts/registry';
 import { useEditorStore } from '../../store/useEditorStore';
 import { UiIcon } from '../Icons';
 import { IpaImePopover, IpaModePill } from '../IpaImePopover';
+import { ScrubNumberInput } from '../ScrubNumberInput';
 import { isIpaRelatedElement, useIpaIme } from '../useIpaIme';
 import { CollapsibleSection } from './CollapsibleSection';
 
@@ -457,11 +462,12 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
     const moveSharedTimestamp = useEditorStore((s) => s.moveSharedTimestamp);
     const openExportModal = useEditorStore((s) => s.openExportModal);
     const showToast = useEditorStore((s) => s.showToast);
+    const customShortcuts = useEditorStore((s) => s.customShortcuts);
 
     const onStartPlaybackRef = useRef(onStartPlayback);
     onStartPlaybackRef.current = onStartPlayback;
 
-    // Skip blur commit right after pressing Escape in numeric/text fields
+    // Skip blur commit right after pressing Escape in tier name text field
     const skipNextBlurRef = useRef(false);
 
     // Local editing drafts + race-free target tracking
@@ -476,10 +482,7 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
     const [linkAdjacent, setLinkAdjacent] = useState(true);
     const [boundaryShared, setBoundaryShared] = useState(false);
 
-    // Numeric input drafts
-    const [startInput, setStartInput] = useState('');
-    const [endInput, setEndInput] = useState('');
-    const [singleTimeInput, setSingleTimeInput] = useState('');
+    // Tier name input draft
     const [tierNameInput, setTierNameInput] = useState('');
 
     // Diagnostics for document overview
@@ -558,16 +561,21 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
       (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (isComposingEvent(e)) return;
 
-        // Audition right inside Inspector textarea: Alt+P / F4 (exact) and Alt+Shift+P / Shift+F4 (±250 ms context)
-        const isAltP =
-          e.altKey && !e.ctrlKey && !e.metaKey && (e.code === 'KeyP' || e.key.toLowerCase() === 'p');
-        const isF4 = !e.ctrlKey && !e.metaKey && !e.altKey && e.key === 'F4';
-        if (isAltP || isF4) {
+        // Audition right inside Inspector textarea via custom/default shortcuts (only modifier or F-key combos so normal typing is never hijacked)
+        const isInputSafeTrigger =
+          e.ctrlKey || e.metaKey || e.altKey || /^F([1-9]|1[0-9]|2[0-4])$/.test(e.key);
+        const isReplayContext =
+          isInputSafeTrigger && matchesShortcut('replay-context', e, customShortcuts);
+        const isReplayExact =
+          !isReplayContext &&
+          isInputSafeTrigger &&
+          matchesShortcut('replay-selection', e, customShortcuts);
+        if (isReplayExact || isReplayContext) {
           e.preventDefault();
           e.stopPropagation();
           const st = useEditorStore.getState();
           const sel = st.selection;
-          const withContext = e.shiftKey;
+          const withContext = isReplayContext;
           if (sel?.kind === 'interval') {
             const iv = st.tg.tiers[sel.tierIndex]?.intervals[sel.itemIndex];
             if (iv && iv.xmax > iv.xmin) {
@@ -646,7 +654,7 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
           (e.target as HTMLTextAreaElement).blur();
         }
       },
-      []
+      [customShortcuts]
     );
 
     const ipaIme = useIpaIme({
@@ -707,12 +715,9 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
         if (selection?.kind === 'interval' && activeInterval) {
           setTextDraft(activeInterval.text);
           draftValueRef.current = activeInterval.text;
-          setStartInput(formatPraatDouble(activeInterval.xmin));
-          setEndInput(formatPraatDouble(activeInterval.xmax));
         } else if (selection?.kind === 'point' && activePoint) {
           setTextDraft(activePoint.mark);
           draftValueRef.current = activePoint.mark;
-          setSingleTimeInput(formatPraatDouble(activePoint.number));
         } else if (selection?.kind === 'tier' && activeTier) {
           setTierNameInput(activeTier.name);
         }
@@ -756,31 +761,18 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
         setTextDraft(activeInterval.text);
         draftValueRef.current = activeInterval.text;
         draftDirtyRef.current = false;
-        setStartInput(formatPraatDouble(activeInterval.xmin));
-        setEndInput(formatPraatDouble(activeInterval.xmax));
       } else if (selection?.kind === 'point' && activePoint) {
         setTextDraft(activePoint.mark);
         draftValueRef.current = activePoint.mark;
         draftDirtyRef.current = false;
-        setSingleTimeInput(formatPraatDouble(activePoint.number));
-      } else if (selection?.kind === 'boundary' || selection?.kind === 'spine') {
-        setSingleTimeInput(formatPraatDouble(selection.time));
       } else if (selection?.kind === 'tier' && activeTier) {
         setTierNameInput(activeTier.name);
-      } else if (!selection && playRange) {
-        setStartInput(formatPraatDouble(playRange.start));
-        setEndInput(formatPraatDouble(playRange.end));
       }
     }, [
       selection,
       activeInterval?.text,
-      activeInterval?.xmin,
-      activeInterval?.xmax,
       activePoint?.mark,
-      activePoint?.number,
       activeTier?.name,
-      playRange?.start,
-      playRange?.end,
       commitDraftTarget
     ]);
 
@@ -887,33 +879,27 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
     };
 
     // Interval start / end mutations
-    const updateIntervalBound = (which: 'start' | 'end', targetVal: number) => {
-      if (skipNextBlurRef.current) {
-        skipNextBlurRef.current = false;
-        return;
-      }
-      if (isReadOnly) return;
-      if (selection?.kind !== 'interval' || !activeInterval) return;
+    const updateIntervalBound = (which: 'start' | 'end', targetVal: number): boolean => {
+      if (isReadOnly) return false;
+      if (selection?.kind !== 'interval' || !activeInterval) return false;
       const tier = tg.tiers[selection.tierIndex];
-      if (!tier || tier.kind !== 'intervalTier') return;
+      if (!tier || tier.kind !== 'intervalTier') return false;
       const ii = selection.itemIndex;
       const val = round6(targetVal);
-      if (!Number.isFinite(val)) return;
+      if (!Number.isFinite(val)) return false;
 
       if (which === 'start') {
         if (val >= activeInterval.xmax) {
           showToast('起始时间必须小于结束时间', true);
-          setStartInput(formatPraatDouble(activeInterval.xmin));
-          return;
+          return false;
         }
         const prev = tier.intervals[ii - 1];
         const linked = Boolean(linkAdjacent && prev && Math.abs(prev.xmax - activeInterval.xmin) < 1e-9);
         if (linked && val <= prev.xmin) {
           showToast('起始时间不能越过前一个区间起点', true);
-          setStartInput(formatPraatDouble(activeInterval.xmin));
-          return;
+          return false;
         }
-        if (val === activeInterval.xmin) return;
+        if (val === activeInterval.xmin) return false;
         commitTgMutation(
           (draft) => {
             const dTier = draft.tiers[selection.tierIndex];
@@ -930,20 +916,19 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
         if (playRange && Math.abs(playRange.start - activeInterval.xmin) < 1e-6 && Math.abs(playRange.end - activeInterval.xmax) < 1e-6) {
           setPlayRange({ start: val, end: activeInterval.xmax });
         }
+        return true;
       } else {
         if (val <= activeInterval.xmin) {
           showToast('结束时间必须大于起始时间', true);
-          setEndInput(formatPraatDouble(activeInterval.xmax));
-          return;
+          return false;
         }
         const next = tier.intervals[ii + 1];
         const linked = Boolean(linkAdjacent && next && Math.abs(next.xmin - activeInterval.xmax) < 1e-9);
         if (linked && val >= next.xmax) {
           showToast('结束时间不能越过下一个区间终点', true);
-          setEndInput(formatPraatDouble(activeInterval.xmax));
-          return;
+          return false;
         }
-        if (val === activeInterval.xmax) return;
+        if (val === activeInterval.xmax) return false;
         commitTgMutation(
           (draft) => {
             const dTier = draft.tiers[selection.tierIndex];
@@ -960,26 +945,21 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
         if (playRange && Math.abs(playRange.start - activeInterval.xmin) < 1e-6 && Math.abs(playRange.end - activeInterval.xmax) < 1e-6) {
           setPlayRange({ start: activeInterval.xmin, end: val });
         }
+        return true;
       }
     };
 
     // Point timestamp mutation
-    const updatePointTime = (targetVal: number) => {
-      if (skipNextBlurRef.current) {
-        skipNextBlurRef.current = false;
-        return;
-      }
-      if (isReadOnly) return;
-      if (selection?.kind !== 'point' || !activePoint || !activeTier) return;
+    const updatePointTime = (targetVal: number): boolean => {
+      if (isReadOnly) return false;
+      if (selection?.kind !== 'point' || !activePoint || !activeTier) return false;
       const val = round6(Math.max(activeTier.xmin, Math.min(activeTier.xmax, targetVal)));
       if (!Number.isFinite(val) || val === activePoint.number) {
-        setSingleTimeInput(formatPraatDouble(activePoint.number));
-        return;
+        return false;
       }
       if (activeTier.points.some((p, i) => i !== selection.itemIndex && p.number === val)) {
         showToast('目标时刻已存在标点', true);
-        setSingleTimeInput(formatPraatDouble(activePoint.number));
-        return;
+        return false;
       }
       let nextIdx = selection.itemIndex;
       commitTgMutation(
@@ -995,33 +975,29 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
         '调整标点时刻'
       );
       setSelection({ kind: 'point', tierIndex: selection.tierIndex, itemIndex: Math.max(0, nextIdx) });
+      return true;
     };
 
     // Boundary or spine timestamp mutation
-    const updateBoundaryOrSpineTime = (targetVal: number) => {
-      if (skipNextBlurRef.current) {
-        skipNextBlurRef.current = false;
-        return;
-      }
-      if (isReadOnly) return;
-      if (!selection || (selection.kind !== 'boundary' && selection.kind !== 'spine')) return;
+    const updateBoundaryOrSpineTime = (targetVal: number): boolean => {
+      if (isReadOnly) return false;
+      if (!selection || (selection.kind !== 'boundary' && selection.kind !== 'spine')) return false;
       const val = round6(targetVal);
       if (!Number.isFinite(val) || Math.abs(val - selection.time) < 1e-9) {
-        setSingleTimeInput(formatPraatDouble(selection.time));
-        return;
+        return false;
       }
       if (selection.kind === 'boundary') {
         if (moveTierBoundary(selection.tierIndex, selection.time, val, boundaryShared)) {
           setSelection({ kind: 'boundary', tierIndex: selection.tierIndex, time: val, bandIndex: selection.bandIndex });
-        } else {
-          setSingleTimeInput(formatPraatDouble(selection.time));
+          return true;
         }
+        return false;
       } else {
         if (moveSharedTimestamp(selection.time, val)) {
           setSelection({ kind: 'spine', time: val, bandIndex: selection.bandIndex });
-        } else {
-          setSingleTimeInput(formatPraatDouble(selection.time));
+          return true;
         }
+        return false;
       }
     };
 
@@ -1344,6 +1320,17 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
           Math.abs(viewDomain.max - activeInterval.xmax) < 1e-4
       );
 
+      const prevIv = activeTier.intervals[ii - 1];
+      const nextIv = activeTier.intervals[ii + 1];
+      const prevLinked = Boolean(
+        linkAdjacent && prevIv && Math.abs(prevIv.xmax - activeInterval.xmin) < 1e-9
+      );
+      const nextLinked = Boolean(
+        linkAdjacent && nextIv && Math.abs(nextIv.xmin - activeInterval.xmax) < 1e-9
+      );
+      const startMin = prevLinked && prevIv ? prevIv.xmin : undefined;
+      const endMax = nextLinked && nextIv ? nextIv.xmax : undefined;
+
       return (
         <div className="sb-panel-root">
           <div className="sb-context-strip">
@@ -1407,64 +1394,30 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
           >
             <div className="sb-stack">
               <div className="sb-field-grid-2">
-                <label className="sb-field">
-                  <span className="sb-field-lbl">起始 (s)</span>
-                  <input
-                    type="number"
-                    step="any"
-                    readOnly={isReadOnly}
-                    disabled={isReadOnly}
-                    value={startInput}
-                    onChange={isReadOnly ? undefined : (e) => setStartInput(e.target.value)}
-                    onBlur={isReadOnly ? undefined : () => updateIntervalBound('start', parseFloat(startInput))}
-                    onKeyDown={
-                      isReadOnly
-                        ? undefined
-                        : (e) => {
-                            if (isComposingEvent(e)) return;
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              (e.target as HTMLInputElement).blur();
-                            } else if (e.key === 'Escape') {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              skipNextBlurRef.current = true;
-                              setStartInput(formatPraatDouble(activeInterval.xmin));
-                              (e.target as HTMLInputElement).blur();
-                            }
-                          }
-                    }
-                  />
-                </label>
-                <label className="sb-field">
-                  <span className="sb-field-lbl">结束 (s)</span>
-                  <input
-                    type="number"
-                    step="any"
-                    readOnly={isReadOnly}
-                    disabled={isReadOnly}
-                    value={endInput}
-                    onChange={isReadOnly ? undefined : (e) => setEndInput(e.target.value)}
-                    onBlur={isReadOnly ? undefined : () => updateIntervalBound('end', parseFloat(endInput))}
-                    onKeyDown={
-                      isReadOnly
-                        ? undefined
-                        : (e) => {
-                            if (isComposingEvent(e)) return;
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              (e.target as HTMLInputElement).blur();
-                            } else if (e.key === 'Escape') {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              skipNextBlurRef.current = true;
-                              setEndInput(formatPraatDouble(activeInterval.xmax));
-                              (e.target as HTMLInputElement).blur();
-                            }
-                          }
-                    }
-                  />
-                </label>
+                <ScrubNumberInput
+                  variant="sidebar"
+                  label="起始 (s)"
+                  value={activeInterval.xmin}
+                  min={startMin}
+                  strictMin={prevLinked}
+                  max={activeInterval.xmax}
+                  strictMax={true}
+                  disabled={isReadOnly}
+                  formatValue={formatPraatDouble}
+                  onCommit={(val) => updateIntervalBound('start', val)}
+                />
+                <ScrubNumberInput
+                  variant="sidebar"
+                  label="结束 (s)"
+                  value={activeInterval.xmax}
+                  min={activeInterval.xmin}
+                  strictMin={true}
+                  max={endMax}
+                  strictMax={nextLinked}
+                  disabled={isReadOnly}
+                  formatValue={formatPraatDouble}
+                  onCommit={(val) => updateIntervalBound('end', val)}
+                />
               </div>
 
               <div className="sb-kv-row">
@@ -1735,35 +1688,16 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
             defaultOpen={true}
           >
             <div className="sb-stack">
-              <label className="sb-field">
-                <span className="sb-field-lbl">标注时刻 (s)</span>
-                <input
-                  type="number"
-                  step="any"
-                  readOnly={isReadOnly}
-                  disabled={isReadOnly}
-                  value={singleTimeInput}
-                  onChange={isReadOnly ? undefined : (e) => setSingleTimeInput(e.target.value)}
-                  onBlur={isReadOnly ? undefined : () => updatePointTime(parseFloat(singleTimeInput))}
-                  onKeyDown={
-                    isReadOnly
-                      ? undefined
-                      : (e) => {
-                          if (isComposingEvent(e)) return;
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            (e.target as HTMLInputElement).blur();
-                          } else if (e.key === 'Escape') {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            skipNextBlurRef.current = true;
-                            setSingleTimeInput(formatPraatDouble(activePoint.number));
-                            (e.target as HTMLInputElement).blur();
-                          }
-                        }
-                  }
-                />
-              </label>
+              <ScrubNumberInput
+                variant="sidebar"
+                label="标注时刻 (s)"
+                value={activePoint.number}
+                min={activeTier.xmin}
+                max={activeTier.xmax}
+                disabled={isReadOnly}
+                formatValue={formatPraatDouble}
+                onCommit={(val) => updatePointTime(val)}
+              />
 
               <div className="sb-nudge-group">
                 <span className="sb-nudge-lbl">时刻微调</span>
@@ -1832,6 +1766,21 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
     if (selection?.kind === 'boundary' || selection?.kind === 'spine') {
       const isBoundary = selection.kind === 'boundary';
       const tier = isBoundary ? tg.tiers[selection.tierIndex] : null;
+      const affectAll = !isBoundary || boundaryShared;
+      let bndMin = tg.xmin;
+      let bndMax = tg.xmax;
+      const tiersToInspect = affectAll ? tg.tiers : tier ? [tier] : [];
+      for (const t of tiersToInspect) {
+        if (t.kind !== 'intervalTier') continue;
+        for (const iv of t.intervals) {
+          if (Math.abs(iv.xmax - selection.time) < 1e-6 && iv.xmin > bndMin) {
+            bndMin = iv.xmin;
+          }
+          if (Math.abs(iv.xmin - selection.time) < 1e-6 && iv.xmax < bndMax) {
+            bndMax = iv.xmax;
+          }
+        }
+      }
       return (
         <div className="sb-panel-root">
           <div className="sb-context-strip">
@@ -1851,35 +1800,18 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
             defaultOpen={true}
           >
             <div className="sb-stack">
-              <label className="sb-field">
-                <span className="sb-field-lbl">边界时刻 (s)</span>
-                <input
-                  type="number"
-                  step="any"
-                  readOnly={isReadOnly}
-                  disabled={isReadOnly}
-                  value={singleTimeInput}
-                  onChange={isReadOnly ? undefined : (e) => setSingleTimeInput(e.target.value)}
-                  onBlur={isReadOnly ? undefined : () => updateBoundaryOrSpineTime(parseFloat(singleTimeInput))}
-                  onKeyDown={
-                    isReadOnly
-                      ? undefined
-                      : (e) => {
-                          if (isComposingEvent(e)) return;
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            (e.target as HTMLInputElement).blur();
-                          } else if (e.key === 'Escape') {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            skipNextBlurRef.current = true;
-                            setSingleTimeInput(formatPraatDouble(selection.time));
-                            (e.target as HTMLInputElement).blur();
-                          }
-                        }
-                  }
-                />
-              </label>
+              <ScrubNumberInput
+                variant="sidebar"
+                label="边界时刻 (s)"
+                value={selection.time}
+                min={bndMin}
+                max={bndMax}
+                strictMin={true}
+                strictMax={true}
+                disabled={isReadOnly}
+                formatValue={formatPraatDouble}
+                onCommit={(val) => updateBoundaryOrSpineTime(val)}
+              />
 
               <div className="sb-nudge-group">
                 <span className="sb-nudge-lbl">精确微调</span>
@@ -2256,27 +2188,20 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
       const durSec = Math.max(0, playRange.end - playRange.start);
       const durMs = durSec * 1000;
 
-      const applyRange = (which: 'start' | 'end', rawVal: number) => {
-        if (skipNextBlurRef.current) {
-          skipNextBlurRef.current = false;
-          return;
-        }
+      const applyRange = (which: 'start' | 'end', rawVal: number): boolean => {
         if (!Number.isFinite(rawVal)) {
-          setStartInput(formatPraatDouble(playRange.start));
-          setEndInput(formatPraatDouble(playRange.end));
-          return;
+          return false;
         }
         const clamped = round6(Math.max(tg.xmin, Math.min(tg.xmax, rawVal)));
         const nextStart = which === 'start' ? clamped : playRange.start;
         const nextEnd = which === 'end' ? clamped : playRange.end;
         if (nextEnd <= nextStart) {
           showToast('选区结束时间必须大于起始时间', true);
-          setStartInput(formatPraatDouble(playRange.start));
-          setEndInput(formatPraatDouble(playRange.end));
-          return;
+          return false;
         }
         setPlayRange({ start: nextStart, end: nextEnd });
         setPlaybackTime(nextStart, true);
+        return true;
       };
 
       return (
@@ -2296,52 +2221,26 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
           >
             <div className="sb-stack">
               <div className="sb-field-grid-2">
-                <label className="sb-field">
-                  <span className="sb-field-lbl">起始 (s)</span>
-                  <input
-                    type="number"
-                    step="any"
-                    value={startInput}
-                    onChange={(e) => setStartInput(e.target.value)}
-                    onBlur={() => applyRange('start', parseFloat(startInput))}
-                    onKeyDown={(e) => {
-                      if (isComposingEvent(e)) return;
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        (e.target as HTMLInputElement).blur();
-                      } else if (e.key === 'Escape') {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        skipNextBlurRef.current = true;
-                        setStartInput(formatPraatDouble(playRange.start));
-                        (e.target as HTMLInputElement).blur();
-                      }
-                    }}
-                  />
-                </label>
-                <label className="sb-field">
-                  <span className="sb-field-lbl">结束 (s)</span>
-                  <input
-                    type="number"
-                    step="any"
-                    value={endInput}
-                    onChange={(e) => setEndInput(e.target.value)}
-                    onBlur={() => applyRange('end', parseFloat(endInput))}
-                    onKeyDown={(e) => {
-                      if (isComposingEvent(e)) return;
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        (e.target as HTMLInputElement).blur();
-                      } else if (e.key === 'Escape') {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        skipNextBlurRef.current = true;
-                        setEndInput(formatPraatDouble(playRange.end));
-                        (e.target as HTMLInputElement).blur();
-                      }
-                    }}
-                  />
-                </label>
+                <ScrubNumberInput
+                  variant="sidebar"
+                  label="起始 (s)"
+                  value={playRange.start}
+                  min={tg.xmin}
+                  max={playRange.end}
+                  strictMax={true}
+                  formatValue={formatPraatDouble}
+                  onCommit={(val) => applyRange('start', val)}
+                />
+                <ScrubNumberInput
+                  variant="sidebar"
+                  label="结束 (s)"
+                  value={playRange.end}
+                  min={playRange.start}
+                  strictMin={true}
+                  max={tg.xmax}
+                  formatValue={formatPraatDouble}
+                  onCommit={(val) => applyRange('end', val)}
+                />
               </div>
 
               <div className="sb-kv-row">

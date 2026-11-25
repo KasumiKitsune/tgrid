@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { isTauriRuntime } from '../bridge/PlatformBridge';
-import { formatKeyCombo } from '../shortcuts/registry';
+import { formatKeyCombo, getEffectiveShortcutHint } from '../shortcuts/registry';
 import { useEditorStore } from '../store/useEditorStore';
 import type { BuiltinSample } from '../data/samples';
 import { BrandLogoIcon, ChevronIcon, CloseIcon, TGridIcon, UiIcon } from './Icons';
@@ -53,9 +53,21 @@ export const Topbar: React.FC<TopbarProps> = ({
   const toggleLegend = useEditorStore((s) => s.toggleLegend);
   const sidebarOpen = useEditorStore((s) => s.sidebarOpen);
   const sidebarTab = useEditorStore((s) => s.sidebarTab);
+  const setSidebarTab = useEditorStore((s) => s.setSidebarTab);
+  const setSidebarOpen = useEditorStore((s) => s.setSidebarOpen);
   const toggleSidebarTab = useEditorStore((s) => s.toggleSidebarTab);
   const openFindBar = useEditorStore((s) => s.openFindBar);
   const setShortcutsOpen = useEditorStore((s) => s.setShortcutsOpen);
+  const customShortcuts = useEditorStore((s) => s.customShortcuts);
+
+  const openFilesHint = getEffectiveShortcutHint('open-files', customShortcuts);
+  const openAudioHint = getEffectiveShortcutHint('open-audio', customShortcuts);
+  const saveFileHint = getEffectiveShortcutHint('save-file', customShortcuts);
+  const saveAsHint = getEffectiveShortcutHint('save-as', customShortcuts);
+  const exportFigureHint = getEffectiveShortcutHint('export-figure', customShortcuts);
+  const findOpenHint = getEffectiveShortcutHint('find-open', customShortcuts);
+  const replaceOpenHint = getEffectiveShortcutHint('replace-open', customShortcuts);
+  const shortcutsModalHint = getEffectiveShortcutHint('shortcuts-modal', customShortcuts);
 
   const [openMenu, setOpenMenu] = useState<'col' | 'samples' | 'tools' | 'export' | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
@@ -359,7 +371,11 @@ export const Topbar: React.FC<TopbarProps> = ({
 
           <button
             type="button"
-            title={`打开 TextGrid / Collection / 单层文件 (${formatKeyCombo('Mod+O')})`}
+            title={
+              openFilesHint
+                ? `打开 TextGrid / Collection / 单层文件 (${openFilesHint})`
+                : '打开 TextGrid / Collection / 单层文件'
+            }
             onClick={onOpenTextGridPicker}
           >
             <UiIcon name="folder" size={14} />
@@ -367,7 +383,7 @@ export const Topbar: React.FC<TopbarProps> = ({
           </button>
           <button
             type="button"
-            title={`载入配套录音 (${formatKeyCombo('Mod+Shift+O')})`}
+            title={openAudioHint ? `载入配套录音 (${openAudioHint})` : '载入配套录音'}
             onClick={onOpenAudioPicker}
           >
             <UiIcon name="waveform" size={14} />
@@ -422,7 +438,7 @@ export const Topbar: React.FC<TopbarProps> = ({
                 }}
               >
                 <span>查找与替换</span>
-                <span className="shortcut">{formatKeyCombo('Mod+F')}</span>
+                {findOpenHint && <span className="shortcut">{findOpenHint}</span>}
               </button>
               <button
                 type="button"
@@ -432,9 +448,23 @@ export const Topbar: React.FC<TopbarProps> = ({
                 }}
               >
                 <span>替换标注文本…</span>
-                <span className="shortcut">{formatKeyCombo('Mod+H')}</span>
+                {replaceOpenHint && <span className="shortcut">{replaceOpenHint}</span>}
               </button>
               <div className="menu-divider" />
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenMenu(null);
+                  setSidebarTab('customize');
+                  setSidebarOpen(true);
+                }}
+              >
+                <span className="btn-lead">
+                  <UiIcon name="customize" size={13} />
+                  <span>自定义悬浮条与快捷键</span>
+                </span>
+                <span className="shortcut">Alt+4</span>
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -443,7 +473,7 @@ export const Topbar: React.FC<TopbarProps> = ({
                 }}
               >
                 <span>快捷键指南</span>
-                <span className="shortcut">{formatKeyCombo('Mod+/')}</span>
+                {shortcutsModalHint && <span className="shortcut">{shortcutsModalHint}</span>}
               </button>
             </div>
           </div>
@@ -504,12 +534,12 @@ export const Topbar: React.FC<TopbarProps> = ({
             <div className="dropdown">
               <button type="button" onClick={() => { setOpenMenu(null); onExportAction('save'); }}>
                 <span>{isDesktop && !currentFilePath ? '保存 (.TextGrid)…' : '保存 (.TextGrid)'}</span>
-                <span className="shortcut">{formatKeyCombo('Mod+S')}</span>
+                {saveFileHint && <span className="shortcut">{saveFileHint}</span>}
               </button>
               {isDesktop && (
                 <button type="button" onClick={() => { setOpenMenu(null); onExportAction('save-as'); }}>
                   <span>另存为…</span>
-                  <span className="shortcut">{formatKeyCombo('Mod+Shift+S')}</span>
+                  {saveAsHint && <span className="shortcut">{saveAsHint}</span>}
                 </button>
               )}
               <div className="menu-divider" />
@@ -521,7 +551,7 @@ export const Topbar: React.FC<TopbarProps> = ({
               </button>
               <button type="button" onClick={() => { setOpenMenu(null); onExportAction('dialog'); }}>
                 <span>自定义导出图像…</span>
-                <span className="shortcut">{formatKeyCombo('Mod+P')}</span>
+                {exportFigureHint && <span className="shortcut">{exportFigureHint}</span>}
               </button>
               <div className="menu-divider" />
               <button type="button" onClick={() => { setOpenMenu(null); onExportAction('long'); }}>

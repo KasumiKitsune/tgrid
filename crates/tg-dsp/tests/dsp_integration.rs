@@ -244,3 +244,62 @@ fn test_multi_session_audio_store_isolation_and_removal() {
         Err(DspError::SessionNotFound(id)) if id == s2.session_id
     ));
 }
+
+#[test]
+fn test_nyquist_blanking_p995_peak_and_adaptive_f0_bounds() {
+    // 1. 8 kHz audio (Nyquist = 4 kHz) rendered with max_freq = 8 kHz must stay blank above 4 kHz
+    let sr = 8000u32;
+    let n = (sr as f64 * 1.2) as usize;
+    let mut samples: Vec<f32> = (0..n)
+        .map(|i| {
+            let t = i as f32 / sr as f32;
+            (2.0 * std::f32::consts::PI * 150.0 * t).sin() * 0.25
+                + (2.0 * std::f32::consts::PI * 3800.0 * t).sin() * 0.25
+        })
+        .collect();
+
+    let clean_analysis = analyze_pcm_f32(samples.clone(), sr, 0.0).expect("analyze clean");
+    // Speaker-adaptive F0 bounds for a steady 150 Hz tone: floor >= 50, span >= 120, tight around 150 Hz
+    assert!(clean_analysis.f0_floor >= 50.0 && clean_analysis.f0_floor <= 125.0);
+    assert!(clean_analysis.f0_ceil >= 175.0 && clean_analysis.f0_ceil <= 300.0);
+    assert!(clean_analysis.f0_ceil - clean_analysis.f0_floor >= 120.0);
+
+    let segs = vec![LinearSeg {
+        x0: 0.0,
+        x1: 100.0,
+        t0: 0.1,
+        t1: 1.1,
+        collapsed: false,
+    }];
+    let grid = compute_spectrogram_grid(&clean_analysis, &segs, 0.0, 100.0, 8000.0, 40, 40, 52.0, true);
+    // Top rows correspond to freq > 4000 Hz (r = 0..19 -> freq = 8000..4102 Hz), must all be 0.0
+    for r in 0..19 {
+        for c in 0..40 {
+            assert_eq!(
+                grid[r * 40 + c],
+                0.0,
+                "above-Nyquist grid cell ({r}, {c}) must remain blank (0.0)"
+            );
+        }
+    }
+    let (w, h, rgba) =
+        render_spectrogram_rgba(&clean_analysis, &segs, 0.0, 100.0, 80.0, 8000.0, 1.0, 52.0, "bw");
+    assert_eq!((w, h), (100, 80));
+    // Top row (8000 Hz > 4000 Hz Nyquist) must be pure white paper [255, 255, 255, 255]
+    for x in 0..100 {
+        let idx = x * 4;
+        assert_eq!(&rgba[idx..idx + 4], &[255, 255, 255, 255]);
+    }
+
+    // 2. Single-frame pop spike should not significantly elevate P99.5 spec_max_db
+    // Inject a single 10x transient pop at center
+    let pop_idx = n / 2;
+    samples[pop_idx] = 5.0;
+    let popped_analysis = analyze_pcm_f32(samples, sr, 0.0).expect("analyze with pop");
+    assert!(
+        (popped_analysis.spec_max_db - clean_analysis.spec_max_db).abs() < 3.0,
+        "P99.5 spec_max_db should resist a single transient pop spike: clean={} vs popped={}",
+        clean_analysis.spec_max_db,
+        popped_analysis.spec_max_db
+    );
+}

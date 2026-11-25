@@ -1,0 +1,29 @@
+<svg class="tg-icon tg-icon--search" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill, .tg-src-fill, .tg-dst-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-pane-fill {
+      opacity: 0.09;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill, svg:hover .tg-src-fill, svg:hover .tg-dst-fill { opacity: 0.14; }
+    svg:hover .tg-pane-fill { opacity: 0.2; }
+    svg:hover .tg-sub { opacity: 1; }
+    .tg-mag { transform-origin: 7px 7px; transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
+    svg:hover .tg-mag { transform: scale(1.06); }
+  </style>
+  <g class="tg-mag">
+    <!-- 镜片玻璃微底纹 -->
+    <circle class="tg-fill" cx="7" cy="7" r="4.75" fill="currentColor" />
+    <!-- 放大镜镜圈 -->
+    <circle cx="7" cy="7" r="4.75" stroke="currentColor" stroke-width="1.5" />
+    <!-- 45° 镜柄 -->
+    <path class="tg-sub" d="M10.4 10.4L14.25 14.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  </g>
+</svg>

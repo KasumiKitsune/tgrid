@@ -70,6 +70,15 @@ export const TiersPanel: React.FC = () => {
   const [dropIndicator, setDropIndicator] = useState<{ idx: number; pos: 'top' | 'bottom' } | null>(
     null
   );
+  const tierListRef = useRef<HTMLDivElement>(null);
+  const suppressClickRef = useRef(false);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      dragCleanupRef.current?.();
+    };
+  }, []);
 
   useEffect(() => {
     if (isReadOnly && editingIdx !== null) {
@@ -123,9 +132,124 @@ export const TiersPanel: React.FC = () => {
 
   const hiddenSet = new Set(hiddenTierIndices);
 
-  const clearDragState = () => {
-    setDragFromIdx(null);
-    setDropIndicator(null);
+  const handleTierPointerDown = (
+    e: React.PointerEvent<HTMLDivElement>,
+    fromIdx: number,
+    isRowEditing: boolean
+  ) => {
+    if (mode !== 'edit' || isRowEditing || e.button !== 0) return;
+    const el = e.target as HTMLElement | null;
+    if (!el || el.closest('button, input')) return;
+
+    const isHandle = Boolean(el.closest('.sb-tier-drag-handle'));
+    if (isHandle) {
+      e.preventDefault();
+    }
+
+    dragCleanupRef.current?.();
+
+    const startY = e.clientY;
+    const totalTiers = tg.tiers.length;
+    let active = false;
+    let latestHit: { idx: number; pos: 'top' | 'bottom' } | null = null;
+
+    const computeHit = (clientY: number): { idx: number; pos: 'top' | 'bottom' } | null => {
+      const container = tierListRef.current;
+      if (!container) return null;
+      const rows = Array.from(container.querySelectorAll<HTMLElement>('[data-tier-idx]'));
+      if (rows.length === 0) return null;
+
+      let chosen: { idx: number; pos: 'top' | 'bottom' } | null = null;
+      const firstRect = rows[0].getBoundingClientRect();
+      const lastRect = rows[rows.length - 1].getBoundingClientRect();
+
+      if (clientY <= firstRect.top) {
+        const idx = Number(rows[0].dataset.tierIdx);
+        if (Number.isInteger(idx)) chosen = { idx, pos: 'top' };
+      } else if (clientY >= lastRect.bottom) {
+        const idx = Number(rows[rows.length - 1].dataset.tierIdx);
+        if (Number.isInteger(idx)) chosen = { idx, pos: 'bottom' };
+      } else {
+        let bestDist = Infinity;
+        for (const row of rows) {
+          const idx = Number(row.dataset.tierIdx);
+          if (!Number.isInteger(idx)) continue;
+          const rect = row.getBoundingClientRect();
+          if (clientY >= rect.top && clientY <= rect.bottom) {
+            chosen = { idx, pos: clientY < rect.top + rect.height / 2 ? 'top' : 'bottom' };
+            break;
+          }
+          const center = rect.top + rect.height / 2;
+          const dist = Math.abs(clientY - center);
+          if (dist < bestDist) {
+            bestDist = dist;
+            chosen = { idx, pos: clientY < center ? 'top' : 'bottom' };
+          }
+        }
+      }
+
+      if (!chosen || chosen.idx === fromIdx) return null;
+      return chosen;
+    };
+
+    const onMove = (ev: PointerEvent) => {
+      if (!active) {
+        const threshold = isHandle ? 2 : 4;
+        if (Math.abs(ev.clientY - startY) < threshold) return;
+        active = true;
+        suppressClickRef.current = true;
+        setDragFromIdx(fromIdx);
+        document.body.style.cursor = 'grabbing';
+        document.body.style.userSelect = 'none';
+      }
+      const hit = computeHit(ev.clientY);
+      latestHit = hit;
+      setDropIndicator((prev) =>
+        prev?.idx === hit?.idx && prev?.pos === hit?.pos ? prev : hit
+      );
+    };
+
+    const finish = (commit: boolean) => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('keydown', onKeyDown, true);
+      dragCleanupRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+
+      if (active && commit && latestHit && latestHit.idx !== fromIdx) {
+        const rawInsert = latestHit.pos === 'top' ? latestHit.idx : latestHit.idx + 1;
+        const targetIdx = fromIdx < rawInsert ? rawInsert - 1 : rawInsert;
+        if (targetIdx !== fromIdx && targetIdx >= 0 && targetIdx < totalTiers) {
+          reorderTier(fromIdx, targetIdx);
+        }
+      }
+
+      setDragFromIdx(null);
+      setDropIndicator(null);
+      if (active) {
+        setTimeout(() => {
+          suppressClickRef.current = false;
+        }, 0);
+      }
+    };
+
+    const onUp = () => finish(true);
+    const onCancel = () => finish(false);
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        ev.stopPropagation();
+        finish(false);
+      }
+    };
+
+    dragCleanupRef.current = () => finish(false);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
+    window.addEventListener('keydown', onKeyDown, true);
   };
 
   return (
@@ -174,7 +298,12 @@ export const TiersPanel: React.FC = () => {
               : '当前文档暂无标注层级，可在下方新增。'}
           </div>
         ) : (
-          <div className="sb-tier-list" role="listbox" aria-label="全部层级列表">
+          <div
+            ref={tierListRef}
+            className="sb-tier-list"
+            role="listbox"
+            aria-label="全部层级列表"
+          >
             {tg.tiers.map((tier, idx) => {
               const isSelected = idx === selectedTierIndex;
               const isEditing = !isReadOnly && idx === editingIdx;
@@ -199,67 +328,13 @@ export const TiersPanel: React.FC = () => {
               return (
                 <React.Fragment key={`tier-${idx}-${tier.kind}-${tier.name}`}>
                   <div
+                    data-tier-idx={idx}
                     className={rowClasses}
                     role="option"
                     aria-selected={isSelected}
-                    draggable={mode === 'edit' && !isEditing}
-                    onDragStart={(e) => {
-                      if (mode !== 'edit' || isEditing) {
-                        e.preventDefault();
-                        return;
-                      }
-                      setDragFromIdx(idx);
-                      setDropIndicator(null);
-                      e.dataTransfer.effectAllowed = 'move';
-                      try {
-                        e.dataTransfer.setData('text/plain', String(idx));
-                      } catch {
-                        // ignore restricted dataTransfer
-                      }
-                    }}
-                    onDragOver={(e) => {
-                      if (mode !== 'edit' || dragFromIdx === null) return;
-                      e.preventDefault();
-                      e.dataTransfer.dropEffect = 'move';
-                      if (dragFromIdx === idx) {
-                        if (dropIndicator !== null) setDropIndicator(null);
-                        return;
-                      }
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const pos: 'top' | 'bottom' =
-                        e.clientY < rect.top + rect.height / 2 ? 'top' : 'bottom';
-                      setDropIndicator((prev) =>
-                        prev && prev.idx === idx && prev.pos === pos ? prev : { idx, pos }
-                      );
-                    }}
-                    onDragLeave={(e) => {
-                      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-                        setDropIndicator((prev) => (prev && prev.idx === idx ? null : prev));
-                      }
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      if (mode !== 'edit' || dragFromIdx === null) {
-                        clearDragState();
-                        return;
-                      }
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const pos: 'top' | 'bottom' =
-                        dropIndicator?.idx === idx
-                          ? dropIndicator.pos
-                          : e.clientY < rect.top + rect.height / 2
-                            ? 'top'
-                            : 'bottom';
-                      const rawInsert = pos === 'top' ? idx : idx + 1;
-                      const targetIdx = dragFromIdx < rawInsert ? rawInsert - 1 : rawInsert;
-                      const from = dragFromIdx;
-                      clearDragState();
-                      if (targetIdx !== from && targetIdx >= 0 && targetIdx < tg.tiers.length) {
-                        reorderTier(from, targetIdx);
-                      }
-                    }}
-                    onDragEnd={clearDragState}
+                    onPointerDown={(e) => handleTierPointerDown(e, idx, isEditing)}
                     onClick={() => {
+                      if (suppressClickRef.current) return;
                       if (!isEditing) setSelection({ kind: 'tier', tierIndex: idx });
                     }}
                   >

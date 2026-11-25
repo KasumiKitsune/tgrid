@@ -1,0 +1,25 @@
+<svg class="tg-icon tg-icon--wrap-toggle" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill, .tg-src-fill, .tg-dst-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-pane-fill {
+      opacity: 0.09;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill, svg:hover .tg-src-fill, svg:hover .tg-dst-fill { opacity: 0.14; }
+    svg:hover .tg-pane-fill { opacity: 0.2; }
+    svg:hover .tg-sub { opacity: 1; }
+    .tg-wrap { transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease; }
+    svg:hover .tg-wrap { transform: translateX(-0.45px); stroke: #2563eb; }
+  </style>
+  <!-- 顶部整行 & 底部续行 -->
+  <path class="tg-sub" d="M2 3H14M2 12.5H4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  <!-- 折行回卷箭头 -->
+  <path class="tg-wrap" d="M2 7.5H11.75A2.5 2.5 0 0 1 11.75 12.5H7.5M9.5 10.75L7.5 12.5L9.5 14.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

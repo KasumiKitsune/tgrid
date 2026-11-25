@@ -27,11 +27,16 @@ pub fn compute_spectrogram_grid(
     let half_win = analysis.half_win as isize;
     let win_len = analysis.g_win.len();
     let min_db = analysis.spec_max_db - dyn_range;
+    let nyq_freq = sr * 0.5;
     let bin_per_hz = fft_size as f64 / sr;
-    let nyq_bin = (fft_size >> 1) - 1;
+    let nyq_bin = fft_size >> 1;
 
     let mut re = vec![0.0_f64; fft_size];
     let mut im = vec![0.0_f64; fft_size];
+    let denom_r = (rows - 1).max(1) as f64;
+    let row_valid: Vec<bool> = (0..rows)
+        .map(|r| (1.0 - r as f64 / denom_r) * max_freq <= nyq_freq)
+        .collect();
 
     for seg in segs {
         if seg.collapsed {
@@ -71,13 +76,15 @@ pub fn compute_spectrogram_grid(
             }
             fft_in_place(&mut re, &mut im);
 
-            let denom_r = (rows - 1).max(1) as f64;
             for r in 0..rows {
+                if !row_valid[r] {
+                    continue;
+                }
                 let freq = (1.0 - r as f64 / denom_r) * max_freq;
                 let f_bin = freq * bin_per_hz;
                 let b0 = (f_bin.floor().max(0.0) as usize).min(nyq_bin);
                 let b1 = (b0 + 1).min(nyq_bin);
-                let frac_b = f_bin - b0 as f64;
+                let frac_b = (f_bin - b0 as f64).clamp(0.0, 1.0);
                 let p0 = re[b0] * re[b0] + im[b0] * im[b0];
                 let p1 = re[b1] * re[b1] + im[b1] * im[b1];
                 let mag_sq = p0 + (p1 - p0) * frac_b;
@@ -118,9 +125,17 @@ pub fn compute_spectrogram_grid(
             }
         }
         for r in 0..rows {
-            let r_up = r.saturating_sub(1) * cols;
             let r_cur = r * cols;
-            let r_dn = (r + 1).min(rows - 1) * cols;
+            if !row_valid[r] {
+                for c in 0..cols {
+                    values[r_cur + c] = 0.0;
+                }
+                continue;
+            }
+            let r_up_idx = if r > 0 && row_valid[r - 1] { r - 1 } else { r };
+            let r_dn_idx = if r + 1 < rows && row_valid[r + 1] { r + 1 } else { r };
+            let r_up = r_up_idx * cols;
+            let r_dn = r_dn_idx * cols;
             for c in 0..cols {
                 if !col_active[c] {
                     values[r_cur + c] = 0.0;
@@ -163,8 +178,9 @@ pub fn render_spectrogram_rgba(
     let half_win = analysis.half_win as isize;
     let win_len = analysis.g_win.len();
     let min_db = analysis.spec_max_db - dyn_range;
+    let nyq_freq = sr * 0.5;
     let bin_per_hz = fft_size as f64 / sr;
-    let nyq_bin = (fft_size >> 1) - 1;
+    let nyq_bin = fft_size >> 1;
     let is_bw = palette_key.eq_ignore_ascii_case("bw");
 
     let mut re = vec![0.0_f64; fft_size];
@@ -204,10 +220,13 @@ pub fn render_spectrogram_rgba(
 
             for y in 0..px_h {
                 let freq = (1.0 - y as f64 / denom_y) * max_freq;
+                if freq > nyq_freq {
+                    continue;
+                }
                 let f_bin = freq * bin_per_hz;
                 let b0 = (f_bin.floor().max(0.0) as usize).min(nyq_bin);
                 let b1 = (b0 + 1).min(nyq_bin);
-                let frac_b = f_bin - b0 as f64;
+                let frac_b = (f_bin - b0 as f64).clamp(0.0, 1.0);
                 let p0 = re[b0] * re[b0] + im[b0] * im[b0];
                 let p1 = re[b1] * re[b1] + im[b1] * im[b1];
                 let mag_sq = p0 + (p1 - p0) * frac_b;

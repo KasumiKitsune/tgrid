@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { getPlatformBridge, type IpaSymbolInfo } from '../bridge/PlatformBridge';
 import { useEditorStore } from '../store/useEditorStore';
+import { getLogicalViewportSize, getViewportZoom } from '../utils/uiScale';
 import { CloseIcon, UiIcon } from './Icons';
 
 interface KeySpecObj {
@@ -144,9 +145,12 @@ export const IpaDock: React.FC<IpaDockProps> = ({ onInsertSymbol }) => {
     return [...DEFAULT_RECENT];
   });
   const [inspected, setInspected] = useState<IpaSymbolInfo | null>(null);
-  const [floatPos, setFloatPos] = useState<{ left: number; top: number }>({
-    left: Math.max(12, Math.round((window.innerWidth - 680) / 2)),
-    top: Math.max(80, window.innerHeight - 310)
+  const [floatPos, setFloatPos] = useState<{ left: number; top: number }>(() => {
+    const { width: vw, height: vh } = getLogicalViewportSize();
+    return {
+      left: Math.max(12, Math.round((vw - 680) / 2)),
+      top: Math.max(80, Math.round(vh - 310))
+    };
   });
 
   const dockRef = useRef<HTMLElement>(null);
@@ -168,11 +172,12 @@ export const IpaDock: React.FC<IpaDockProps> = ({ onInsertSymbol }) => {
   useEffect(() => {
     if (!ipaDockOpen || !ipaFloating) return;
     const clamp = () => {
-      const w = dockRef.current?.offsetWidth || Math.min(700, window.innerWidth - 24);
+      const { width: vw, height: vh } = getLogicalViewportSize();
+      const w = dockRef.current?.offsetWidth || Math.min(700, vw - 24);
       const h = dockRef.current?.offsetHeight || 260;
       setFloatPos((prev) => ({
-        left: Math.max(8, Math.min(window.innerWidth - w - 8, prev.left)),
-        top: Math.max(48, Math.min(window.innerHeight - h - 8, prev.top))
+        left: Math.max(8, Math.min(Math.max(8, vw - w - 8), prev.left)),
+        top: Math.max(48, Math.min(Math.max(48, vh - h - 8), prev.top))
       }));
     };
     requestAnimationFrame(clamp);
@@ -214,11 +219,13 @@ export const IpaDock: React.FC<IpaDockProps> = ({ onInsertSymbol }) => {
     const origLeft = floatPos.left;
     const origTop = floatPos.top;
     const onMove = (ev: PointerEvent) => {
+      const z = getViewportZoom();
+      const { width: vw, height: vh } = getLogicalViewportSize();
       const w = dockRef.current?.offsetWidth || 680;
       const h = dockRef.current?.offsetHeight || 260;
       setFloatPos({
-        left: Math.max(8, Math.min(window.innerWidth - w - 8, origLeft + ev.clientX - startX)),
-        top: Math.max(48, Math.min(window.innerHeight - h - 8, origTop + ev.clientY - startY))
+        left: Math.max(8, Math.min(Math.max(8, vw - w - 8), origLeft + (ev.clientX - startX) / z)),
+        top: Math.max(48, Math.min(Math.max(48, vh - h - 8), origTop + (ev.clientY - startY) / z))
       });
     };
     const onUp = () => {
@@ -261,7 +268,7 @@ export const IpaDock: React.FC<IpaDockProps> = ({ onInsertSymbol }) => {
         <div className="ipa-inspector" aria-live="polite">
           <span className="ipa-insp-glyph">{inspected ? inspected.display : 'ə'}</span>
           <span className="ipa-insp-name">
-            {inspected ? inspected.name || '国际音标符号' : '悬停或点击音标查看云龙编码与 Praat \\xx 写法'}
+            {inspected ? inspected.name || '国际音标符号' : '悬停或点击音标查看云龙编码与 Praat 写法'}
           </span>
           <span className="ipa-insp-badges">
             {inspected && inspected.yunlong.length > 0 && (

@@ -159,6 +159,8 @@ export interface RichTextLayout {
   height: number;
   lineH: number;
   gloss: string | null;
+  glossLines: string[];
+  glossLineH: number;
   glossH: number;
   glossIsRaw: boolean;
 }
@@ -235,6 +237,119 @@ export function tokenWidth(tok: RichToken, font: string): number {
   return measurePx(tok.str, font) * 1.04;
 }
 
+/** Split raw Praat escape string or IPA gloss into atomic units (keeping `\xx` escapes intact). */
+function splitGlossAtoms(str: string, isRaw: boolean): string[] {
+  if (!isRaw) return splitGraphemes(str);
+  const out: string[] = [];
+  let i = 0;
+  while (i < str.length) {
+    if (str[i] === '\\' && i + 2 < str.length) {
+      // Praat trigraphs are 3 chars like `\as`, `\ng`, `\^h`, `\s.`, `\ir`, `\ef`
+      out.push(str.slice(i, i + 3));
+      i += 3;
+    } else if (str[i] === '\\' && i + 1 < str.length) {
+      out.push(str.slice(i, i + 2));
+      i += 2;
+    } else {
+      out.push(str[i]);
+      i += 1;
+    }
+  }
+  return out;
+}
+
+function measureGlossPx(text: string, font: string): number {
+  return measurePx(text, font) * 1.04;
+}
+
+function truncateGlossLine(text: string, maxWidth: number, font: string, isRaw: boolean): string {
+  if (measureGlossPx(text, font) <= maxWidth) return text;
+  const atoms = splitGlossAtoms(text, isRaw);
+  const ell = '…';
+  while (atoms.length > 1 && measureGlossPx(atoms.join('') + ell, font) > maxWidth) {
+    atoms.pop();
+  }
+  const cand = atoms.join('') + ell;
+  return measureGlossPx(cand, font) <= maxWidth ? cand : ell;
+}
+
+function wrapGlossText(
+  text: string,
+  maxWidth: number,
+  font: string,
+  isRaw: boolean,
+  maxLines: number
+): { lines: string[]; maxLineW: number } {
+  const fullW = measureGlossPx(text, font);
+  if (!maxWidth || maxWidth <= 0 || fullW <= maxWidth) {
+    return { lines: [text], maxLineW: fullW };
+  }
+
+  // Prefer word/space boundaries first so Praat tokens stay readable
+  const parts = text.split(/( +)/).filter((p) => p.length > 0);
+  const lines: string[] = [];
+  let cur = '';
+
+  const flushCur = () => {
+    const trimmed = cur.trimEnd();
+    if (trimmed) lines.push(trimmed);
+    cur = '';
+  };
+
+  for (let pi = 0; pi < parts.length; pi++) {
+    const part = parts[pi];
+    const isSpace = /^ +$/.test(part);
+    if (isSpace && cur === '') continue;
+
+    const candidate = cur + part;
+    if (cur !== '' && measureGlossPx(candidate.trimEnd(), font) > maxWidth) {
+      if (lines.length + 1 >= maxLines) {
+        const rest = parts.slice(pi).join('').trimStart();
+        const combined = cur ? `${cur.trimEnd()} ${rest}` : rest;
+        lines.push(truncateGlossLine(combined, maxWidth, font, isRaw));
+        cur = '';
+        break;
+      }
+      flushCur();
+      if (isSpace) continue;
+    }
+
+    if (cur === '' && measureGlossPx(part, font) > maxWidth) {
+      // Single long token wider than maxWidth: split on Praat trigraph / grapheme boundaries
+      const atoms = splitGlossAtoms(part, isRaw);
+      let chunk = '';
+      for (let ai = 0; ai < atoms.length; ai++) {
+        const a = atoms[ai];
+        if (chunk !== '' && measureGlossPx(chunk + a, font) > maxWidth) {
+          if (lines.length + 1 >= maxLines) {
+            const tail = chunk + atoms.slice(ai).join('') + parts.slice(pi + 1).join('');
+            lines.push(truncateGlossLine(tail, maxWidth, font, isRaw));
+            chunk = '';
+            pi = parts.length;
+            break;
+          }
+          lines.push(chunk);
+          chunk = a;
+        } else {
+          chunk += a;
+        }
+      }
+      cur = chunk;
+    } else {
+      cur += part;
+    }
+  }
+  if (cur.trimEnd() && lines.length < maxLines) {
+    lines.push(cur.trimEnd());
+  }
+  if (lines.length === 0) {
+    lines.push(truncateGlossLine(text, maxWidth, font, isRaw));
+  }
+
+  const maxLineW = lines.reduce((m, l) => Math.max(m, measureGlossPx(l, font)), 0);
+  return { lines, maxLineW };
+}
+
 export function layoutRichText(
   str: string,
   maxWidth: number,
@@ -243,7 +358,17 @@ export function layoutRichText(
   richOpts: RichLayoutOptions | null = null
 ): RichTextLayout {
   if (str === '') {
-    return { lines: [], width: 0, height: 0, lineH: 17, gloss: null, glossH: 0, glossIsRaw: false };
+    return {
+      lines: [],
+      width: 0,
+      height: 0,
+      lineH: 17,
+      gloss: null,
+      glossLines: [],
+      glossLineH: 13,
+      glossH: 0,
+      glossIsRaw: false
+    };
   }
   const hideMeta = Boolean(richOpts?.hideMetaSymbols);
   const trigraphMode = richOpts?.trigraphMode ?? null;
@@ -362,11 +487,19 @@ export function layoutRichText(
   }
 
   const lineH = Math.round(17 * fontScale);
-  const glossH = gloss ? Math.round(13 * fontScale) : 0;
-  const glossFont = glossIsRaw ? FONT_GLOSS_RAW : FONT_GLOSS;
+  const glossLineH = Math.round(12.5 * fontScale);
+  const glossFontSize = (glossIsRaw ? 9 : 9.5) * fontScale;
+  const glossFont = glossIsRaw
+    ? `${glossFontSize.toFixed(2)}px ${MONO_FONT_STACK}`
+    : `italic ${glossFontSize.toFixed(2)}px ${richOpts?.fontFamily || IPA_FONT_STACK}`;
+  const maxGlossLines = maxWidth > 0 && maxWidth < 56 ? 2 : 3;
+  const glossWrap = gloss
+    ? wrapGlossText(gloss, maxWidth, glossFont, glossIsRaw, maxGlossLines)
+    : { lines: [], maxLineW: 0 };
+  const glossH = glossWrap.lines.length > 0 ? glossWrap.lines.length * glossLineH + Math.round(1 * fontScale) : 0;
   const width = Math.max(
     visualLines.reduce((m, l) => Math.max(m, l.width), 0),
-    gloss ? measurePx(gloss, glossFont) : 0
+    glossWrap.maxLineW
   );
   return {
     lines: visualLines,
@@ -374,6 +507,8 @@ export function layoutRichText(
     height: visualLines.length * lineH + glossH,
     lineH,
     gloss,
+    glossLines: glossWrap.lines,
+    glossLineH,
     glossH,
     glossIsRaw
   };

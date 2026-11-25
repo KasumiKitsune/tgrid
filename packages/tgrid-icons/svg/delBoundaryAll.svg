@@ -1,0 +1,31 @@
+<svg class="tg-icon tg-icon--del-boundary-all" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill { opacity: 0.14; }
+    svg:hover .tg-sub { opacity: 1; }
+    .tg-cross {
+      transform-origin: 8px 8px;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+    .tg-bound-top, .tg-bound-bottom {
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-cross { transform: scale(1.08); stroke: #dc2626; }
+    svg:hover .tg-bound-top { transform: translateY(-0.45px); }
+    svg:hover .tg-bound-bottom { transform: translateY(0.45px); }
+  </style>
+  <!-- 三层水平轨道 -->
+  <path class="tg-sub" d="M1.75 2.5H14.25M1.75 8H3.75M12.25 8H14.25M1.75 13.5H14.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  <!-- 跨层对齐边界竖线（上 / 下） -->
+  <path class="tg-bound-top" d="M8 1.5V3.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  <path class="tg-bound-bottom" d="M8 12.25V14.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  <!-- 居中删除叉号（呼应示例 3） -->
+  <path class="tg-cross" d="M6.25 6.25L9.75 9.75M9.75 6.25L6.25 9.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+</svg>

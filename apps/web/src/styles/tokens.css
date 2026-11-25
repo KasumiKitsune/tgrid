@@ -21,6 +21,9 @@
   --font-sans: "Inter", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
   --font-ipa: "Charis SIL", "Doulos SIL", "Gentium Plus", "Gentium Book Plus", "Segoe UI", "Cambria", "Lucida Sans Unicode", "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", "Menlo", "Consolas", monospace;
+  --ui-scale: 1;
+  --vw: calc(100vw / var(--ui-scale, 1));
+  --vh: calc(100vh / var(--ui-scale, 1));
 }
 
 * {

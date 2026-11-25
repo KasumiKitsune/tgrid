@@ -1,0 +1,27 @@
+<svg class="tg-icon tg-icon--play-context" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill { opacity: 0.14; }
+    svg:hover .tg-sub { opacity: 1; }
+    .tg-play {
+      transition: stroke 0.2s ease, fill 0.2s ease;
+    }
+    svg:hover .tg-play { stroke: #2563eb; }
+    svg:hover .tg-wing-l { transform: translateX(-0.65px); }
+    svg:hover .tg-wing-r { transform: translateX(0.65px); }
+  </style>
+  <!-- 播放三角（按下态实心填充） -->
+  <path class="tg-play" d="M6 2L11.25 5L6 8V2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+  <!-- 目标区间/边界核心时间段 -->
+  <path d="M5.5 10.75V14.25M10.5 10.75V14.25M5.5 12.5H10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  <!-- 前/后语境缓冲翼 (±250ms) -->
+  <path class="tg-sub tg-wing-l" d="M1.75 12.5H3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  <path class="tg-sub tg-wing-r" d="M13 12.5H14.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+</svg>

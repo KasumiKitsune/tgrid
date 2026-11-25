@@ -3,11 +3,286 @@ import type { AudioAnalysisSummary, TextGrid, TextGridFormat, TierKind } from '.
 import { createSample } from '../data/samples';
 import type { EditorSelection } from '../render/renderScoreSvg';
 import type { ScoreLayout } from '../layout/computeLayout';
+import { getShortcutEntry, normalizeKeyCombo } from '../shortcuts/registry';
+import { clampUiScale, loadSavedUiScale, saveUiScale } from '../utils/uiScale';
 
 export type IpaInputMode = 'off' | 'yunlong' | 'praat';
-export type SidebarTab = 'inspector' | 'tiers' | 'settings';
+export type SidebarTab = 'inspector' | 'tiers' | 'settings' | 'customize';
 export type EditInspectorMode = 'sidebar' | 'floating';
 export type ExportRangePreset = 'all' | 'view' | 'selection' | 'custom';
+
+export type FloatingBarTarget = 'interval' | 'point' | 'boundary' | 'tier';
+export type FloatingBarPresetKey = 'full' | 'compact' | 'minimal';
+
+export interface FloatingBarItemMeta {
+  id: string;
+  label: string;
+  previewLabel: string;
+  defaultVisible: boolean;
+}
+
+export interface FloatingBarSectionConfig {
+  order: string[];
+  hidden: string[];
+}
+
+export type FloatingBarConfig = Record<FloatingBarTarget, FloatingBarSectionConfig>;
+
+const FLOATING_BAR_TARGETS: FloatingBarTarget[] = ['interval', 'point', 'boundary', 'tier'];
+
+export const FLOATING_BAR_CATALOG: Record<FloatingBarTarget, FloatingBarItemMeta[]> = {
+  interval: [
+    { id: 'iv-times', label: '起止时间框（可拖拽调值）', previewLabel: '起 / 止', defaultVisible: true },
+    { id: 'iv-dur', label: '区间时长 (ms)', previewLabel: '240 ms', defaultVisible: true },
+    { id: 'iv-edit', label: '改字', previewLabel: '改字', defaultVisible: true },
+    { id: 'iv-clear', label: '清空文本', previewLabel: '清空', defaultVisible: true },
+    { id: 'iv-split', label: '正中切分', previewLabel: '切分', defaultVisible: true },
+    { id: 'iv-split-equal', label: '等分为 2 段', previewLabel: '等分', defaultVisible: false },
+    { id: 'iv-merge-left', label: '向左合并', previewLabel: '合左', defaultVisible: true },
+    { id: 'iv-merge-right', label: '向右合并', previewLabel: '合右', defaultVisible: true },
+    { id: 'iv-play', label: '播放区间', previewLabel: '播放', defaultVisible: true },
+    { id: 'iv-play-ctx', label: '语境播放 (±250ms)', previewLabel: '±250ms', defaultVisible: false },
+    { id: 'iv-zoom', label: '放大 / 全长', previewLabel: '放大', defaultVisible: true },
+    { id: 'iv-copy-text', label: '复制文本', previewLabel: '复制', defaultVisible: false }
+  ],
+  point: [
+    { id: 'pt-time', label: '标点时间框（可拖拽调值）', previewLabel: '时间', defaultVisible: true },
+    { id: 'pt-edit', label: '改字', previewLabel: '改字', defaultVisible: true },
+    { id: 'pt-play', label: '从此处播放', previewLabel: '播放', defaultVisible: true },
+    { id: 'pt-delete', label: '删除标点', previewLabel: '删除', defaultVisible: true }
+  ],
+  boundary: [
+    { id: 'bnd-time', label: '边界时间框（可拖拽调值）', previewLabel: '边界', defaultVisible: true },
+    { id: 'bnd-zero', label: '吸附过零点', previewLabel: '过零', defaultVisible: false },
+    { id: 'bnd-audition', label: '试听 ±200ms', previewLabel: '试听', defaultVisible: true },
+    { id: 'bnd-delete', label: '删除边界', previewLabel: '删除边界', defaultVisible: true }
+  ],
+  tier: [
+    { id: 'tier-name', label: '层名称框', previewLabel: '层名', defaultVisible: true },
+    { id: 'tier-bounds', label: '层起止时间框', previewLabel: '起 / 止', defaultVisible: true },
+    { id: 'tier-move', label: '上移 / 下移', previewLabel: '上/下移', defaultVisible: true },
+    { id: 'tier-delete', label: '删除层级', previewLabel: '删除', defaultVisible: true }
+  ]
+};
+
+function buildFloatingBarSectionFromVisible(
+  target: FloatingBarTarget,
+  visibleIds: readonly string[]
+): FloatingBarSectionConfig {
+  const visibleSet = new Set(visibleIds);
+  const catalog = FLOATING_BAR_CATALOG[target];
+  return {
+    order: catalog.map((item) => item.id),
+    hidden: catalog.filter((item) => !visibleSet.has(item.id)).map((item) => item.id)
+  };
+}
+
+export const DEFAULT_FLOATING_BAR_CONFIG: FloatingBarConfig = {
+  interval: {
+    order: FLOATING_BAR_CATALOG.interval.map((item) => item.id),
+    hidden: FLOATING_BAR_CATALOG.interval.filter((item) => !item.defaultVisible).map((item) => item.id)
+  },
+  point: {
+    order: FLOATING_BAR_CATALOG.point.map((item) => item.id),
+    hidden: FLOATING_BAR_CATALOG.point.filter((item) => !item.defaultVisible).map((item) => item.id)
+  },
+  boundary: {
+    order: FLOATING_BAR_CATALOG.boundary.map((item) => item.id),
+    hidden: FLOATING_BAR_CATALOG.boundary.filter((item) => !item.defaultVisible).map((item) => item.id)
+  },
+  tier: {
+    order: FLOATING_BAR_CATALOG.tier.map((item) => item.id),
+    hidden: FLOATING_BAR_CATALOG.tier.filter((item) => !item.defaultVisible).map((item) => item.id)
+  }
+};
+
+export const FLOATING_BAR_PRESETS: Record<FloatingBarPresetKey, FloatingBarConfig> = {
+  full: {
+    interval: buildFloatingBarSectionFromVisible('interval', [
+      'iv-times',
+      'iv-dur',
+      'iv-edit',
+      'iv-clear',
+      'iv-split',
+      'iv-merge-left',
+      'iv-merge-right',
+      'iv-play',
+      'iv-zoom'
+    ]),
+    point: buildFloatingBarSectionFromVisible('point', [
+      'pt-time',
+      'pt-edit',
+      'pt-play',
+      'pt-delete'
+    ]),
+    boundary: buildFloatingBarSectionFromVisible('boundary', [
+      'bnd-time',
+      'bnd-zero',
+      'bnd-audition',
+      'bnd-delete'
+    ]),
+    tier: buildFloatingBarSectionFromVisible('tier', [
+      'tier-name',
+      'tier-bounds',
+      'tier-move',
+      'tier-delete'
+    ])
+  },
+  compact: {
+    interval: buildFloatingBarSectionFromVisible('interval', [
+      'iv-dur',
+      'iv-edit',
+      'iv-clear',
+      'iv-split',
+      'iv-merge-left',
+      'iv-merge-right',
+      'iv-play',
+      'iv-zoom'
+    ]),
+    point: buildFloatingBarSectionFromVisible('point', ['pt-edit', 'pt-play', 'pt-delete']),
+    boundary: buildFloatingBarSectionFromVisible('boundary', ['bnd-audition', 'bnd-delete']),
+    tier: buildFloatingBarSectionFromVisible('tier', ['tier-name', 'tier-move', 'tier-delete'])
+  },
+  minimal: {
+    interval: buildFloatingBarSectionFromVisible('interval', ['iv-edit', 'iv-split', 'iv-play']),
+    point: buildFloatingBarSectionFromVisible('point', ['pt-edit', 'pt-play']),
+    boundary: buildFloatingBarSectionFromVisible('boundary', ['bnd-audition', 'bnd-delete']),
+    tier: buildFloatingBarSectionFromVisible('tier', ['tier-name', 'tier-delete'])
+  }
+};
+
+const FLOATING_BAR_STORAGE_KEY = 'tg_floating_bar_config';
+const CUSTOM_SHORTCUTS_STORAGE_KEY = 'tg_custom_shortcuts';
+
+function cloneFloatingBarConfig(cfg: FloatingBarConfig): FloatingBarConfig {
+  return {
+    interval: { order: [...cfg.interval.order], hidden: [...cfg.interval.hidden] },
+    point: { order: [...cfg.point.order], hidden: [...cfg.point.hidden] },
+    boundary: { order: [...cfg.boundary.order], hidden: [...cfg.boundary.hidden] },
+    tier: { order: [...cfg.tier.order], hidden: [...cfg.tier.hidden] }
+  };
+}
+
+function sanitizeFloatingBarConfig(raw: unknown): FloatingBarConfig {
+  const result = cloneFloatingBarConfig(DEFAULT_FLOATING_BAR_CONFIG);
+  if (!raw || typeof raw !== 'object') return result;
+  const obj = raw as Record<string, unknown>;
+
+  for (const target of FLOATING_BAR_TARGETS) {
+    const catalog = FLOATING_BAR_CATALOG[target];
+    const validIds = new Set(catalog.map((item) => item.id));
+    const secRaw = obj[target];
+    if (!secRaw || typeof secRaw !== 'object') continue;
+    const sec = secRaw as { order?: unknown; hidden?: unknown };
+
+    const seenOrder = new Set<string>();
+    const order: string[] = [];
+    if (Array.isArray(sec.order)) {
+      for (const id of sec.order) {
+        if (typeof id === 'string' && validIds.has(id) && !seenOrder.has(id)) {
+          seenOrder.add(id);
+          order.push(id);
+        }
+      }
+    }
+    const newlyAddedIds = new Set<string>();
+    for (const item of catalog) {
+      if (!seenOrder.has(item.id)) {
+        seenOrder.add(item.id);
+        order.push(item.id);
+        newlyAddedIds.add(item.id);
+      }
+    }
+
+    const hiddenSet = new Set<string>();
+    if (Array.isArray(sec.hidden)) {
+      for (const id of sec.hidden) {
+        if (typeof id === 'string' && validIds.has(id)) {
+          hiddenSet.add(id);
+        }
+      }
+    }
+    // For newly introduced catalog items not yet stored in user's config, honor defaultVisible
+    for (const item of catalog) {
+      if (newlyAddedIds.has(item.id) && !item.defaultVisible) {
+        hiddenSet.add(item.id);
+      }
+    }
+
+    result[target] = {
+      order,
+      hidden: order.filter((id) => hiddenSet.has(id))
+    };
+  }
+
+  return result;
+}
+
+function loadFloatingBarConfig(): FloatingBarConfig {
+  try {
+    const raw = JSON.parse(localStorage.getItem(FLOATING_BAR_STORAGE_KEY) || 'null');
+    return sanitizeFloatingBarConfig(raw);
+  } catch {
+    return cloneFloatingBarConfig(DEFAULT_FLOATING_BAR_CONFIG);
+  }
+}
+
+function saveFloatingBarConfig(cfg: FloatingBarConfig): void {
+  try {
+    localStorage.setItem(FLOATING_BAR_STORAGE_KEY, JSON.stringify(cfg));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function areKeyListsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function sanitizeCustomShortcuts(raw: unknown): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return result;
+  const obj = raw as Record<string, unknown>;
+  for (const [actionId, val] of Object.entries(obj)) {
+    const entry = getShortcutEntry(actionId);
+    if (!entry || entry.rebindable === false) continue;
+    if (!Array.isArray(val)) continue;
+    const cleanKeys = Array.from(
+      new Set(
+        val
+          .filter((k): k is string => typeof k === 'string')
+          .map((k) => normalizeKeyCombo(k))
+          .filter((k) => k.length > 0)
+      )
+    );
+    const defaultKeys = entry.keys.map((k) => normalizeKeyCombo(k)).filter(Boolean);
+    if (!areKeyListsEqual(cleanKeys, defaultKeys)) {
+      result[actionId] = cleanKeys;
+    }
+  }
+  return result;
+}
+
+function loadCustomShortcuts(): Record<string, string[]> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CUSTOM_SHORTCUTS_STORAGE_KEY) || 'null');
+    return sanitizeCustomShortcuts(raw);
+  } catch {
+    return {};
+  }
+}
+
+function saveCustomShortcuts(overrides: Record<string, string[]>): void {
+  try {
+    localStorage.setItem(CUSTOM_SHORTCUTS_STORAGE_KEY, JSON.stringify(overrides));
+  } catch {
+    // ignore storage errors
+  }
+}
 
 const SIDEBAR_PREFS_KEY = 'tgrid_sidebar_prefs_v1';
 
@@ -38,7 +313,10 @@ function loadSidebarPrefs(): StoredSidebarPrefs {
     const raw = JSON.parse(localStorage.getItem(SIDEBAR_PREFS_KEY) || 'null');
     if (raw && typeof raw === 'object') {
       const tab: SidebarTab =
-        raw.sidebarTab === 'inspector' || raw.sidebarTab === 'tiers' || raw.sidebarTab === 'settings'
+        raw.sidebarTab === 'inspector' ||
+        raw.sidebarTab === 'tiers' ||
+        raw.sidebarTab === 'settings' ||
+        raw.sidebarTab === 'customize'
           ? raw.sidebarTab
           : DEFAULT_SIDEBAR_PREFS.sidebarTab;
       // Map legacy 'both' preference cleanly to 'floating'
@@ -184,6 +462,7 @@ export interface EditorState {
   tickFixedDecimals: boolean;
   viewDomain: { min: number; max: number } | null;
   targetWidth: number;
+  widthAutoFit: boolean;
   selection: EditorSelection;
   lastActiveTierIndex: number;
   hiddenTierIndices: number[];
@@ -207,6 +486,7 @@ export interface EditorState {
   cueMode: 'auto' | 'pitch' | 'formant' | 'plain';
   tierOrder: 'raw' | 'spec';
   maxFreq: 5000 | 8000 | 10000;
+  maxFreqUserSet: boolean;
 
   // IPA System
   ipaMode: IpaInputMode;
@@ -220,6 +500,11 @@ export interface EditorState {
   editInspectorMode: EditInspectorMode;
   autoOpenInspectorOnSelect: boolean;
   showMicroLoupe: boolean;
+  uiScale: number;
+
+  // Customization State (Floating Bar & Rebindable Shortcuts)
+  floatingBarConfig: FloatingBarConfig;
+  customShortcuts: Record<string, string[]>;
 
   // Modals & Layout ref
   exportOpen: boolean;
@@ -279,6 +564,7 @@ export interface EditorState {
   setTickFixedDecimals: (v: boolean) => void;
   setViewDomain: (domain: { min: number; max: number } | null) => void;
   setTargetWidth: (w: number) => void;
+  setWidthAutoFit: (v: boolean) => void;
   setSelection: (sel: EditorSelection) => void;
   toggleTierVisibility: (tierIndex: number) => void;
   soloTier: (tierIndex: number) => void;
@@ -313,6 +599,14 @@ export interface EditorState {
   setEditInspectorMode: (m: EditInspectorMode) => void;
   setAutoOpenInspectorOnSelect: (auto: boolean) => void;
   setShowMicroLoupe: (show: boolean) => void;
+  setUiScale: (scale: number) => void;
+  toggleFloatingBarItem: (target: FloatingBarTarget, itemId: string) => void;
+  reorderFloatingBarItem: (target: FloatingBarTarget, fromId: string, toId: string) => void;
+  applyFloatingBarPreset: (preset: FloatingBarPresetKey) => void;
+  resetFloatingBarConfig: () => void;
+  setCustomShortcut: (actionId: string, keys: string[], clearConflictIds?: string[]) => void;
+  resetCustomShortcut: (actionId: string) => void;
+  resetAllCustomShortcuts: () => void;
   setExportOpen: (open: boolean) => void;
   openExportModal: (presetRange?: ExportRangePreset | null) => void;
   clearExportPresetRange: () => void;
@@ -599,6 +893,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
   })(),
   targetWidth: 1120,
+  widthAutoFit: true,
   showPlayhead: false,
   playing: false,
   loop: false,
@@ -610,7 +905,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   showSpectrogram: true,
   cueMode: 'auto',
   tierOrder: 'raw',
-  maxFreq: 5000,
+  maxFreq: 8000,
+  maxFreqUserSet: false,
 
   ipaMode: (() => {
     try {
@@ -636,6 +932,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   editInspectorMode: initialSidebarPrefs.editInspectorMode,
   autoOpenInspectorOnSelect: initialSidebarPrefs.autoOpenInspectorOnSelect,
   showMicroLoupe: initialSidebarPrefs.showMicroLoupe,
+  uiScale: loadSavedUiScale(),
+
+  floatingBarConfig: loadFloatingBarConfig(),
+  customShortcuts: loadCustomShortcuts(),
 
   exportOpen: false,
   exportPresetRange: null,
@@ -677,9 +977,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const updatedTabs = s.tabs.map((t) =>
         t.id === s.activeTabId ? { ...t, currentTime: s.currentTime } : t
       );
+      const smartMaxFreq =
+        !s.maxFreqUserSet && target.audioSampleRate > 0
+          ? ((target.audioSampleRate >= 16000 ? 8000 : 5000) as 5000 | 8000 | 10000)
+          : s.maxFreq;
       return {
         tabs: updatedTabs,
         ...fieldsFromTab(target),
+        maxFreq: smartMaxFreq,
         showPlayhead: false,
         playing: false,
         docVersion: s.docVersion + 1
@@ -772,13 +1077,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
       const nextTabs = s.tabs.map((t) => (t.id === tabId ? { ...t, ...patch } : t));
       if (tabId === s.activeTabId) {
+        const smartMaxFreq =
+          !s.maxFreqUserSet && meta.sampleRate > 0
+            ? ((meta.sampleRate >= 16000 ? 8000 : 5000) as 5000 | 8000 | 10000)
+            : s.maxFreq;
         return {
           tabs: nextTabs,
           audioName: meta.name,
           audioOffset: meta.offset,
           audioDuration: meta.duration,
           audioSampleRate: meta.sampleRate,
-          analysis: meta.analysis
+          analysis: meta.analysis,
+          maxFreq: smartMaxFreq
         };
       }
       return { tabs: nextTabs };
@@ -1011,7 +1321,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({ tickFixedDecimals });
   },
   setViewDomain: (viewDomain) => set((s) => syncActivePatch(s, { viewDomain })),
-  setTargetWidth: (w) => set({ targetWidth: Math.max(280, Math.min(18000, Math.round(w))) }),
+  setTargetWidth: (w) =>
+    set({
+      targetWidth: Math.max(280, Math.min(18000, Math.round(w))),
+      widthAutoFit: false
+    }),
+  setWidthAutoFit: (widthAutoFit) => set({ widthAutoFit }),
   setSelection: (selection) =>
     set((s) => {
       const ti = extractTierIndex(selection);
@@ -1085,7 +1400,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setShowSpectrogram: (showSpectrogram) => set({ showSpectrogram }),
   setCueMode: (cueMode) => set({ cueMode }),
   setTierOrder: (tierOrder) => set({ tierOrder }),
-  setMaxFreq: (maxFreq) => set({ maxFreq }),
+  setMaxFreq: (maxFreq) => set({ maxFreq, maxFreqUserSet: true }),
   setIpaMode: (ipaMode) => {
     try {
       localStorage.setItem('tg_ipa_mode', ipaMode);
@@ -1102,7 +1417,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const labels: Record<IpaInputMode, string> = {
       off: '已关闭',
       yunlong: '云龙国际音标',
-      praat: 'Praat \\xx'
+      praat: 'Praat 音标'
     };
     get().showToast(`音标输入：${labels[next]}`);
   },
@@ -1152,6 +1467,103 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((s) => {
       saveSidebarPrefs(extractSidebarPrefs(s, { showMicroLoupe }));
       return { showMicroLoupe };
+    }),
+  setUiScale: (scale) => {
+    const uiScale = clampUiScale(scale);
+    saveUiScale(uiScale);
+    set({ uiScale });
+  },
+  toggleFloatingBarItem: (target, itemId) =>
+    set((s) => {
+      const sec = s.floatingBarConfig[target];
+      if (!sec || !sec.order.includes(itemId)) return s;
+      const isHidden = sec.hidden.includes(itemId);
+      const nextHidden = isHidden
+        ? sec.hidden.filter((id) => id !== itemId)
+        : sec.order.filter((id) => id === itemId || sec.hidden.includes(id));
+      const nextConfig: FloatingBarConfig = {
+        ...s.floatingBarConfig,
+        [target]: {
+          order: [...sec.order],
+          hidden: nextHidden
+        }
+      };
+      saveFloatingBarConfig(nextConfig);
+      return { floatingBarConfig: nextConfig };
+    }),
+  reorderFloatingBarItem: (target, fromId, toId) =>
+    set((s) => {
+      const sec = s.floatingBarConfig[target];
+      if (!sec || fromId === toId) return s;
+      const fromIdx = sec.order.indexOf(fromId);
+      const toIdx = sec.order.indexOf(toId);
+      if (fromIdx === -1 || toIdx === -1) return s;
+      const nextOrder = [...sec.order];
+      const [moved] = nextOrder.splice(fromIdx, 1);
+      nextOrder.splice(toIdx, 0, moved);
+      const hiddenSet = new Set(sec.hidden);
+      const nextConfig: FloatingBarConfig = {
+        ...s.floatingBarConfig,
+        [target]: {
+          order: nextOrder,
+          hidden: nextOrder.filter((id) => hiddenSet.has(id))
+        }
+      };
+      saveFloatingBarConfig(nextConfig);
+      return { floatingBarConfig: nextConfig };
+    }),
+  applyFloatingBarPreset: (preset) =>
+    set(() => {
+      const base = FLOATING_BAR_PRESETS[preset];
+      if (!base) return {};
+      const nextConfig = cloneFloatingBarConfig(base);
+      saveFloatingBarConfig(nextConfig);
+      return { floatingBarConfig: nextConfig };
+    }),
+  resetFloatingBarConfig: () =>
+    set(() => {
+      const nextConfig = cloneFloatingBarConfig(DEFAULT_FLOATING_BAR_CONFIG);
+      saveFloatingBarConfig(nextConfig);
+      return { floatingBarConfig: nextConfig };
+    }),
+  setCustomShortcut: (actionId, keys, clearConflictIds) =>
+    set((s) => {
+      const entry = getShortcutEntry(actionId);
+      if (!entry || entry.rebindable === false) return s;
+      const cleanKeys = Array.from(
+        new Set(keys.map((k) => normalizeKeyCombo(k)).filter((k) => k.length > 0))
+      );
+      const defaultKeys = entry.keys.map((k) => normalizeKeyCombo(k)).filter(Boolean);
+      const next: Record<string, string[]> = { ...s.customShortcuts };
+      if (Array.isArray(clearConflictIds)) {
+        for (const cid of clearConflictIds) {
+          if (cid === actionId) continue;
+          const conflictEntry = getShortcutEntry(cid);
+          if (conflictEntry && conflictEntry.rebindable !== false) {
+            next[cid] = [];
+          }
+        }
+      }
+      if (areKeyListsEqual(cleanKeys, defaultKeys)) {
+        delete next[actionId];
+      } else {
+        next[actionId] = cleanKeys;
+      }
+      saveCustomShortcuts(next);
+      return { customShortcuts: next };
+    }),
+  resetCustomShortcut: (actionId) =>
+    set((s) => {
+      if (!Object.prototype.hasOwnProperty.call(s.customShortcuts, actionId)) return s;
+      const next = { ...s.customShortcuts };
+      delete next[actionId];
+      saveCustomShortcuts(next);
+      return { customShortcuts: next };
+    }),
+  resetAllCustomShortcuts: () =>
+    set(() => {
+      saveCustomShortcuts({});
+      return { customShortcuts: {} };
     }),
   setExportOpen: (exportOpen) => set({ exportOpen, ...(exportOpen ? {} : { exportPresetRange: null }) }),
   openExportModal: (presetRange = null) => set({ exportOpen: true, exportPresetRange: presetRange }),

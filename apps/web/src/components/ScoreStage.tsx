@@ -35,14 +35,27 @@ import {
   type IntervalDragPreviewState
 } from '../render/renderScoreSvg';
 import { resolveDualEdgeSnap, resolveSnap, type SnapResult } from '../interaction/snapEngine';
-import { formatKeyCombo, isComposingEvent, isEditableTarget } from '../shortcuts/registry';
+import {
+  formatKeyCombo,
+  getEffectiveShortcutHint,
+  isComposingEvent,
+  isEditableTarget,
+  matchesShortcut
+} from '../shortcuts/registry';
 import { rgbaToPngDataUrl } from '../render/exporter';
-import { getBoundaryBoundsForTier, useEditorStore } from '../store/useEditorStore';
+import { getElementRectScale, getLogicalViewportSize, getViewportZoom } from '../utils/uiScale';
+import {
+  getBoundaryBoundsForTier,
+  useEditorStore,
+  type FloatingBarTarget
+} from '../store/useEditorStore';
 import type { TextGrid } from '../bridge/types';
-import { UiIcon } from './Icons';
+import { SubmenuChevronIcon, UiIcon, type IconName } from './Icons';
+import { ScrubNumberInput } from './ScrubNumberInput';
 import { IpaImePopover, IpaModePill } from './IpaImePopover';
 import { isIpaRelatedElement, useIpaIme } from './useIpaIme';
 import { AcousticMicroLoupe, type MicroLoupeAnchor } from './AcousticMicroLoupe';
+import { SplitEqualModal, type SplitEqualDialogState } from './SplitEqualModal';
 
 export interface ScoreStageHandle {
   insertIpaSymbol: (sym: string, isTieBar?: boolean) => void;
@@ -66,6 +79,8 @@ type InlineTarget =
 
 interface ContextMenuItem {
   label?: string;
+  icon?: IconName;
+  badge?: string;
   shortcut?: string;
   danger?: boolean;
   disabled?: boolean;
@@ -73,6 +88,92 @@ interface ContextMenuItem {
   action?: () => void;
   children?: ContextMenuItem[];
 }
+
+const FLOATING_FIELD_IDS = new Set([
+  'iv-times',
+  'iv-dur',
+  'pt-time',
+  'bnd-time',
+  'tier-name',
+  'tier-bounds'
+]);
+
+function assembleFloatingBarNodes(
+  entries: Array<{ id: string; node: React.ReactNode }>
+): React.ReactNode[] | null {
+  if (entries.length === 0) return null;
+  const out: React.ReactNode[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    if (i > 0) {
+      const prevIsField = FLOATING_FIELD_IDS.has(entries[i - 1].id);
+      const curIsField = FLOATING_FIELD_IDS.has(entries[i].id);
+      if (prevIsField !== curIsField) {
+        out.push(<div key={`sep-${entries[i - 1].id}-${entries[i].id}`} className="sep" />);
+      }
+    }
+    out.push(<React.Fragment key={entries[i].id}>{entries[i].node}</React.Fragment>);
+  }
+  return out;
+}
+
+function isSafeInputShortcutEvent(e: KeyboardEvent): boolean {
+  return e.ctrlKey || e.metaKey || e.altKey || /^F([1-9]|1[0-9]|2[0-4])$/.test(e.key);
+}
+
+const CtxSubmenuPanel: React.FC<{
+  items: ContextMenuItem[];
+  openLeft: boolean;
+  onSelectItem: (child: ContextMenuItem) => void;
+  onMouseEnter: () => void;
+}> = ({ items, openLeft, onSelectItem, onMouseEnter }) => {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [topOffset, setTopOffset] = useState<number>(-4);
+
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    el.style.top = '-4px';
+    const z = getViewportZoom();
+    const rect = el.getBoundingClientRect();
+    const overflowBottom = (rect.bottom - (window.innerHeight - 8 * z)) / z;
+    if (overflowBottom > 0) {
+      const shifted = -4 - overflowBottom;
+      const minTop = -4 - Math.max(0, (rect.top - 8 * z) / z);
+      const finalTop = Math.round(Math.max(minTop, shifted));
+      el.style.top = `${finalTop}px`;
+      setTopOffset(finalTop);
+    } else {
+      setTopOffset(-4);
+    }
+  }, [items, openLeft]);
+
+  return (
+    <div
+      ref={panelRef}
+      className={`ctx-submenu-panel${openLeft ? ' open-left' : ''}`}
+      style={{ top: topOffset }}
+      onMouseEnter={onMouseEnter}
+    >
+      {items.map((child, cIdx) =>
+        child.divider ? (
+          <div key={`sub-div-${cIdx}`} className="menu-divider" />
+        ) : (
+          <button
+            key={`${child.label}-${cIdx}`}
+            type="button"
+            className={child.danger ? 'danger' : ''}
+            disabled={child.disabled}
+            onClick={() => onSelectItem(child)}
+          >
+            <span>{child.label}</span>
+            {child.badge && <span className="ctx-sub-badge">{child.badge}</span>}
+            {child.shortcut && <span className="shortcut">{child.shortcut}</span>}
+          </button>
+        )
+      )}
+    </div>
+  );
+};
 
 const PLAYBACK_RATES = [0.5, 0.75, 1.0, 1.25, 1.5] as const;
 
@@ -330,6 +431,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const viewDomain = useEditorStore((s) => s.viewDomain);
     const setViewDomain = useEditorStore((s) => s.setViewDomain);
     const targetWidth = useEditorStore((s) => s.targetWidth);
+    const widthAutoFit = useEditorStore((s) => s.widthAutoFit);
     const setTargetWidth = useEditorStore((s) => s.setTargetWidth);
     const selection = useEditorStore((s) => s.selection);
     const setSelection = useEditorStore((s) => s.setSelection);
@@ -355,6 +457,9 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const maxFreq = useEditorStore((s) => s.maxFreq);
     const editInspectorMode = useEditorStore((s) => s.editInspectorMode);
     const showMicroLoupe = useEditorStore((s) => s.showMicroLoupe);
+    const uiScale = useEditorStore((s) => s.uiScale);
+    const floatingBarConfig = useEditorStore((s) => s.floatingBarConfig);
+    const customShortcuts = useEditorStore((s) => s.customShortcuts);
     const exportOpen = useEditorStore((s) => s.exportOpen);
     const aboutOpen = useEditorStore((s) => s.aboutOpen);
     const shortcutsOpen = useEditorStore((s) => s.shortcutsOpen);
@@ -390,6 +495,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const moveTierBoundary = useEditorStore((s) => s.moveTierBoundary);
     const moveSharedTimestamp = useEditorStore((s) => s.moveSharedTimestamp);
     const showToast = useEditorStore((s) => s.showToast);
+    const [splitEqualDialog, setSplitEqualDialog] = useState<SplitEqualDialogState | null>(null);
 
     const stageRef = useRef<HTMLElement>(null);
     const sheetRef = useRef<HTMLDivElement>(null);
@@ -421,13 +527,82 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const pendingInlineOpenRef = useRef<InlineTarget | null>(null);
 
     const [stageW, setStageW] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1200));
+    const [stageH, setStageH] = useState(() => (typeof window !== 'undefined' ? window.innerHeight : 800));
     const [trigraphTick, setTrigraphTick] = useState(0);
     const [specUrls, setSpecUrls] = useState<Map<number, string>>(() => new Map());
     const [dragPreview, setDragPreview] = useState<DragPreviewState | null>(null);
+    const [scrubPreviewing, setScrubPreviewing] = useState(false);
     const [intervalDragPreview, setIntervalDragPreview] = useState<IntervalDragPreviewState | null>(null);
     const [loupeAnchor, setLoupeAnchor] = useState<MicroLoupeAnchor | null>(null);
     const [dismissedBlankTabIds, setDismissedBlankTabIds] = useState<Set<string>>(() => new Set());
     const [openSubmenuIdx, setOpenSubmenuIdx] = useState<number | null>(null);
+    const submenuCloseTimerRef = useRef<number | null>(null);
+
+    const cancelSubmenuClose = useCallback(() => {
+      if (submenuCloseTimerRef.current !== null) {
+        window.clearTimeout(submenuCloseTimerRef.current);
+        submenuCloseTimerRef.current = null;
+      }
+    }, []);
+
+    const scheduleSubmenuClose = useCallback(() => {
+      cancelSubmenuClose();
+      submenuCloseTimerRef.current = window.setTimeout(() => {
+        submenuCloseTimerRef.current = null;
+        setOpenSubmenuIdx(null);
+      }, 120);
+    }, [cancelSubmenuClose]);
+
+    useEffect(() => {
+      return () => cancelSubmenuClose();
+    }, [cancelSubmenuClose]);
+
+    const getVisibleBarItems = useCallback(
+      (target: FloatingBarTarget): string[] => {
+        const sec = floatingBarConfig[target];
+        if (!sec) return [];
+        const hiddenSet = new Set(sec.hidden);
+        return sec.order.filter((id) => !hiddenSet.has(id));
+      },
+      [floatingBarConfig]
+    );
+
+    const showScrubPreviewLine = useCallback(
+      (previewT: number, tierIndex: number, fullBand: boolean) => {
+        const curLayout = layoutRef.current;
+        if (!curLayout.bands.length || !Number.isFinite(previewT)) return;
+        const band =
+          curLayout.bands.find((b) => previewT >= b.startT - 1e-9 && previewT <= b.endT + 1e-9) ??
+          curLayout.bands[selection?.bandIndex ?? 0] ??
+          curLayout.bands[0];
+        if (!band) return;
+        const clampedT = Math.max(band.startT, Math.min(band.endT, previewT));
+        const x = elasticXInBand(band, clampedT);
+        const linearX = band.linearXForTime(clampedT);
+        const tl = !fullBand ? band.tiersLayout[tierIndex] : undefined;
+        const y0 = fullBand || !tl ? band.tiersTopY : tl.y;
+        const y1 = fullBand || !tl ? band.tiersBottomY : tl.y + tl.h;
+        setScrubPreviewing(true);
+        setDragPreview({
+          bandIndex: band.bandIndex,
+          x,
+          linearX,
+          y0,
+          y1,
+          snapX: null,
+          snapMode: false,
+          snapLabel: null,
+          showCompactTag: true,
+          time: previewT
+        });
+      },
+      [selection?.bandIndex]
+    );
+
+    const clearScrubPreview = useCallback(() => {
+      setScrubPreviewing(false);
+      setDragPreview(null);
+    }, []);
 
     // Inline editor state
     const [inlineTarget, setInlineTarget] = useState<InlineTarget | null>(null);
@@ -487,8 +662,9 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
 
     useEffect(() => {
+      cancelSubmenuClose();
       setOpenSubmenuIdx(null);
-    }, [ctxMenu]);
+    }, [ctxMenu, cancelSubmenuClose]);
 
     // Clear transient UI overlays when switching / closing document tabs
     useEffect(() => {
@@ -498,6 +674,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       setInlineTarget(null);
       setInlineBox(null);
       setCtxMenu(null);
+      setScrubPreviewing(false);
       setDragPreview(null);
       setIntervalDragPreview(null);
       setLoupeAnchor(null);
@@ -510,6 +687,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         hoverSnapRef.current = null;
         svgRef.current?.classList.remove('shift-split');
         if (inlineTargetRef.current) closeInlineRef.current(true);
+        setScrubPreviewing(false);
         setDragPreview(null);
         setIntervalDragPreview(null);
         setLoupeAnchor(null);
@@ -531,14 +709,24 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       };
     }, []);
 
-    // Stage ResizeObserver
+    // Stage ResizeObserver (also re-syncs immediately whenever global uiScale changes)
     useEffect(() => {
       const el = stageRef.current;
       if (!el) return;
-      const ro = new ResizeObserver(() => setStageW(el.clientWidth || window.innerWidth));
+      const updateSize = () => {
+        const { width: vw, height: vh } = getLogicalViewportSize();
+        setStageW(el.clientWidth || vw);
+        setStageH(el.clientHeight || vh);
+      };
+      updateSize();
+      const raf = requestAnimationFrame(updateSize);
+      const ro = new ResizeObserver(updateSize);
       ro.observe(el);
-      return () => ro.disconnect();
-    }, []);
+      return () => {
+        cancelAnimationFrame(raf);
+        ro.disconnect();
+      };
+    }, [uiScale]);
 
     // Prefetch trigraphs from Rust tg-core whenever document changes
     useEffect(() => {
@@ -553,9 +741,14 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
     // Compute ScoreLayout
     const layout = useMemo(() => {
-      const sidePad = stageW < 480 ? 12 : stageW < 760 ? 24 : 56;
+      const sidePad = stageW < 480 ? 12 : 24;
       const availableW = Math.max(260, stageW - sidePad);
-      const effWidth = wrapMode === 'auto' ? Math.min(targetWidth, availableW) : targetWidth;
+      const effWidth =
+        wrapMode === 'auto'
+          ? widthAutoFit
+            ? availableW
+            : Math.min(targetWidth, availableW)
+          : targetWidth;
       return computeLayout(tg, {
         wrapMode,
         targetWidth: effWidth,
@@ -567,14 +760,18 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         tickFixedDecimals,
         viewDomain,
         mode,
-        hiddenTierIndices
+        hiddenTierIndices,
+        isInteractive: true,
+        viewportHeight: stageH
       });
     }, [
       tg,
       trigraphTick,
       stageW,
+      stageH,
       wrapMode,
       targetWidth,
+      widthAutoFit,
       audioName,
       audioBuffer,
       showSpectrogram,
@@ -606,12 +803,13 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         ) ?? (layout.bands.length === 1 ? layout.bands[0] : undefined);
       if (!band) return;
 
+      const z = getElementRectScale(sheetEl);
       const stageRect = stageEl.getBoundingClientRect();
       const sheetRect = sheetEl.getBoundingClientRect();
       const x = elasticXInBand(band, currentTime);
-      const px = sheetRect.left + x;
-      const bandTop = sheetRect.top + band.linearY;
-      const bandBot = sheetRect.top + band.tiersBottomY;
+      const pxInStage = (sheetRect.left - stageRect.left) / z + x;
+      const bandTopInStage = (sheetRect.top - stageRect.top) / z + band.linearY;
+      const bandBotInStage = (sheetRect.top - stageRect.top) / z + band.tiersBottomY;
 
       const marginX = Math.min(84, stageEl.clientWidth * 0.18);
       const marginY = 24;
@@ -620,12 +818,12 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       let nextTop = stageEl.scrollTop;
       let needsScroll = false;
 
-      if (px < stageRect.left + marginX || px > stageRect.right - marginX) {
-        nextLeft = Math.max(0, stageEl.scrollLeft + (px - (stageRect.left + stageEl.clientWidth * 0.25)));
+      if (pxInStage < marginX || pxInStage > stageEl.clientWidth - marginX) {
+        nextLeft = Math.max(0, stageEl.scrollLeft + (pxInStage - stageEl.clientWidth * 0.25));
         needsScroll = true;
       }
-      if (bandTop < stageRect.top + marginY || bandBot > stageRect.bottom - marginY) {
-        nextTop = Math.max(0, stageEl.scrollTop + (bandTop - stageRect.top - 28));
+      if (bandTopInStage < marginY || bandBotInStage > stageEl.clientHeight - marginY) {
+        nextTop = Math.max(0, stageEl.scrollTop + (bandTopInStage - 28));
         needsScroll = true;
       }
 
@@ -664,8 +862,9 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       const newSvgY = (updatedBand.tiersTopY + updatedBand.tiersBottomY) / 2;
       const newClientX = rect.left + newSvgX * scaleX;
       const newClientY = rect.top + newSvgY * scaleY;
-      const dx = newClientX - anchor.clientX;
-      const dy = newClientY - anchor.clientY;
+      const z = getElementRectScale(sheetRef.current);
+      const dx = (newClientX - anchor.clientX) / z;
+      const dy = (newClientY - anchor.clientY) / z;
       if (Math.abs(dx) > 4) {
         stageEl.scrollLeft += dx;
       }
@@ -685,7 +884,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         return;
       }
       let cancelled = false;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const dpr = Math.min(3, (window.devicePixelRatio || 1) * Math.max(1, uiScale));
+      const dprKey = dpr.toFixed(2);
       const bridge = getPlatformBridge();
 
       (async () => {
@@ -693,7 +893,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         for (const band of layout.bands) {
           if (band.specH <= 0) continue;
           const segSig = band.linearSegs.map((s) => `${s.t0}:${s.t1}:${s.collapsed ? 1 : 0}`).join(',');
-          const key = `${analysis.sessionId}|${maxFreq}|${Math.round(band.bandContentW)}|${band.specH}|${segSig}`;
+          const key = `${analysis.sessionId}|${maxFreq}|${dprKey}|${Math.round(band.bandContentW)}|${band.specH}|${segSig}`;
           let url = specCacheRef.current.get(key);
           if (!url) {
             const segs = band.linearSegs.map((s) => ({
@@ -725,7 +925,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       return () => {
         cancelled = true;
       };
-    }, [analysis, showSpectrogram, audioName, layout, maxFreq]);
+    }, [analysis, showSpectrogram, audioName, layout, maxFreq, uiScale]);
 
     // Render full SVG whenever structural layout or spectrograms change
     useEffect(() => {
@@ -826,21 +1026,28 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         if (!sheetEl) return;
 
         const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+        const z = getElementRectScale(sheetEl);
         const stageRect = stageEl.getBoundingClientRect();
         const sheetRect = sheetEl.getBoundingClientRect();
-        const pointerInStage = e.clientX - stageRect.left;
-        const oldSheetW = Math.max(1, sheetEl.offsetWidth);
-        const relX = Math.max(0, Math.min(1, (e.clientX - sheetRect.left) / oldSheetW));
+        const pointerInStage = (e.clientX - stageRect.left) / z;
+        const oldSheetRectW = Math.max(1, sheetRect.width);
+        const relX = Math.max(0, Math.min(1, (e.clientX - sheetRect.left) / oldSheetRectW));
 
         const st = useEditorStore.getState();
-        const curStageW = stageEl.clientWidth || window.innerWidth;
-        const sidePad = curStageW < 480 ? 12 : curStageW < 760 ? 24 : 56;
+        const curStageW = stageEl.clientWidth || getLogicalViewportSize().width;
+        const sidePad = curStageW < 480 ? 12 : 24;
         const availW = Math.max(260, curStageW - sidePad);
-        const curW = st.wrapMode === 'auto' ? Math.min(st.targetWidth, availW) : st.targetWidth;
+        // Step zoom from actual rendered layout.width so short audio never suffers dead clicks or sudden jumps (P0-1)
+        const renderedW = st.layout && st.layout.width > 0 ? st.layout.width : availW;
+        const curW = renderedW;
         const nextW = Math.round(curW * factor);
 
         let nextWrap = st.wrapMode;
-        if (st.wrapMode === 'auto' && factor > 1 && nextW > availW) {
+        const singleBandCapped =
+          st.wrapMode === 'auto' &&
+          st.layout?.bands.length === 1 &&
+          renderedW < availW - 8;
+        if (st.wrapMode === 'auto' && factor > 1 && (nextW > availW || singleBandCapped)) {
           nextWrap = 'single';
           setWrapMode('single');
         }
@@ -1080,23 +1287,24 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         const stageEl = stageRef.current;
         const sheetEl = sheetRef.current;
         if (!anchor || !stageEl || !sheetEl) return;
+        const z = getElementRectScale(sheetEl);
         const sheetRect = sheetEl.getBoundingClientRect();
         const stageRect = stageEl.getBoundingClientRect();
-        const elemLeft = sheetRect.left + anchor.x;
+        const elemLeft = (sheetRect.left - stageRect.left) / z + anchor.x;
         const elemRight = elemLeft + anchor.w;
-        const elemTop = sheetRect.top + anchor.y;
+        const elemTop = (sheetRect.top - stageRect.top) / z + anchor.y;
         const elemBottom = elemTop + anchor.h;
         const padX = 48;
         const padY = 48;
-        if (elemLeft < stageRect.left + padX) {
-          stageEl.scrollLeft += elemLeft - (stageRect.left + padX);
-        } else if (elemRight > stageRect.right - padX) {
-          stageEl.scrollLeft += elemRight - (stageRect.right - padX);
+        if (elemLeft < padX) {
+          stageEl.scrollLeft += elemLeft - padX;
+        } else if (elemRight > stageEl.clientWidth - padX) {
+          stageEl.scrollLeft += elemRight - (stageEl.clientWidth - padX);
         }
-        if (elemTop < stageRect.top + padY) {
-          stageEl.scrollTop += elemTop - (stageRect.top + padY);
-        } else if (elemBottom > stageRect.bottom - padY) {
-          stageEl.scrollTop += elemBottom - (stageRect.bottom - padY);
+        if (elemTop < padY) {
+          stageEl.scrollTop += elemTop - padY;
+        } else if (elemBottom > stageEl.clientHeight - padY) {
+          stageEl.scrollTop += elemBottom - (stageEl.clientHeight - padY);
         }
       },
       [layout]
@@ -1673,6 +1881,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     useEffect(() => {
       const onKeyDown = (e: KeyboardEvent) => {
         if (isComposingEvent(e)) return;
+        if (document.querySelector('.cust-key-btn.is-recording')) return;
 
         const hasOpenModal =
           exportOpen ||
@@ -1680,18 +1889,33 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           shortcutsOpen ||
           Boolean(document.querySelector('.modal-backdrop.open'));
 
-        // Replay WHILE typing in InlineEditor or Inspector textarea: Alt+P / F4 (+ Shift for ±250 ms context)
-        const isInputReplayCombo =
-          !e.ctrlKey &&
-          !e.metaKey &&
-          ((e.altKey && e.code === 'KeyP') || (!e.altKey && e.key === 'F4'));
-        if (isInputReplayCombo && !hasOpenModal) {
-          e.preventDefault();
-          replayCurrent(e.shiftKey);
-          return;
+        const editable = isEditableTarget(e.target) || isEditableTarget(document.activeElement);
+
+        // Input-allowed shortcuts (work inside InlineEditor / Inspector inputs too; plain letters stay typable)
+        if (!hasOpenModal) {
+          const allowInInput = !editable || isSafeInputShortcutEvent(e);
+          if (allowInInput && matchesShortcut('replay-context', e, customShortcuts)) {
+            e.preventDefault();
+            replayCurrent(true);
+            return;
+          }
+          if (allowInInput && matchesShortcut('replay-selection', e, customShortcuts)) {
+            e.preventDefault();
+            replayCurrent(false);
+            return;
+          }
+          if (
+            mode === 'edit' &&
+            allowInInput &&
+            (!editable || !e.defaultPrevented) &&
+            matchesShortcut('ipa-cycle', e, customShortcuts)
+          ) {
+            e.preventDefault();
+            cycleIpaMode();
+            return;
+          }
         }
 
-        const editable = isEditableTarget(e.target) || isEditableTarget(document.activeElement);
         if (editable || hasOpenModal) return;
 
         if (e.code === 'KeyZ' && !e.ctrlKey && !e.metaKey) zKeyDownRef.current = true;
@@ -1712,47 +1936,47 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         const mod = e.ctrlKey || e.metaKey;
         const lower = e.key.toLowerCase();
 
-        // IPA input mode cycle (Mod+\ or Alt+I)
-        if (
-          mode === 'edit' &&
-          ((mod && (e.key === '\\' || e.code === 'Backslash')) ||
-            (e.altKey && !mod && e.code === 'KeyI'))
-        ) {
-          e.preventDefault();
-          cycleIpaMode();
+        // Layered Escape: ctxMenu -> inline -> playRange -> selection (one layer per press)
+        if (e.key === 'Escape' && !mod && !e.altKey && !e.shiftKey) {
+          if (ctxMenu) {
+            e.preventDefault();
+            setCtxMenu(null);
+            return;
+          }
+          if (inlineTargetRef.current) {
+            e.preventDefault();
+            closeInlineRef.current(false);
+            return;
+          }
+          if (playRange) {
+            e.preventDefault();
+            setPlayRange(null);
+            return;
+          }
+          if (selection) {
+            e.preventDefault();
+            setSelection(null);
+            return;
+          }
           return;
         }
 
-        // Undo / Redo
-        if (mod && lower === 'z') {
+        // Structural Mod+ shortcuts: Undo / Redo
+        if (mod && !e.altKey && lower === 'z') {
           if (mode !== 'edit') return;
           e.preventDefault();
           if (e.shiftKey) redo();
           else undo();
           return;
         }
-        if (mod && lower === 'y') {
+        if (mod && !e.altKey && lower === 'y') {
           if (mode !== 'edit') return;
           e.preventDefault();
           redo();
           return;
         }
 
-        // Mod+/ shortcuts reference
-        if (mod && !e.altKey && (e.key === '/' || e.code === 'Slash')) {
-          e.preventDefault();
-          setShortcutsOpen(!shortcutsOpen);
-          return;
-        }
-
-        // Mod+F / Mod+H find & replace
-        if (mod && !e.altKey && (lower === 'f' || lower === 'h') && !e.defaultPrevented) {
-          e.preventDefault();
-          openFindBar(lower === 'h');
-          return;
-        }
-
-        // Mod+Home / Mod+End -> jump playhead to full start / end
+        // Structural Mod+Home / Mod+End -> jump playhead to full start / end
         if (mod && !e.altKey && (e.key === 'Home' || e.key === 'End')) {
           e.preventDefault();
           const tTarget = e.key === 'Home' ? tg.xmin : tg.xmax;
@@ -1768,7 +1992,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           return;
         }
 
-        // Mod+Shift+ArrowLeft/Right (+ Alt ±1ms) -> cross-tier shared boundary/spine nudge
+        // Structural Mod+Shift+ArrowLeft/Right (+ Alt ±1ms) -> cross-tier shared boundary/spine nudge
         if (
           mod &&
           e.shiftKey &&
@@ -1800,7 +2024,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           return;
         }
 
-        // Mod+C / Mod+Shift+C / Mod+X / Mod+V (guarded against native text selection)
+        // Structural Mod+C / Mod+Shift+C / Mod+X / Mod+V (guarded against native text selection)
         if (mod && !e.altKey && (lower === 'c' || lower === 'x' || lower === 'v') && selection) {
           const nativeSel = window.getSelection()?.toString() || '';
           if (nativeSel.length > 0) return;
@@ -1914,98 +2138,522 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           }
         }
 
-        // Stop here for any other Mod+ shortcut
-        if (mod) return;
+        // ====================================================================
+        // Unified Rebindable Canvas Shortcuts (matchesShortcut)
+        // ====================================================================
 
-        // Layered Escape: ctxMenu -> inline -> playRange -> selection (one layer per press)
-        if (e.key === 'Escape') {
-          if (ctxMenu) {
-            e.preventDefault();
-            setCtxMenu(null);
-            return;
-          }
-          if (inlineTargetRef.current) {
-            e.preventDefault();
-            closeInlineRef.current(false);
-            return;
-          }
-          if (playRange) {
-            e.preventDefault();
-            setPlayRange(null);
-            return;
-          }
-          if (selection) {
-            e.preventDefault();
-            setSelection(null);
-            return;
-          }
-          return;
-        }
-
-        // Space / Shift+Space
-        if ((e.code === 'Space' || e.key === ' ') && !e.altKey) {
-          e.preventDefault();
-          if (document.activeElement instanceof HTMLButtonElement) {
-            document.activeElement.blur();
-          }
-          if (e.shiftKey) {
-            const savedRange = playRange;
-            const resetT = savedRange?.start ?? viewDomain?.min ?? tg.xmin;
-            onStopPlayback();
-            if (savedRange) setPlayRange(savedRange);
-            setPlaybackTime(resetT, true);
-          } else {
-            onTogglePlay();
-          }
-          return;
-        }
-
-        // F1 / ? -> toggle shortcuts reference modal
-        if (
-          e.key === 'F1' ||
-          (!e.altKey && (e.key === '?' || (e.shiftKey && e.code === 'Slash')))
-        ) {
+        // Shortcuts reference modal (default: ?, Mod+/, F1)
+        if (matchesShortcut('shortcuts-modal', e, customShortcuts)) {
           e.preventDefault();
           setShortcutsOpen(!shortcutsOpen);
           return;
         }
 
-        // F2 -> open inline editor in edit mode
-        if (e.key === 'F2' && !e.altKey && !e.shiftKey && mode === 'edit' && selection) {
-          if (selection.kind === 'interval' || selection.kind === 'point') {
-            e.preventDefault();
-            openInline(selection);
-          } else if (selection.kind === 'tier') {
-            e.preventDefault();
-            openInline({ kind: 'tier-name', tierIndex: selection.tierIndex });
+        // Find / Replace (default: Mod+F / Mod+H)
+        if (!e.defaultPrevented && matchesShortcut('find-open', e, customShortcuts)) {
+          e.preventDefault();
+          openFindBar(false);
+          return;
+        }
+        if (!e.defaultPrevented && matchesShortcut('replace-open', e, customShortcuts)) {
+          e.preventDefault();
+          openFindBar(true);
+          return;
+        }
+
+        // Playback stop & reset / toggle play (default: Shift+Space / Space)
+        if (matchesShortcut('play-stop-reset', e, customShortcuts)) {
+          e.preventDefault();
+          if (document.activeElement instanceof HTMLButtonElement) {
+            document.activeElement.blur();
+          }
+          const savedRange = playRange;
+          const resetT = savedRange?.start ?? viewDomain?.min ?? tg.xmin;
+          onStopPlayback();
+          if (savedRange) setPlayRange(savedRange);
+          setPlaybackTime(resetT, true);
+          return;
+        }
+        if (matchesShortcut('play-toggle', e, customShortcuts)) {
+          e.preventDefault();
+          if (document.activeElement instanceof HTMLButtonElement) {
+            document.activeElement.blur();
+          }
+          onTogglePlay();
+          return;
+        }
+
+        // Loop toggle (default: L)
+        if (matchesShortcut('loop-toggle', e, customShortcuts)) {
+          e.preventDefault();
+          const nextLoop = !loop;
+          setLoop(nextLoop);
+          showToast(nextLoop ? '已开启循环播放' : '已关闭循环播放');
+          return;
+        }
+
+        // Playback rate down / up (default: < / >)
+        const isRateDown = matchesShortcut('rate-down', e, customShortcuts);
+        const isRateUp = !isRateDown && matchesShortcut('rate-up', e, customShortcuts);
+        if (isRateDown || isRateUp) {
+          e.preventDefault();
+          let bestIdx = 0;
+          let bestDist = Infinity;
+          PLAYBACK_RATES.forEach((r, i) => {
+            const d = Math.abs(r - rate);
+            if (d < bestDist) {
+              bestDist = d;
+              bestIdx = i;
+            }
+          });
+          const nextIdx = Math.max(0, Math.min(PLAYBACK_RATES.length - 1, bestIdx + (isRateDown ? -1 : 1)));
+          const nextRate = PLAYBACK_RATES[nextIdx];
+          setRate(nextRate);
+          showToast(`播放倍速：${nextRate}×`);
+          return;
+        }
+
+        // Seek playhead back / forward (default: , / .)
+        const isSeekBack = matchesShortcut('seek-back', e, customShortcuts);
+        const isSeekForward = !isSeekBack && matchesShortcut('seek-forward', e, customShortcuts);
+        if (isSeekBack || isSeekForward) {
+          e.preventDefault();
+          const base = Number.isFinite(currentTime) ? currentTime : tg.xmin;
+          const nextT = Math.max(
+            tg.xmin,
+            Math.min(tg.xmax, Number((base + (isSeekBack ? -0.1 : 0.1)).toFixed(6)))
+          );
+          setPlaybackTime(nextT, true);
+          return;
+        }
+
+        // Jump to next / prev empty interval (default: N / Shift+N)
+        const isEmptyNext = matchesShortcut('nav-empty-next', e, customShortcuts);
+        const isEmptyPrev = !isEmptyNext && matchesShortcut('nav-empty-prev', e, customShortcuts);
+        if (isEmptyNext || isEmptyPrev) {
+          e.preventDefault();
+          const ti = getTargetIntervalTierIndex(
+            tg,
+            selection,
+            lastActiveTierIndex,
+            hiddenTierIndices,
+            layout.bands[0]?.finestIntervalTierIdx ?? -1
+          );
+          const tier = tg.tiers[ti];
+          if (!tier || tier.kind !== 'intervalTier') {
+            showToast('当前文档没有区间层');
+            return;
+          }
+          const empties: number[] = [];
+          tier.intervals.forEach((iv, idx) => {
+            if (iv.text === '' && iv.xmax > iv.xmin) empties.push(idx);
+          });
+          if (empties.length === 0) {
+            showToast(`「${tier.name || '当前层'}」没有空白区间`);
+            return;
+          }
+          const curIdx =
+            selection?.kind === 'interval' && selection.tierIndex === ti ? selection.itemIndex : -1;
+          let targetIdx: number;
+          let wrapped = false;
+          if (!isEmptyPrev) {
+            const after = empties.find((idx) => idx > curIdx);
+            if (after !== undefined) {
+              targetIdx = after;
+            } else {
+              targetIdx = empties[0];
+              wrapped = curIdx !== -1;
+            }
+          } else {
+            let before: number | undefined;
+            for (let k = empties.length - 1; k >= 0; k--) {
+              if (empties[k] < curIdx) {
+                before = empties[k];
+                break;
+              }
+            }
+            if (before !== undefined) {
+              targetIdx = before;
+            } else {
+              targetIdx = empties[empties.length - 1];
+              wrapped = curIdx !== -1;
+            }
+          }
+          let foundBand = 0;
+          for (const band of layout.bands) {
+            const tl = band.tiersLayout[ti];
+            if (!tl) continue;
+            if (tl.visibleIvs?.some((v) => v.iv.origIdx === targetIdx)) {
+              foundBand = band.bandIndex;
+              break;
+            }
+          }
+          const iv = tier.intervals[targetIdx];
+          if (iv) lastNavTimeRef.current = (iv.xmin + iv.xmax) / 2;
+          const nextSel: EditorSelection = {
+            kind: 'interval',
+            tierIndex: ti,
+            itemIndex: targetIdx,
+            bandIndex: foundBand
+          };
+          setSelection(nextSel);
+          syncAudioForSelection(nextSel);
+          scrollSelectionIntoStageView(nextSel);
+          if (wrapped) {
+            showToast(isEmptyPrev ? '已循环回本层末尾空白区间' : '已循环回本层首个空白区间');
           }
           return;
         }
 
-        // Alt+K / Alt+L / Alt+1..3
+        // Locate playhead & select containing interval (default: G)
+        if (matchesShortcut('locate-playhead', e, customShortcuts)) {
+          e.preventDefault();
+          const t = Number.isFinite(currentTime) ? currentTime : tg.xmin;
+          setPlaybackTime(t, true);
+          const ti =
+            selection && 'tierIndex' in selection && tg.tiers[selection.tierIndex]
+              ? selection.tierIndex
+              : tg.tiers[lastActiveTierIndex]
+                ? lastActiveTierIndex
+                : layout.bands[0]?.displayOrder[0] ?? 0;
+          const hit = findBestVisibleItemInTier(ti, t);
+          if (hit) {
+            setSelection(hit);
+            syncAudioForSelection(hit);
+            scrollSelectionIntoStageView(hit);
+          }
+          return;
+        }
+
+        // Toggle Read / Edit mode (default: E)
+        if (matchesShortcut('mode-toggle', e, customShortcuts)) {
+          e.preventDefault();
+          const nextMode = mode === 'edit' ? 'read' : 'edit';
+          setMode(nextMode);
+          showToast(nextMode === 'edit' ? '已进入编辑模式' : '已切换为只读模式');
+          return;
+        }
+
+        // Zoom reset / focus (default: Shift+F / F)
+        if (matchesShortcut('zoom-reset', e, customShortcuts)) {
+          e.preventDefault();
+          setViewDomain(null);
+          return;
+        }
+        if (matchesShortcut('zoom-focus', e, customShortcuts)) {
+          e.preventDefault();
+          let targetDom: { min: number; max: number } | null = null;
+          if (selection?.kind === 'interval') {
+            const iv = tg.tiers[selection.tierIndex]?.intervals[selection.itemIndex];
+            if (iv && iv.xmax > iv.xmin) targetDom = { min: iv.xmin, max: iv.xmax };
+          }
+          if (!targetDom && playRange && playRange.end > playRange.start) {
+            targetDom = { min: playRange.start, max: playRange.end };
+          }
+          if (targetDom) {
+            const already =
+              viewDomain &&
+              Math.abs(viewDomain.min - targetDom.min) < 1e-4 &&
+              Math.abs(viewDomain.max - targetDom.max) < 1e-4;
+            setViewDomain(already ? null : targetDom);
+          } else if (viewDomain) {
+            setViewDomain(null);
+          }
+          return;
+        }
+
+        // Scale & wrap toggles (default: V / W)
+        if (matchesShortcut('scale-toggle', e, customShortcuts)) {
+          e.preventDefault();
+          const next = scaleMode === 'elastic' ? 'linear' : 'elastic';
+          setScaleMode(next);
+          showToast(next === 'linear' ? '时间比例：线性等比' : '时间比例：自适应弹性');
+          return;
+        }
+        if (matchesShortcut('wrap-toggle', e, customShortcuts)) {
+          e.preventDefault();
+          const next = wrapMode === 'auto' ? 'single' : 'auto';
+          setWrapMode(next);
+          showToast(next === 'single' ? '排版：单行长卷展开' : '排版：自动折行');
+          return;
+        }
+
+        // Legend toggle (default: Alt+L)
+        if (matchesShortcut('legend-toggle', e, customShortcuts)) {
+          e.preventDefault();
+          toggleLegend();
+          return;
+        }
+
+        // Virtual IPA dock toggle (default: Alt+K)
+        if (matchesShortcut('ipa-dock-toggle', e, customShortcuts)) {
+          e.preventDefault();
+          if (mode === 'edit') setIpaDockOpen(!ipaDockOpen);
+          else showToast('音标键盘仅在编辑模式可用');
+          return;
+        }
+
+        // Inline edit (default: Enter, F2; in read mode Enter plays selected item)
+        if (matchesShortcut('inline-edit', e, customShortcuts) && selection) {
+          if (mode === 'edit') {
+            if (selection.kind === 'interval' || selection.kind === 'point') {
+              e.preventDefault();
+              openInline(selection);
+            } else if (selection.kind === 'tier') {
+              e.preventDefault();
+              openInline({ kind: 'tier-name', tierIndex: selection.tierIndex });
+            }
+            return;
+          } else if (mode === 'read' && e.key === 'Enter') {
+            if (selection.kind === 'interval') {
+              const iv = tg.tiers[selection.tierIndex]?.intervals[selection.itemIndex];
+              if (iv && iv.xmax > iv.xmin) {
+                e.preventDefault();
+                setPlayRange({ start: iv.xmin, end: iv.xmax });
+                onStartPlayback(iv.xmin, iv.xmax);
+              }
+            } else if (selection.kind === 'point') {
+              const pt = tg.tiers[selection.tierIndex]?.points[selection.itemIndex];
+              if (pt) {
+                e.preventDefault();
+                setPlayRange(null);
+                onStartPlayback(pt.number, tg.xmax);
+              }
+            }
+            return;
+          }
+        }
+
+        // Edit-only rebindable canvas actions
+        if (mode === 'edit') {
+          // Drop boundary across all interval tiers at playhead (default: Shift+B)
+          if (matchesShortcut('tap-split-all-tiers', e, customShortcuts)) {
+            e.preventDefault();
+            const splitT = Number(currentTime.toFixed(6));
+            if (!Number.isFinite(splitT) || splitT <= tg.xmin + 1e-6 || splitT >= tg.xmax - 1e-6) {
+              showToast('请先将播放头定位到文档内部时刻', true);
+              return;
+            }
+            let splitCount = 0;
+            for (const t of tg.tiers) {
+              if (
+                t.kind === 'intervalTier' &&
+                t.intervals.some((iv) => iv.xmin < splitT - 1e-6 && iv.xmax > splitT + 1e-6)
+              ) {
+                splitCount++;
+              }
+            }
+            if (splitCount === 0) {
+              showToast('该时刻在全部区间层已存在边界');
+              return;
+            }
+            commitTgMutation(
+              (draft) => {
+                for (const t of draft.tiers) {
+                  if (t.kind !== 'intervalTier') continue;
+                  const idx = t.intervals.findIndex(
+                    (iv) => iv.xmin < splitT - 1e-6 && iv.xmax > splitT + 1e-6
+                  );
+                  if (idx !== -1) {
+                    const iv = t.intervals[idx];
+                    const right = { xmin: splitT, xmax: iv.xmax, text: '' };
+                    iv.xmax = splitT;
+                    t.intervals.splice(idx + 1, 0, right);
+                  }
+                }
+              },
+              undefined,
+              '全部层播放头落边界'
+            );
+            showToast(`已在 ${splitCount} 个区间层落边界 (${splitT.toFixed(3)} s)`);
+            return;
+          }
+
+          // Drop boundary at playhead on active interval tier (default: B)
+          if (matchesShortcut('tap-split-playhead', e, customShortcuts)) {
+            e.preventDefault();
+            const splitT = Number(currentTime.toFixed(6));
+            const ti = getTargetIntervalTierIndex(
+              tg,
+              selection,
+              lastActiveTierIndex,
+              hiddenTierIndices,
+              layout.bands[0]?.finestIntervalTierIdx ?? -1
+            );
+            const tier = tg.tiers[ti];
+            if (!tier || tier.kind !== 'intervalTier') {
+              showToast('当前文档没有区间层', true);
+              return;
+            }
+            const idx = tier.intervals.findIndex(
+              (iv) => Number.isFinite(splitT) && iv.xmin < splitT - 1e-6 && iv.xmax > splitT + 1e-6
+            );
+            if (idx !== -1) {
+              splitInterval(ti, idx, splitT);
+            } else if (selection?.kind === 'interval') {
+              splitInterval(selection.tierIndex, selection.itemIndex);
+            } else {
+              showToast('播放头未位于可切分区间内部');
+            }
+            return;
+          }
+
+          // Split selected interval at midpoint (default: S)
+          if (matchesShortcut('split-mid', e, customShortcuts)) {
+            if (selection?.kind === 'interval') {
+              e.preventDefault();
+              splitInterval(selection.tierIndex, selection.itemIndex);
+            }
+            return;
+          }
+
+          // Add point at playhead on active TextTier (default: P)
+          if (matchesShortcut('add-point-playhead', e, customShortcuts)) {
+            e.preventDefault();
+            const ti = getTargetTextTierIndex(tg, selection, lastActiveTierIndex, hiddenTierIndices);
+            if (ti < 0) {
+              showToast('当前文档没有点层 (TextTier)');
+              return;
+            }
+            const idx = addPointAt(ti, Number.isFinite(currentTime) ? currentTime : tg.xmin);
+            if (idx !== null && !playing) {
+              pendingInlineOpenRef.current = { kind: 'point', tierIndex: ti, itemIndex: idx };
+            }
+            return;
+          }
+
+          // Create interval from playRange (default: I)
+          if (matchesShortcut('create-from-playrange', e, customShortcuts)) {
+            if (playRange && playRange.end - playRange.start >= 0.001) {
+              e.preventDefault();
+              const ti = getTargetIntervalTierIndex(
+                tg,
+                selection,
+                lastActiveTierIndex,
+                hiddenTierIndices,
+                layout.bands[0]?.finestIntervalTierIdx ?? -1
+              );
+              if (ti >= 0) {
+                createIntervalFromPlayRange(ti, selection?.bandIndex);
+              } else {
+                showToast('当前文档没有区间层 (IntervalTier)', true);
+              }
+            }
+            return;
+          }
+
+          // Select selected interval's left / right interior boundary (default: [ / ])
+          const isSelectLeft = matchesShortcut('select-left-edge', e, customShortcuts);
+          const isSelectRight = !isSelectLeft && matchesShortcut('select-right-edge', e, customShortcuts);
+          if ((isSelectLeft || isSelectRight) && selection?.kind === 'interval') {
+            e.preventDefault();
+            const tier = tg.tiers[selection.tierIndex];
+            const iv = tier?.intervals[selection.itemIndex];
+            if (!tier || !iv) return;
+            const edgeT = isSelectLeft ? iv.xmin : iv.xmax;
+            if (edgeT <= tier.xmin + 1e-9 || edgeT >= tier.xmax - 1e-9) {
+              showToast('该侧为层端点，无内部边界');
+              return;
+            }
+            const nextSel: EditorSelection = {
+              kind: 'boundary',
+              tierIndex: selection.tierIndex,
+              time: edgeT,
+              bandIndex: selection.bandIndex
+            };
+            setSelection(nextSel);
+            scrollSelectionIntoStageView(nextSel);
+            return;
+          }
+
+          // Non-destructive merge left / right (default: Shift+M / M)
+          const isMergeLeft = matchesShortcut('merge-left', e, customShortcuts);
+          const isMergeRight = !isMergeLeft && matchesShortcut('merge-right', e, customShortcuts);
+          if ((isMergeLeft || isMergeRight) && selection?.kind === 'interval') {
+            e.preventDefault();
+            const tier = tg.tiers[selection.tierIndex];
+            if (!tier) return;
+            if (isMergeLeft) {
+              if (selection.itemIndex === 0) {
+                showToast('首格无法向左合并');
+                return;
+              }
+              mergeIntervalWith(selection.tierIndex, selection.itemIndex, -1);
+            } else {
+              if (selection.itemIndex >= tier.intervals.length - 1) {
+                showToast('末格无法向右合并');
+                return;
+              }
+              mergeIntervalWith(selection.tierIndex, selection.itemIndex, 1);
+            }
+            return;
+          }
+
+          // Snap boundary / spine to nearest audio zero-crossing (default: Z)
+          if (
+            !e.repeat &&
+            !draggingRef.current &&
+            selection &&
+            (selection.kind === 'boundary' || selection.kind === 'spine') &&
+            matchesShortcut('snap-zero-crossing', e, customShortcuts)
+          ) {
+            e.preventDefault();
+            void snapTargetToZeroCrossing(selection);
+            return;
+          }
+        }
+
+        // Alt + seek-back / seek-forward -> fine ±10 ms playhead seek
+        if (!mod && e.altKey && !e.shiftKey) {
+          const noAltEv = {
+            key: e.key,
+            code: e.code,
+            ctrlKey: false,
+            metaKey: false,
+            shiftKey: false,
+            altKey: false
+          } as KeyboardEvent;
+          const isFineBack = matchesShortcut('seek-back', noAltEv, customShortcuts);
+          const isFineFwd = !isFineBack && matchesShortcut('seek-forward', noAltEv, customShortcuts);
+          if (isFineBack || isFineFwd) {
+            e.preventDefault();
+            const base = Number.isFinite(currentTime) ? currentTime : tg.xmin;
+            const nextT = Math.max(
+              tg.xmin,
+              Math.min(tg.xmax, Number((base + (isFineBack ? -0.01 : 0.01)).toFixed(6)))
+            );
+            setPlaybackTime(nextT, true);
+            return;
+          }
+        }
+
+        // Stop here for any other Mod+ shortcut (handled in App or browser)
+        if (mod) return;
+
+        // Structural Alt+1..4 -> right sidebar tabs (inspector / tiers / settings / customize)
         if (e.altKey && !e.shiftKey) {
-          if (e.code === 'KeyK') {
-            e.preventDefault();
-            if (mode === 'edit') setIpaDockOpen(!ipaDockOpen);
-            else showToast('音标键盘仅在编辑模式可用');
-            return;
-          }
-          if (e.code === 'KeyL') {
-            e.preventDefault();
-            toggleLegend();
-            return;
-          }
-          if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') {
+          if (
+            e.code === 'Digit1' ||
+            e.code === 'Digit2' ||
+            e.code === 'Digit3' ||
+            e.code === 'Digit4'
+          ) {
             e.preventDefault();
             const tab =
-              e.code === 'Digit1' ? 'inspector' : e.code === 'Digit2' ? 'tiers' : 'settings';
+              e.code === 'Digit1'
+                ? 'inspector'
+                : e.code === 'Digit2'
+                  ? 'tiers'
+                  : e.code === 'Digit3'
+                    ? 'settings'
+                    : 'customize';
             setSidebarTab(tab);
             setSidebarOpen(true);
             return;
           }
         }
 
-        // Arrows & Tab
+        // Structural Arrows & Tab
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
           e.preventDefault();
           const dir: -1 | 1 = e.key === 'ArrowLeft' ? -1 : 1;
@@ -2090,7 +2738,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           return;
         }
 
-        // Home / End -> first / last item in active tier
+        // Structural Home / End -> first / last item in active tier
         if ((e.key === 'Home' || e.key === 'End') && !e.altKey && !e.shiftKey) {
           e.preventDefault();
           const ti =
@@ -2131,67 +2779,27 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           return;
         }
 
-        // , / . (+ Alt ±10 ms) seek playhead; < / > (Shift+, / Shift+.) cycle playback rate
-        if (e.code === 'Comma' || e.code === 'Period') {
-          e.preventDefault();
-          const isBack = e.code === 'Comma';
-          if (e.shiftKey && !e.altKey) {
-            let bestIdx = 0;
-            let bestDist = Infinity;
-            PLAYBACK_RATES.forEach((r, i) => {
-              const d = Math.abs(r - rate);
-              if (d < bestDist) {
-                bestDist = d;
-                bestIdx = i;
-              }
-            });
-            const nextIdx = Math.max(0, Math.min(PLAYBACK_RATES.length - 1, bestIdx + (isBack ? -1 : 1)));
-            const nextRate = PLAYBACK_RATES[nextIdx];
-            setRate(nextRate);
-            showToast(`播放倍速：${nextRate}×`);
-          } else if (!e.shiftKey) {
-            const step = e.altKey ? 0.01 : 0.1;
-            const base = Number.isFinite(currentTime) ? currentTime : tg.xmin;
-            const nextT = Math.max(
-              tg.xmin,
-              Math.min(tg.xmax, Number((base + (isBack ? -step : step)).toFixed(6)))
-            );
-            setPlaybackTime(nextT, true);
-          }
-          return;
-        }
-
-        // Enter (edit: inline edit; read: play selected item)
-        if (e.key === 'Enter' && !e.shiftKey && !e.altKey && selection) {
-          if (mode === 'edit') {
-            if (selection.kind === 'interval' || selection.kind === 'point') {
+        // Read-mode Enter fallback if inline-edit was rebound away from Enter
+        if (e.key === 'Enter' && !e.shiftKey && !e.altKey && mode === 'read' && selection) {
+          if (selection.kind === 'interval') {
+            const iv = tg.tiers[selection.tierIndex]?.intervals[selection.itemIndex];
+            if (iv && iv.xmax > iv.xmin) {
               e.preventDefault();
-              openInline(selection);
-            } else if (selection.kind === 'tier') {
-              e.preventDefault();
-              openInline({ kind: 'tier-name', tierIndex: selection.tierIndex });
+              setPlayRange({ start: iv.xmin, end: iv.xmax });
+              onStartPlayback(iv.xmin, iv.xmax);
             }
-          } else if (mode === 'read') {
-            if (selection.kind === 'interval') {
-              const iv = tg.tiers[selection.tierIndex]?.intervals[selection.itemIndex];
-              if (iv && iv.xmax > iv.xmin) {
-                e.preventDefault();
-                setPlayRange({ start: iv.xmin, end: iv.xmax });
-                onStartPlayback(iv.xmin, iv.xmax);
-              }
-            } else if (selection.kind === 'point') {
-              const pt = tg.tiers[selection.tierIndex]?.points[selection.itemIndex];
-              if (pt) {
-                e.preventDefault();
-                setPlayRange(null);
-                onStartPlayback(pt.number, tg.xmax);
-              }
+          } else if (selection.kind === 'point') {
+            const pt = tg.tiers[selection.tierIndex]?.points[selection.itemIndex];
+            if (pt) {
+              e.preventDefault();
+              setPlayRange(null);
+              onStartPlayback(pt.number, tg.xmax);
             }
           }
           return;
         }
 
-        // 4-Quadrant Backspace / Delete / Shift+Backspace / Shift+Delete
+        // Structural 4-Quadrant Backspace / Delete / Shift+Backspace / Shift+Delete
         if ((e.key === 'Delete' || e.key === 'Backspace') && !e.altKey && mode === 'edit' && selection) {
           const isBackspace = e.key === 'Backspace';
           const isDelete = e.key === 'Delete';
@@ -2378,346 +2986,6 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             }
             return;
           }
-          return;
-        }
-
-        // Single-key shortcuts (no Alt)
-        if (e.altKey) return;
-
-        // R / Shift+R -> replay selection (with ±250ms context if Shift)
-        if (lower === 'r') {
-          e.preventDefault();
-          replayCurrent(e.shiftKey);
-          return;
-        }
-
-        // L -> toggle loop playback
-        if (lower === 'l' && !e.shiftKey) {
-          e.preventDefault();
-          const nextLoop = !loop;
-          setLoop(nextLoop);
-          showToast(nextLoop ? '已开启循环播放' : '已关闭循环播放');
-          return;
-        }
-
-        // N / Shift+N -> jump to next / prev empty interval in active tier
-        if (lower === 'n') {
-          e.preventDefault();
-          const ti = getTargetIntervalTierIndex(
-            tg,
-            selection,
-            lastActiveTierIndex,
-            hiddenTierIndices,
-            layout.bands[0]?.finestIntervalTierIdx ?? -1
-          );
-          const tier = tg.tiers[ti];
-          if (!tier || tier.kind !== 'intervalTier') {
-            showToast('当前文档没有区间层');
-            return;
-          }
-          const empties: number[] = [];
-          tier.intervals.forEach((iv, idx) => {
-            if (iv.text === '' && iv.xmax > iv.xmin) empties.push(idx);
-          });
-          if (empties.length === 0) {
-            showToast(`「${tier.name || '当前层'}」没有空白区间`);
-            return;
-          }
-          const curIdx =
-            selection?.kind === 'interval' && selection.tierIndex === ti ? selection.itemIndex : -1;
-          let targetIdx: number;
-          let wrapped = false;
-          if (!e.shiftKey) {
-            const after = empties.find((idx) => idx > curIdx);
-            if (after !== undefined) {
-              targetIdx = after;
-            } else {
-              targetIdx = empties[0];
-              wrapped = curIdx !== -1;
-            }
-          } else {
-            let before: number | undefined;
-            for (let k = empties.length - 1; k >= 0; k--) {
-              if (empties[k] < curIdx) {
-                before = empties[k];
-                break;
-              }
-            }
-            if (before !== undefined) {
-              targetIdx = before;
-            } else {
-              targetIdx = empties[empties.length - 1];
-              wrapped = curIdx !== -1;
-            }
-          }
-          let foundBand = 0;
-          for (const band of layout.bands) {
-            const tl = band.tiersLayout[ti];
-            if (!tl) continue;
-            if (tl.visibleIvs?.some((v) => v.iv.origIdx === targetIdx)) {
-              foundBand = band.bandIndex;
-              break;
-            }
-          }
-          const iv = tier.intervals[targetIdx];
-          if (iv) lastNavTimeRef.current = (iv.xmin + iv.xmax) / 2;
-          const nextSel: EditorSelection = {
-            kind: 'interval',
-            tierIndex: ti,
-            itemIndex: targetIdx,
-            bandIndex: foundBand
-          };
-          setSelection(nextSel);
-          syncAudioForSelection(nextSel);
-          scrollSelectionIntoStageView(nextSel);
-          if (wrapped) {
-            showToast(e.shiftKey ? '已循环回本层末尾空白区间' : '已循环回本层首个空白区间');
-          }
-          return;
-        }
-
-        // G -> jump/scroll to playhead & select containing interval on active tier
-        if (lower === 'g' && !e.shiftKey) {
-          e.preventDefault();
-          const t = Number.isFinite(currentTime) ? currentTime : tg.xmin;
-          setPlaybackTime(t, true);
-          const ti =
-            selection && 'tierIndex' in selection && tg.tiers[selection.tierIndex]
-              ? selection.tierIndex
-              : tg.tiers[lastActiveTierIndex]
-                ? lastActiveTierIndex
-                : layout.bands[0]?.displayOrder[0] ?? 0;
-          const hit = findBestVisibleItemInTier(ti, t);
-          if (hit) {
-            setSelection(hit);
-            syncAudioForSelection(hit);
-            scrollSelectionIntoStageView(hit);
-          }
-          return;
-        }
-
-        // E -> toggle Read / Edit mode
-        if (lower === 'e' && !e.shiftKey) {
-          e.preventDefault();
-          const nextMode = mode === 'edit' ? 'read' : 'edit';
-          setMode(nextMode);
-          showToast(nextMode === 'edit' ? '已进入编辑模式' : '已切换为只读模式');
-          return;
-        }
-
-        // F / Shift+F -> reversible zoom viewDomain / reset full
-        if (lower === 'f') {
-          e.preventDefault();
-          if (e.shiftKey) {
-            setViewDomain(null);
-            return;
-          }
-          let targetDom: { min: number; max: number } | null = null;
-          if (selection?.kind === 'interval') {
-            const iv = tg.tiers[selection.tierIndex]?.intervals[selection.itemIndex];
-            if (iv && iv.xmax > iv.xmin) targetDom = { min: iv.xmin, max: iv.xmax };
-          }
-          if (!targetDom && playRange && playRange.end > playRange.start) {
-            targetDom = { min: playRange.start, max: playRange.end };
-          }
-          if (targetDom) {
-            const already =
-              viewDomain &&
-              Math.abs(viewDomain.min - targetDom.min) < 1e-4 &&
-              Math.abs(viewDomain.max - targetDom.max) < 1e-4;
-            setViewDomain(already ? null : targetDom);
-          } else if (viewDomain) {
-            setViewDomain(null);
-          }
-          return;
-        }
-
-        // V / W -> toggle scaleMode / wrapMode
-        if (lower === 'v' && !e.shiftKey) {
-          e.preventDefault();
-          const next = scaleMode === 'elastic' ? 'linear' : 'elastic';
-          setScaleMode(next);
-          showToast(next === 'linear' ? '时间比例：线性等比' : '时间比例：自适应弹性');
-          return;
-        }
-        if (lower === 'w' && !e.shiftKey) {
-          e.preventDefault();
-          const next = wrapMode === 'auto' ? 'single' : 'auto';
-          setWrapMode(next);
-          showToast(next === 'single' ? '排版：单行长卷展开' : '排版：自动折行');
-          return;
-        }
-
-        // Edit-only canvas shortcuts below
-        if (mode !== 'edit') return;
-
-        // B / Shift+B -> drop boundary at playhead
-        if (lower === 'b') {
-          e.preventDefault();
-          const splitT = Number(currentTime.toFixed(6));
-          if (e.shiftKey) {
-            if (!Number.isFinite(splitT) || splitT <= tg.xmin + 1e-6 || splitT >= tg.xmax - 1e-6) {
-              showToast('请先将播放头定位到文档内部时刻', true);
-              return;
-            }
-            let splitCount = 0;
-            for (const t of tg.tiers) {
-              if (
-                t.kind === 'intervalTier' &&
-                t.intervals.some((iv) => iv.xmin < splitT - 1e-6 && iv.xmax > splitT + 1e-6)
-              ) {
-                splitCount++;
-              }
-            }
-            if (splitCount === 0) {
-              showToast('该时刻在全部区间层已存在边界');
-              return;
-            }
-            commitTgMutation(
-              (draft) => {
-                for (const t of draft.tiers) {
-                  if (t.kind !== 'intervalTier') continue;
-                  const idx = t.intervals.findIndex(
-                    (iv) => iv.xmin < splitT - 1e-6 && iv.xmax > splitT + 1e-6
-                  );
-                  if (idx !== -1) {
-                    const iv = t.intervals[idx];
-                    const right = { xmin: splitT, xmax: iv.xmax, text: '' };
-                    iv.xmax = splitT;
-                    t.intervals.splice(idx + 1, 0, right);
-                  }
-                }
-              },
-              undefined,
-              '全部层播放头落边界'
-            );
-            showToast(`已在 ${splitCount} 个区间层落边界 (${splitT.toFixed(3)} s)`);
-            return;
-          }
-
-          const ti = getTargetIntervalTierIndex(
-            tg,
-            selection,
-            lastActiveTierIndex,
-            hiddenTierIndices,
-            layout.bands[0]?.finestIntervalTierIdx ?? -1
-          );
-          const tier = tg.tiers[ti];
-          if (!tier || tier.kind !== 'intervalTier') {
-            showToast('当前文档没有区间层', true);
-            return;
-          }
-          const idx = tier.intervals.findIndex(
-            (iv) => Number.isFinite(splitT) && iv.xmin < splitT - 1e-6 && iv.xmax > splitT + 1e-6
-          );
-          if (idx !== -1) {
-            splitInterval(ti, idx, splitT);
-          } else if (selection?.kind === 'interval') {
-            splitInterval(selection.tierIndex, selection.itemIndex);
-          } else {
-            showToast('播放头未位于可切分区间内部');
-          }
-          return;
-        }
-
-        // S -> split selected interval at midpoint
-        if (lower === 's' && !e.shiftKey) {
-          if (selection?.kind === 'interval') {
-            e.preventDefault();
-            splitInterval(selection.tierIndex, selection.itemIndex);
-          }
-          return;
-        }
-
-        // P -> add point at currentTime on active TextTier
-        if (lower === 'p' && !e.shiftKey) {
-          e.preventDefault();
-          const ti = getTargetTextTierIndex(tg, selection, lastActiveTierIndex, hiddenTierIndices);
-          if (ti < 0) {
-            showToast('当前文档没有点层 (TextTier)');
-            return;
-          }
-          const idx = addPointAt(ti, Number.isFinite(currentTime) ? currentTime : tg.xmin);
-          if (idx !== null && !playing) {
-            pendingInlineOpenRef.current = { kind: 'point', tierIndex: ti, itemIndex: idx };
-          }
-          return;
-        }
-
-        // I -> create interval from playRange using active / lastActive interval tier
-        if (lower === 'i' && !e.shiftKey) {
-          if (playRange && playRange.end - playRange.start >= 0.001) {
-            e.preventDefault();
-            const ti = getTargetIntervalTierIndex(
-              tg,
-              selection,
-              lastActiveTierIndex,
-              hiddenTierIndices,
-              layout.bands[0]?.finestIntervalTierIdx ?? -1
-            );
-            if (ti >= 0) {
-              createIntervalFromPlayRange(ti, selection?.bandIndex);
-            } else {
-              showToast('当前文档没有区间层 (IntervalTier)', true);
-            }
-          }
-          return;
-        }
-
-        // [ / ] -> select selected interval's left / right interior boundary
-        if ((e.key === '[' || e.key === ']') && !e.shiftKey && selection?.kind === 'interval') {
-          e.preventDefault();
-          const tier = tg.tiers[selection.tierIndex];
-          const iv = tier?.intervals[selection.itemIndex];
-          if (!tier || !iv) return;
-          const edgeT = e.key === '[' ? iv.xmin : iv.xmax;
-          if (edgeT <= tier.xmin + 1e-9 || edgeT >= tier.xmax - 1e-9) {
-            showToast('该侧为层端点，无内部边界');
-            return;
-          }
-          const nextSel: EditorSelection = {
-            kind: 'boundary',
-            tierIndex: selection.tierIndex,
-            time: edgeT,
-            bandIndex: selection.bandIndex
-          };
-          setSelection(nextSel);
-          scrollSelectionIntoStageView(nextSel);
-          return;
-        }
-
-        // M / Shift+M -> non-destructive merge right / left
-        if (lower === 'm' && selection?.kind === 'interval') {
-          e.preventDefault();
-          const tier = tg.tiers[selection.tierIndex];
-          if (!tier) return;
-          if (e.shiftKey) {
-            if (selection.itemIndex === 0) {
-              showToast('首格无法向左合并');
-              return;
-            }
-            mergeIntervalWith(selection.tierIndex, selection.itemIndex, -1);
-          } else {
-            if (selection.itemIndex >= tier.intervals.length - 1) {
-              showToast('末格无法向右合并');
-              return;
-            }
-            mergeIntervalWith(selection.tierIndex, selection.itemIndex, 1);
-          }
-          return;
-        }
-
-        // Z tap (when not dragging & boundary/spine selected) -> snap to nearest audio zero-crossing
-        if (
-          lower === 'z' &&
-          !e.shiftKey &&
-          !e.repeat &&
-          !draggingRef.current &&
-          selection &&
-          (selection.kind === 'boundary' || selection.kind === 'spine')
-        ) {
-          e.preventDefault();
-          void snapTargetToZeroCrossing(selection);
         }
       };
 
@@ -2756,6 +3024,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       exportOpen,
       aboutOpen,
       shortcutsOpen,
+      customShortcuts,
       selection,
       lastActiveTierIndex,
       hiddenTierIndices,
@@ -2859,6 +3128,22 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             drawn.push(t);
             const lx = band.linearXForTime(t);
             const ex = elasticXInBand(band, t);
+            if (band.specH > 0) {
+              svgEl(
+                'line',
+                {
+                  x1: lx,
+                  y1: band.specY,
+                  x2: lx,
+                  y2: band.anchorY,
+                  stroke: '#1D4ED8',
+                  'stroke-width': 1,
+                  'stroke-dasharray': '3 2.5',
+                  opacity: 0.48
+                },
+                hg
+              );
+            }
             svgEl(
               'path',
               {
@@ -4629,6 +4914,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       const pt = svgPointFromEvent(e);
       const target = (e.target as Element).closest('[data-role]');
       const isEdit = mode === 'edit';
+      const hint = (id: string): string | undefined =>
+        getEffectiveShortcutHint(id, customShortcuts) || undefined;
       const items: ContextMenuItem[] = [];
 
       if (target) {
@@ -4650,12 +4937,14 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             items.push(
               {
                 label: '播放选区',
-                shortcut: 'R',
+                icon: 'play',
+                shortcut: hint('replay-selection'),
                 action: () => onStartPlayback(playRange.start, playRange.end)
               },
               {
                 label: '循环播放',
-                shortcut: 'L',
+                icon: 'loop',
+                shortcut: hint('loop-toggle'),
                 action: () => {
                   setLoop(true);
                   onStartPlayback(playRange.start, playRange.end);
@@ -4665,6 +4954,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           } else {
             items.push({
               label: `从此处播放 (${clickT.toFixed(3)} s)`,
+              icon: 'play',
               action: () => {
                 setPlayRange(null);
                 onStartPlayback(clickT, tg.xmax);
@@ -4675,7 +4965,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           if (isEdit) {
             items.push({
               label: '按当前框选创建区间',
-              shortcut: 'I',
+              icon: 'createFromRange',
+              shortcut: hint('create-from-playrange'),
               disabled: !hasRange || targetTi < 0,
               action: () => {
                 if (targetTi >= 0) createIntervalFromPlayRange(targetTi, bandIdx);
@@ -4685,7 +4976,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           items.push(
             {
               label: '局部放大到此段',
-              shortcut: 'F',
+              icon: 'zoomIn',
+              shortcut: hint('zoom-focus'),
               disabled: !hasRange,
               action: () => {
                 if (playRange) setViewDomain({ min: playRange.start, max: playRange.end });
@@ -4693,13 +4985,15 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             },
             {
               label: '恢复全长',
-              shortcut: 'Shift+F',
+              icon: 'zoomReset',
+              shortcut: hint('zoom-reset'),
               disabled: !viewDomain,
               action: () => setViewDomain(null)
             },
             { divider: true },
             {
               label: '导出此段插图…',
+              icon: 'export',
               action: () => openExportModal(hasRange ? 'selection' : 'view')
             }
           );
@@ -4745,7 +5039,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               if (canCreateFromRange) {
                 items.push({
                   label: '按当前框选创建区间',
-                  shortcut: 'I',
+                  icon: 'createFromRange',
+                  shortcut: hint('create-from-playrange'),
                   action: () => createIntervalFromPlayRange(ti, bandIdx)
                 });
               }
@@ -4756,55 +5051,72 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
               const copySpanChildren: ContextMenuItem[] = [];
               otherIntervalTiers.forEach(({ t, idx: targetTi }, pos) => {
-                const name = t.name || `层 ${targetTi + 1}`;
+                const tierLabel = `${t.displayNum ?? targetTi + 1}. ${t.name || '未命名'}`;
                 if (pos > 0) copySpanChildren.push({ divider: true });
                 copySpanChildren.push(
                   {
-                    label: `→「${name}」（含文本）`,
+                    label: tierLabel,
+                    badge: '含文本',
                     action: () => copyIntervalSpanToTier(ti, ii, targetTi, true)
                   },
                   {
-                    label: `→「${name}」（仅边界）`,
+                    label: tierLabel,
+                    badge: '仅边界',
                     action: () => copyIntervalSpanToTier(ti, ii, targetTi, false)
                   }
                 );
               });
 
               items.push(
-                { label: '编辑文本', shortcut: '双击', action: () => openInline({ kind: 'interval', tierIndex: ti, itemIndex: ii }) },
+                { label: '编辑文本', icon: 'edit', shortcut: '双击', action: () => openInline({ kind: 'interval', tierIndex: ti, itemIndex: ii }) },
                 {
                   label: splitSnap ? `在此处切分（${splitSnap.label}）` : '在此处切分',
+                  icon: 'split',
                   disabled: !(splitTargetT > iv.xmin && splitTargetT < iv.xmax),
                   action: () => splitInterval(ti, ii, splitTargetT, { exact: Boolean(splitSnap) })
                 },
-                { label: '从正中切分', shortcut: 'S', disabled: iv.xmax <= iv.xmin, action: () => splitInterval(ti, ii) },
+                { label: '从正中切分', icon: 'split', shortcut: hint('split-mid'), disabled: iv.xmax <= iv.xmin, action: () => splitInterval(ti, ii) },
                 {
-                  label: '等分为 2 段',
+                  label: '等分该区间',
+                  icon: 'splitEqual',
                   disabled: iv.xmax <= iv.xmin,
-                  action: () => splitIntervalEqualN(ti, ii, 2)
-                },
-                {
-                  label: '等分为 3 段',
-                  disabled: iv.xmax <= iv.xmin,
-                  action: () => splitIntervalEqualN(ti, ii, 3)
-                },
-                {
-                  label: '等分为 N 段…',
-                  disabled: iv.xmax <= iv.xmin,
-                  action: () => {
-                    const raw = window.prompt('请输入等分段数（2–20）：', '4');
-                    if (raw === null) return;
-                    const n = parseInt(raw.trim(), 10);
-                    splitIntervalEqualN(ti, ii, n);
-                  }
+                  children: [
+                    {
+                      label: '等分为 2 段',
+                      action: () => splitIntervalEqualN(ti, ii, 2)
+                    },
+                    {
+                      label: '等分为 3 段',
+                      action: () => splitIntervalEqualN(ti, ii, 3)
+                    },
+                    {
+                      label: '等分为 4 段',
+                      action: () => splitIntervalEqualN(ti, ii, 4)
+                    },
+                    { divider: true },
+                    {
+                      label: '自定义段数…',
+                      action: () => {
+                        setSplitEqualDialog({
+                          tierIndex: ti,
+                          itemIndex: ii,
+                          tierName: tier.name || `层 ${ti + 1}`,
+                          text: iv.text,
+                          xmin: iv.xmin,
+                          xmax: iv.xmax
+                        });
+                      }
+                    }
+                  ]
                 },
                 { divider: true },
-                { label: '向左合并', shortcut: 'Shift+M', disabled: ii === 0, action: () => mergeIntervalWith(ti, ii, -1) },
-                { label: '向右合并', shortcut: 'M', disabled: ii >= tier.intervals.length - 1, action: () => mergeIntervalWith(ti, ii, 1) },
+                { label: '向左合并', icon: 'mergeLeft', shortcut: hint('merge-left'), disabled: ii === 0, action: () => mergeIntervalWith(ti, ii, -1) },
+                { label: '向右合并', icon: 'mergeRight', shortcut: hint('merge-right'), disabled: ii >= tier.intervals.length - 1, action: () => mergeIntervalWith(ti, ii, 1) },
                 ...(otherIntervalTiers.length > 0
                   ? [
                       {
-                        label: '复制到层 ▸',
+                        label: '复制到层',
+                        icon: 'projectToTier' as IconName,
                         disabled: iv.xmax <= iv.xmin,
                         children: copySpanChildren
                       }
@@ -4812,6 +5124,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                   : []),
                 {
                   label: '清空文本',
+                  icon: 'clear',
                   shortcut: 'Del',
                   disabled: iv.text === '',
                   action: () =>
@@ -4832,7 +5145,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             items.push(
               {
                 label: '播放该区间',
-                shortcut: 'R',
+                icon: 'play',
+                shortcut: hint('replay-selection'),
                 disabled: iv.xmax <= iv.xmin,
                 action: () => {
                   setPlayRange({ start: iv.xmin, end: iv.xmax });
@@ -4841,7 +5155,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               },
               {
                 label: '带语境播放 (±250 ms)',
-                shortcut: 'Shift+R',
+                icon: 'playContext',
+                shortcut: hint('replay-context'),
                 disabled: iv.xmax <= iv.xmin,
                 action: () => {
                   const s = Math.max(tg.xmin, iv.xmin - 0.25);
@@ -4851,6 +5166,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               },
               {
                 label: '循环播放该区间',
+                icon: 'loop',
                 disabled: iv.xmax <= iv.xmin,
                 action: () => {
                   setLoop(true);
@@ -4859,17 +5175,18 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                 }
               },
               isZoomedHere
-                ? { label: '显示全长视图', shortcut: 'F', action: () => setViewDomain(null) }
-                : { label: '放大查看该区间', shortcut: 'F', disabled: iv.xmax <= iv.xmin, action: () => setViewDomain({ min: iv.xmin, max: iv.xmax }) },
+                ? { label: '显示全长视图', icon: 'zoomReset', shortcut: hint('zoom-focus'), action: () => setViewDomain(null) }
+                : { label: '放大查看该区间', icon: 'zoomIn', shortcut: hint('zoom-focus'), disabled: iv.xmax <= iv.xmin, action: () => setViewDomain({ min: iv.xmin, max: iv.xmax }) },
               { divider: true },
-              { label: '复制文本', shortcut: formatKeyCombo('Mod+C'), disabled: iv.text === '', action: () => copyText(iv.text, '区间文本') },
+              { label: '复制文本', icon: 'copy', shortcut: formatKeyCombo('Mod+C'), disabled: iv.text === '', action: () => copyText(iv.text, '区间文本') },
               {
                 label: '复制起止时间',
+                icon: 'copyTime',
                 shortcut: formatKeyCombo('Mod+Shift+C'),
                 action: () => copyText(`${formatPraatDouble(iv.xmin)}\t${formatPraatDouble(iv.xmax)}`, '起止时间')
               }
             );
-            if (!isEdit) items.push({ divider: true }, { label: '切换到编辑模式', shortcut: 'E', action: () => setMode('edit') });
+            if (!isEdit) items.push({ divider: true }, { label: '切换到编辑模式', icon: 'edit', shortcut: hint('mode-toggle'), action: () => setMode('edit') });
           }
         } else if (role === 'point') {
           const ti = parseInt(target.getAttribute('data-tier') || '0', 10);
@@ -4879,13 +5196,14 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             setSelection({ kind: 'point', tierIndex: ti, itemIndex: pi, bandIndex: bandIdx });
             if (isEdit) {
               items.push(
-                { label: '编辑标记', shortcut: '双击', action: () => openInline({ kind: 'point', tierIndex: ti, itemIndex: pi }) },
-                { label: '从此点播放', action: () => { setPlayRange(null); onStartPlayback(p.number, tg.xmax); } },
-                { label: '复制标记文本', shortcut: formatKeyCombo('Mod+C'), disabled: p.mark === '', action: () => copyText(p.mark, '标记文本') },
-                { label: '复制时间戳', action: () => copyText(formatPraatDouble(p.number), '时间戳') },
+                { label: '编辑标记', icon: 'edit', shortcut: '双击', action: () => openInline({ kind: 'point', tierIndex: ti, itemIndex: pi }) },
+                { label: '从此点播放', icon: 'play', action: () => { setPlayRange(null); onStartPlayback(p.number, tg.xmax); } },
+                { label: '复制标记文本', icon: 'copy', shortcut: formatKeyCombo('Mod+C'), disabled: p.mark === '', action: () => copyText(p.mark, '标记文本') },
+                { label: '复制时间戳', icon: 'copyTime', action: () => copyText(formatPraatDouble(p.number), '时间戳') },
                 { divider: true },
                 {
                   label: '删除此点',
+                  icon: 'trash',
                   shortcut: 'Del',
                   danger: true,
                   action: () =>
@@ -4900,11 +5218,11 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               );
             } else {
               items.push(
-                { label: '从此点播放', action: () => { setPlayRange(null); onStartPlayback(p.number, tg.xmax); } },
-                { label: '复制标记文本', disabled: p.mark === '', action: () => copyText(p.mark, '标记文本') },
-                { label: '复制时间戳', action: () => copyText(formatPraatDouble(p.number), '时间戳') },
+                { label: '从此点播放', icon: 'play', action: () => { setPlayRange(null); onStartPlayback(p.number, tg.xmax); } },
+                { label: '复制标记文本', icon: 'copy', disabled: p.mark === '', action: () => copyText(p.mark, '标记文本') },
+                { label: '复制时间戳', icon: 'copyTime', action: () => copyText(formatPraatDouble(p.number), '时间戳') },
                 { divider: true },
-                { label: '切换到编辑模式', shortcut: 'E', action: () => setMode('edit') }
+                { label: '切换到编辑模式', icon: 'edit', shortcut: hint('mode-toggle'), action: () => setMode('edit') }
               );
             }
           }
@@ -4923,31 +5241,34 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                 .map((t, idx) => ({ t, idx }))
                 .filter(({ t, idx }) => idx !== ti && t.kind === 'intervalTier');
               items.push(
-                { label: '试听跨越边界 (±200 ms)', action: auditionBoundary },
-                { label: '从此处播放', action: () => { setPlayRange(null); onStartPlayback(time, tg.xmax); } },
-                { label: '复制边界时间', action: () => copyText(formatPraatDouble(time), '边界时间') },
+                { label: '试听跨越边界 (±200 ms)', icon: 'playContext', action: auditionBoundary },
+                { label: '从此处播放', icon: 'play', action: () => { setPlayRange(null); onStartPlayback(time, tg.xmax); } },
+                { label: '复制边界时间', icon: 'copyTime', action: () => copyText(formatPraatDouble(time), '边界时间') },
                 { divider: true },
                 {
                   label: '吸附最近过零点',
-                  shortcut: 'Z',
+                  icon: 'zeroCross',
+                  shortcut: hint('snap-zero-crossing'),
                   disabled: !analysis,
                   action: () => void snapTargetToZeroCrossing({ kind: 'boundary', tierIndex: ti, time, bandIndex: bandIdx })
                 },
                 ...(otherIntervalTiers.length > 0
                   ? [
                       {
-                        label: '将边界复制到层 ▸',
+                        label: '将边界复制到层',
+                        icon: 'projectToTier' as IconName,
                         children: otherIntervalTiers.map(({ t, idx: targetTi }) => ({
-                          label: `→「${t.name || `层 ${targetTi + 1}`}」`,
+                          label: `${t.displayNum ?? targetTi + 1}. ${t.name || '未命名'}`,
                           action: () => projectBoundaryToTier(targetTi, time)
                         }))
                       }
                     ]
                   : []),
                 { divider: true },
-                { label: '删除边界（合并两侧）', shortcut: 'Del', danger: true, action: () => deleteBoundaryAt(ti, time) },
+                { label: '删除边界（合并两侧）', icon: 'delBoundary', shortcut: 'Del', danger: true, action: () => deleteBoundaryAt(ti, time) },
                 {
                   label: '跨层删除对齐边界',
+                  icon: 'delBoundaryAll',
                   shortcut: 'Shift+Del',
                   danger: true,
                   action: () => deleteBoundaryAcrossAllTiers(time)
@@ -4955,11 +5276,11 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               );
             } else {
               items.push(
-                { label: '试听跨越边界 (±200 ms)', action: auditionBoundary },
-                { label: '从此处播放', action: () => { setPlayRange(null); onStartPlayback(time, tg.xmax); } },
-                { label: '复制边界时间', action: () => copyText(formatPraatDouble(time), '边界时间') },
+                { label: '试听跨越边界 (±200 ms)', icon: 'playContext', action: auditionBoundary },
+                { label: '从此处播放', icon: 'play', action: () => { setPlayRange(null); onStartPlayback(time, tg.xmax); } },
+                { label: '复制边界时间', icon: 'copyTime', action: () => copyText(formatPraatDouble(time), '边界时间') },
                 { divider: true },
-                { label: '切换到编辑模式', shortcut: 'E', action: () => setMode('edit') }
+                { label: '切换到编辑模式', icon: 'edit', shortcut: hint('mode-toggle'), action: () => setMode('edit') }
               );
             }
           }
@@ -4994,6 +5315,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               label: wireSnap
                 ? `在此处添加标点 (${clickT.toFixed(3)} s · ${wireSnap.label})`
                 : `在此处添加标点 (${clickT.toFixed(3)} s)`,
+              icon: 'addPointTier',
               action: () => {
                 const idx = addPointAt(ti, clickT, { exact: Boolean(wireSnap) });
                 if (idx !== null) {
@@ -5005,13 +5327,14 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           }
           items.push({
             label: '从此处播放',
+            icon: 'play',
             action: () => {
               setPlayRange(null);
               onStartPlayback(clickT, tg.xmax);
             }
           });
           if (!isEdit) {
-            items.push({ divider: true }, { label: '切换到编辑模式', shortcut: 'E', action: () => setMode('edit') });
+            items.push({ divider: true }, { label: '切换到编辑模式', icon: 'edit', shortcut: hint('mode-toggle'), action: () => setMode('edit') });
           }
         } else if (role === 'spine-tick') {
           const t = parseFloat(target.getAttribute('data-time') || '0');
@@ -5020,9 +5343,10 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               setSelection({ kind: 'spine', time: t, bandIndex: bandIdx });
             }
             items.push(
-              { label: `复制时刻 (${formatPraatDouble(t)})`, action: () => copyText(formatPraatDouble(t), '时间戳') },
+              { label: `复制时刻 (${formatPraatDouble(t)})`, icon: 'copyTime', action: () => copyText(formatPraatDouble(t), '时间戳') },
               {
                 label: '从此精确时刻播放',
+                icon: 'play',
                 action: () => {
                   setPlayRange(null);
                   onStartPlayback(t, tg.xmax);
@@ -5034,12 +5358,14 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                 { divider: true },
                 {
                   label: '跨层吸附过零点',
-                  shortcut: 'Z',
+                  icon: 'zeroCross',
+                  shortcut: hint('snap-zero-crossing'),
                   disabled: !analysis,
                   action: () => void snapTargetToZeroCrossing({ kind: 'spine', time: t, bandIndex: bandIdx })
                 },
                 {
                   label: '跨层删除对齐边界',
+                  icon: 'delBoundaryAll',
                   shortcut: 'Shift+Del',
                   danger: true,
                   action: () => deleteBoundaryAcrossAllTiers(t)
@@ -5053,45 +5379,49 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           if (isEdit && tier) {
             setSelection({ kind: 'tier', tierIndex: ti, bandIndex: bandIdx });
             items.push(
-              { label: '重命名层', shortcut: '双击', action: () => openInline({ kind: 'tier-name', tierIndex: ti }) },
-              { label: '上移一层', disabled: ti === 0, action: () => moveTier(ti, -1) },
-              { label: '下移一层', disabled: ti >= tg.tiers.length - 1, action: () => moveTier(ti, 1) },
+              { label: '重命名层', icon: 'edit', shortcut: '双击', action: () => openInline({ kind: 'tier-name', tierIndex: ti }) },
+              { label: '上移一层', icon: 'up', disabled: ti === 0, action: () => moveTier(ti, -1) },
+              { label: '下移一层', icon: 'down', disabled: ti >= tg.tiers.length - 1, action: () => moveTier(ti, 1) },
               { divider: true },
-              { label: '在上方插入区间层', action: () => insertTierAt(ti, 'intervalTier') },
-              { label: '在下方插入区间层', action: () => insertTierAt(ti + 1, 'intervalTier') },
-              { label: '在下方插入点层', action: () => insertTierAt(ti + 1, 'textTier') },
+              { label: '在上方插入区间层', icon: 'addIntervalTier', action: () => insertTierAt(ti, 'intervalTier') },
+              { label: '在下方插入区间层', icon: 'addIntervalTier', action: () => insertTierAt(ti + 1, 'intervalTier') },
+              { label: '在下方插入点层', icon: 'addPointTier', action: () => insertTierAt(ti + 1, 'textTier') },
               { divider: true },
-              { label: '复制层级（含文本）', action: () => duplicateTier(ti, { copyText: true }) },
+              { label: '复制层级（含文本）', icon: 'duplicateTier', action: () => duplicateTier(ti, { copyText: true }) },
               {
                 label: '仅复制边界新建层',
+                icon: 'duplicateTier',
                 disabled: tier.kind !== 'intervalTier',
                 action: () => duplicateTier(ti, { copyText: false })
               },
               {
                 label: '从区间派生点层（中点）',
+                icon: 'derivePointTier',
                 disabled: tier.kind !== 'intervalTier',
                 action: () => derivePointTierFromIntervals(ti, 'mid')
               },
               {
                 label: '对齐微偏边界 (< 5 ms)',
+                icon: 'normalize',
                 action: () => {
                   const n = alignMicroBoundaries(ti, 0.005);
                   showToast(n > 0 ? `已对齐 ${n} 处微偏边界` : '未发现 < 5 ms 的微偏边界');
                 }
               },
               { divider: true },
-              { label: '隐藏此层', action: () => toggleTierVisibility(ti) },
-              { label: '清空本层文本', action: () => clearTierText(ti) },
-              { label: '删除该层', shortcut: 'Shift+Del', danger: true, action: () => removeTierWithUndoToast(ti) }
+              { label: '隐藏此层', icon: 'hideTier', action: () => toggleTierVisibility(ti) },
+              { label: '清空本层文本', icon: 'clear', action: () => clearTierText(ti) },
+              { label: '删除该层', icon: 'trash', shortcut: 'Shift+Del', danger: true, action: () => removeTierWithUndoToast(ti) }
             );
           } else if (tier) {
             items.push(
-              { label: '复制层名', disabled: !tier.name, action: () => copyText(tier.name, '层名') },
-              { label: '隐藏此层', action: () => toggleTierVisibility(ti) },
+              { label: '复制层名', icon: 'copy', disabled: !tier.name, action: () => copyText(tier.name, '层名') },
+              { label: '隐藏此层', icon: 'hideTier', action: () => toggleTierVisibility(ti) },
               { divider: true },
               {
                 label: '切换到编辑模式',
-                shortcut: 'E',
+                icon: 'edit',
+                shortcut: hint('mode-toggle'),
                 action: () => {
                   setMode('edit');
                   setSelection({ kind: 'tier', tierIndex: ti, bandIndex: bandIdx });
@@ -5110,9 +5440,11 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
       (e.nativeEvent as MouseEvent & { __tgCtxHandled?: boolean }).__tgCtxHandled = true;
       window.dispatchEvent(new Event('tg-close-global-ctx'));
+      const z = getViewportZoom();
+      const { width: vw, height: vh } = getLogicalViewportSize();
       const estHeight = items.reduce((acc, it) => acc + (it.divider ? 7 : 30), 12);
-      const x = Math.max(8, Math.min(e.clientX, window.innerWidth - 220));
-      const y = Math.max(8, Math.min(e.clientY, window.innerHeight - estHeight - 12));
+      const x = Math.max(8, Math.min(e.clientX / z, vw - 220));
+      const y = Math.max(8, Math.min(e.clientY / z, vh - estHeight - 12));
       setCtxMenu({ x, y, items });
     };
 
@@ -5136,17 +5468,739 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       showFloatingBar &&
       selection &&
       !inlineTarget &&
-      !dragPreview &&
+      (!dragPreview || scrubPreviewing) &&
       !intervalDragPreview
         ? getSelectionAnchor(layout, selection)
         : null;
     const anchorRect = selectionAnchor?.rect ?? null;
     const anchorBand = selectionAnchor?.band ?? null;
 
+    const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (isComposingEvent(e)) return;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.currentTarget.blur();
+      }
+    };
+
+    const renderFloatingBarContent = (): React.ReactNode => {
+      if (!selection || !anchorRect || !anchorBand) return null;
+
+      if (selection.kind === 'interval') {
+        const tier = tg.tiers[selection.tierIndex];
+        const iv = tier?.intervals[selection.itemIndex];
+        if (!tier || !iv) return null;
+        const visibleIds = getVisibleBarItems('interval');
+        if (visibleIds.length === 0) return null;
+
+        const isZoomedHere = Boolean(
+          viewDomain && Math.abs(viewDomain.min - iv.xmin) < 1e-4 && Math.abs(viewDomain.max - iv.xmax) < 1e-4
+        );
+        const durMs = Math.max(0, Math.round((iv.xmax - iv.xmin) * 1000));
+        const prev = tier.intervals[selection.itemIndex - 1];
+        const next = tier.intervals[selection.itemIndex + 1];
+        const hasContigPrev = Boolean(prev && prev.xmax === iv.xmin);
+        const hasContigNext = Boolean(next && next.xmin === iv.xmax);
+
+        const entries: Array<{ id: string; node: React.ReactNode }> = [];
+        for (const id of visibleIds) {
+          switch (id) {
+            case 'iv-times':
+              entries.push({
+                id,
+                node: (
+                  <>
+                    <ScrubNumberInput
+                      variant="floating"
+                      label="起"
+                      value={iv.xmin}
+                      min={hasContigPrev && prev ? prev.xmin : undefined}
+                      strictMin={hasContigPrev}
+                      max={iv.xmax}
+                      strictMax
+                      formatValue={formatPraatDouble}
+                      onScrubPreview={(previewT) =>
+                        showScrubPreviewLine(previewT, selection.tierIndex, false)
+                      }
+                      onScrubEnd={clearScrubPreview}
+                      onCommit={(val) => {
+                        if (val >= iv.xmax) {
+                          showToast('起点必须严格小于终点', true);
+                          return false;
+                        }
+                        if (prev && prev.xmax === iv.xmin && val <= prev.xmin) {
+                          showToast('起点不能越过左侧相邻区间', true);
+                          return false;
+                        }
+                        if (val !== iv.xmin) {
+                          commitTgMutation(
+                            (draft) => {
+                              const dTier = draft.tiers[selection.tierIndex];
+                              const dPrev = dTier.intervals[selection.itemIndex - 1];
+                              const cur = dTier.intervals[selection.itemIndex];
+                              if (dPrev && dPrev.xmax === cur.xmin && val > dPrev.xmin) dPrev.xmax = val;
+                              cur.xmin = val;
+                            },
+                            undefined,
+                            '修改区间起点'
+                          );
+                          setPlayRange({ start: val, end: iv.xmax });
+                        }
+                        return true;
+                      }}
+                    />
+                    <ScrubNumberInput
+                      variant="floating"
+                      label="止"
+                      value={iv.xmax}
+                      min={iv.xmin}
+                      strictMin
+                      max={hasContigNext && next ? next.xmax : undefined}
+                      strictMax={hasContigNext}
+                      formatValue={formatPraatDouble}
+                      onScrubPreview={(previewT) =>
+                        showScrubPreviewLine(previewT, selection.tierIndex, false)
+                      }
+                      onScrubEnd={clearScrubPreview}
+                      onCommit={(val) => {
+                        if (val <= iv.xmin) {
+                          showToast('终点必须严格大于起点', true);
+                          return false;
+                        }
+                        if (next && next.xmin === iv.xmax && val >= next.xmax) {
+                          showToast('终点不能越过右侧相邻区间', true);
+                          return false;
+                        }
+                        if (val !== iv.xmax) {
+                          commitTgMutation(
+                            (draft) => {
+                              const dTier = draft.tiers[selection.tierIndex];
+                              const dNext = dTier.intervals[selection.itemIndex + 1];
+                              const cur = dTier.intervals[selection.itemIndex];
+                              if (dNext && dNext.xmin === cur.xmax && val < dNext.xmax) dNext.xmin = val;
+                              cur.xmax = val;
+                            },
+                            undefined,
+                            '修改区间终点'
+                          );
+                          setPlayRange({ start: iv.xmin, end: val });
+                        }
+                        return true;
+                      }}
+                    />
+                  </>
+                )
+              });
+              break;
+            case 'iv-dur':
+              entries.push({
+                id,
+                node: (
+                  <span
+                    className="floating-dur-badge"
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '10.5px',
+                      color: '#C2BEB4',
+                      fontVariantNumeric: 'tabular-nums',
+                      padding: '0 3px'
+                    }}
+                  >
+                    {durMs} ms
+                  </span>
+                )
+              });
+              break;
+            case 'iv-edit':
+              entries.push({
+                id,
+                node: (
+                  <button type="button" className="compact" onClick={() => openInline(selection)}>
+                    <UiIcon name="edit" size={13} />
+                    <span>改字</span>
+                  </button>
+                )
+              });
+              break;
+            case 'iv-clear':
+              if (iv.text !== '') {
+                entries.push({
+                  id,
+                  node: (
+                    <button
+                      type="button"
+                      className="compact"
+                      onClick={() =>
+                        commitTgMutation(
+                          (d) => {
+                            d.tiers[selection.tierIndex].intervals[selection.itemIndex].text = '';
+                          },
+                          selection,
+                          '清空区间文本'
+                        )
+                      }
+                    >
+                      <UiIcon name="clear" size={13} />
+                      <span>清空</span>
+                    </button>
+                  )
+                });
+              }
+              break;
+            case 'iv-split':
+              entries.push({
+                id,
+                node: (
+                  <button
+                    type="button"
+                    className="compact"
+                    disabled={iv.xmax <= iv.xmin}
+                    onClick={() => splitInterval(selection.tierIndex, selection.itemIndex)}
+                  >
+                    <UiIcon name="split" size={13} />
+                    <span>切分</span>
+                  </button>
+                )
+              });
+              break;
+            case 'iv-split-equal':
+              entries.push({
+                id,
+                node: (
+                  <button
+                    type="button"
+                    className="compact"
+                    disabled={iv.xmax <= iv.xmin}
+                    title="等分为 2 段"
+                    onClick={() => splitIntervalEqualN(selection.tierIndex, selection.itemIndex, 2)}
+                  >
+                    <UiIcon name="split" size={13} />
+                    <span>等分</span>
+                  </button>
+                )
+              });
+              break;
+            case 'iv-merge-left':
+              entries.push({
+                id,
+                node: (
+                  <button
+                    type="button"
+                    className="compact"
+                    disabled={selection.itemIndex === 0}
+                    onClick={() => mergeIntervalWith(selection.tierIndex, selection.itemIndex, -1)}
+                  >
+                    <UiIcon name="mergeLeft" size={13} />
+                    <span>合左</span>
+                  </button>
+                )
+              });
+              break;
+            case 'iv-merge-right':
+              entries.push({
+                id,
+                node: (
+                  <button
+                    type="button"
+                    className="compact"
+                    disabled={selection.itemIndex >= tier.intervals.length - 1}
+                    onClick={() => mergeIntervalWith(selection.tierIndex, selection.itemIndex, 1)}
+                  >
+                    <UiIcon name="mergeRight" size={13} />
+                    <span>合右</span>
+                  </button>
+                )
+              });
+              break;
+            case 'iv-play':
+              entries.push({
+                id,
+                node: (
+                  <button
+                    type="button"
+                    className="compact"
+                    disabled={iv.xmax <= iv.xmin}
+                    onClick={() => {
+                      setPlayRange({ start: iv.xmin, end: iv.xmax });
+                      onStartPlayback(iv.xmin, iv.xmax);
+                    }}
+                  >
+                    <UiIcon name="play" size={13} />
+                    <span>播放</span>
+                  </button>
+                )
+              });
+              break;
+            case 'iv-play-ctx':
+              entries.push({
+                id,
+                node: (
+                  <button
+                    type="button"
+                    className="compact"
+                    disabled={iv.xmax <= iv.xmin}
+                    title="带语境播放 (±250 ms)"
+                    onClick={() => {
+                      const s = Math.max(tg.xmin, iv.xmin - 0.25);
+                      const en = Math.min(tg.xmax, iv.xmax + 0.25);
+                      if (en > s) onStartPlayback(s, en);
+                    }}
+                  >
+                    <UiIcon name="play" size={13} />
+                    <span>±250ms</span>
+                  </button>
+                )
+              });
+              break;
+            case 'iv-zoom':
+              entries.push({
+                id,
+                node: isZoomedHere ? (
+                  <button type="button" className="compact" onClick={() => setViewDomain(null)}>
+                    <UiIcon name="zoomReset" size={13} />
+                    <span>全长</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="compact"
+                    disabled={iv.xmax <= iv.xmin}
+                    onClick={() => setViewDomain({ min: iv.xmin, max: iv.xmax })}
+                  >
+                    <UiIcon name="zoomIn" size={13} />
+                    <span>放大</span>
+                  </button>
+                )
+              });
+              break;
+            case 'iv-copy-text':
+              entries.push({
+                id,
+                node: (
+                  <button
+                    type="button"
+                    className="compact"
+                    disabled={iv.text === ''}
+                    title="复制区间文本"
+                    onClick={() => copyText(iv.text, '区间文本')}
+                  >
+                    <UiIcon name="copy" size={13} />
+                    <span>复制</span>
+                  </button>
+                )
+              });
+              break;
+          }
+        }
+        return assembleFloatingBarNodes(entries);
+      }
+
+      if (selection.kind === 'point') {
+        const tier = tg.tiers[selection.tierIndex];
+        const pt = tier?.points[selection.itemIndex];
+        if (!tier || !pt) return null;
+        const visibleIds = getVisibleBarItems('point');
+        if (visibleIds.length === 0) return null;
+
+        const entries: Array<{ id: string; node: React.ReactNode }> = [];
+        for (const id of visibleIds) {
+          switch (id) {
+            case 'pt-time':
+              entries.push({
+                id,
+                node: (
+                  <ScrubNumberInput
+                    variant="floating"
+                    label="时间"
+                    value={pt.number}
+                    min={Number.isFinite(tier.xmin) ? tier.xmin : undefined}
+                    max={Number.isFinite(tier.xmax) ? tier.xmax : undefined}
+                    formatValue={formatPraatDouble}
+                    onScrubPreview={(previewT) =>
+                      showScrubPreviewLine(previewT, selection.tierIndex, false)
+                    }
+                    onScrubEnd={clearScrubPreview}
+                    onCommit={(val) => {
+                      if (tier.points.some((p, i) => i !== selection.itemIndex && p.number === val)) {
+                        showToast('目标时刻已存在标点', true);
+                        return false;
+                      }
+                      if (val !== pt.number) {
+                        let nextIdx = selection.itemIndex;
+                        commitTgMutation(
+                          (draft) => {
+                            const dTier = draft.tiers[selection.tierIndex];
+                            const targetPt = dTier.points[selection.itemIndex];
+                            if (!targetPt) return;
+                            targetPt.number = val;
+                            dTier.points.sort((a, b) => a.number - b.number);
+                            nextIdx = dTier.points.indexOf(targetPt);
+                          },
+                          undefined,
+                          '修改标点时间'
+                        );
+                        setSelection({
+                          kind: 'point',
+                          tierIndex: selection.tierIndex,
+                          itemIndex: Math.max(0, nextIdx),
+                          bandIndex: selection.bandIndex
+                        });
+                      }
+                      return true;
+                    }}
+                  />
+                )
+              });
+              break;
+            case 'pt-edit':
+              entries.push({
+                id,
+                node: (
+                  <button type="button" className="compact" onClick={() => openInline(selection)}>
+                    <UiIcon name="edit" size={13} />
+                    <span>改字</span>
+                  </button>
+                )
+              });
+              break;
+            case 'pt-play':
+              entries.push({
+                id,
+                node: (
+                  <button
+                    type="button"
+                    className="compact"
+                    onClick={() => {
+                      setPlayRange(null);
+                      onStartPlayback(pt.number, tg.xmax);
+                    }}
+                  >
+                    <UiIcon name="play" size={13} />
+                    <span>播放</span>
+                  </button>
+                )
+              });
+              break;
+            case 'pt-delete':
+              entries.push({
+                id,
+                node: (
+                  <button
+                    type="button"
+                    className="compact danger"
+                    onClick={() =>
+                      commitTgMutation(
+                        (draft) => {
+                          draft.tiers[selection.tierIndex].points.splice(selection.itemIndex, 1);
+                        },
+                        null,
+                        '删除标点'
+                      )
+                    }
+                  >
+                    <UiIcon name="trash" size={13} />
+                    <span>删除</span>
+                  </button>
+                )
+              });
+              break;
+          }
+        }
+        return assembleFloatingBarNodes(entries);
+      }
+
+      if (selection.kind === 'boundary') {
+        const visibleIds = getVisibleBarItems('boundary');
+        if (visibleIds.length === 0) return null;
+        const { minAllowed, maxAllowed } = getBoundaryDragBounds(
+          tg,
+          selection.tierIndex,
+          selection.time,
+          false
+        );
+        const zHint = getEffectiveShortcutHint('snap-zero-crossing', customShortcuts);
+        const entries: Array<{ id: string; node: React.ReactNode }> = [];
+        for (const id of visibleIds) {
+          switch (id) {
+            case 'bnd-time':
+              entries.push({
+                id,
+                node: (
+                  <ScrubNumberInput
+                    variant="floating"
+                    label="边界"
+                    value={selection.time}
+                    min={Number.isFinite(minAllowed) ? minAllowed : undefined}
+                    max={Number.isFinite(maxAllowed) ? maxAllowed : undefined}
+                    formatValue={formatPraatDouble}
+                    onScrubPreview={(previewT) =>
+                      showScrubPreviewLine(previewT, selection.tierIndex, false)
+                    }
+                    onScrubEnd={clearScrubPreview}
+                    onCommit={(val) => {
+                      if (moveTierBoundary(selection.tierIndex, selection.time, val, false)) {
+                        setSelection({
+                          kind: 'boundary',
+                          tierIndex: selection.tierIndex,
+                          time: val,
+                          bandIndex: selection.bandIndex
+                        });
+                        return true;
+                      }
+                      return false;
+                    }}
+                  />
+                )
+              });
+              break;
+            case 'bnd-zero':
+              entries.push({
+                id,
+                node: (
+                  <button
+                    type="button"
+                    className="compact"
+                    disabled={!analysis}
+                    title={zHint ? `吸附最近音频过零点 (${zHint})` : '吸附最近音频过零点'}
+                    onClick={() => void snapTargetToZeroCrossing(selection)}
+                  >
+                    <UiIcon name="zeroCross" size={13} />
+                    <span>过零</span>
+                  </button>
+                )
+              });
+              break;
+            case 'bnd-audition':
+              entries.push({
+                id,
+                node: (
+                  <button
+                    type="button"
+                    className="compact"
+                    onClick={() => {
+                      const s = Math.max(tg.xmin, selection.time - 0.2);
+                      const en = Math.min(tg.xmax, selection.time + 0.2);
+                      if (en > s) onStartPlayback(s, en);
+                    }}
+                  >
+                    <UiIcon name="play" size={13} />
+                    <span>试听 ±200ms</span>
+                  </button>
+                )
+              });
+              break;
+            case 'bnd-delete':
+              entries.push({
+                id,
+                node: (
+                  <button
+                    type="button"
+                    className="compact danger"
+                    onClick={() => deleteBoundaryAt(selection.tierIndex, selection.time)}
+                  >
+                    <UiIcon name="delBoundary" size={13} />
+                    <span>删除边界</span>
+                  </button>
+                )
+              });
+              break;
+          }
+        }
+        return assembleFloatingBarNodes(entries);
+      }
+
+      if (selection.kind === 'spine') {
+        const { minAllowed, maxAllowed } = getBoundaryDragBounds(tg, 0, selection.time, true);
+        const showSpineZero = !floatingBarConfig.boundary.hidden.includes('bnd-zero');
+        const zHint = getEffectiveShortcutHint('snap-zero-crossing', customShortcuts);
+        return (
+          <>
+            <ScrubNumberInput
+              variant="floating"
+              label="对齐时刻"
+              value={selection.time}
+              min={Number.isFinite(minAllowed) ? minAllowed : undefined}
+              max={Number.isFinite(maxAllowed) ? maxAllowed : undefined}
+              formatValue={formatPraatDouble}
+              onScrubPreview={(previewT) => showScrubPreviewLine(previewT, 0, true)}
+              onScrubEnd={clearScrubPreview}
+              onCommit={(val) => {
+                if (moveSharedTimestamp(selection.time, val)) {
+                  setSelection({ kind: 'spine', time: val, bandIndex: selection.bandIndex });
+                  return true;
+                }
+                return false;
+              }}
+            />
+            {showSpineZero && (
+              <>
+                <div className="sep" />
+                <button
+                  type="button"
+                  className="compact"
+                  disabled={!analysis}
+                  title={zHint ? `跨层吸附最近音频过零点 (${zHint})` : '跨层吸附最近音频过零点'}
+                  onClick={() => void snapTargetToZeroCrossing(selection)}
+                >
+                  <UiIcon name="zeroCross" size={13} />
+                  <span>过零</span>
+                </button>
+              </>
+            )}
+          </>
+        );
+      }
+
+      if (selection.kind === 'tier') {
+        const tier = tg.tiers[selection.tierIndex];
+        if (!tier) return null;
+        const visibleIds = getVisibleBarItems('tier');
+        if (visibleIds.length === 0) return null;
+
+        const entries: Array<{ id: string; node: React.ReactNode }> = [];
+        for (const id of visibleIds) {
+          switch (id) {
+            case 'tier-name':
+              entries.push({
+                id,
+                node: (
+                  <label className="field-inline">
+                    层名
+                    <input
+                      type="text"
+                      defaultValue={tier.name}
+                      key={`tn-${selection.tierIndex}-${tier.name}`}
+                      onKeyDown={blurOnEnter}
+                      onBlur={(e) => {
+                        if (e.target.value !== tier.name) {
+                          commitTgMutation(
+                            (d) => {
+                              d.tiers[selection.tierIndex].name = e.target.value;
+                            },
+                            undefined,
+                            '重命名层级'
+                          );
+                        }
+                      }}
+                    />
+                  </label>
+                )
+              });
+              break;
+            case 'tier-bounds':
+              entries.push({
+                id,
+                node: (
+                  <>
+                    <ScrubNumberInput
+                      variant="floating"
+                      label="起"
+                      value={tier.xmin}
+                      max={tier.xmax}
+                      strictMax
+                      formatValue={formatPraatDouble}
+                      onCommit={(val) => {
+                        if (!Number.isFinite(val) || val >= tier.xmax) {
+                          showToast('起点必须严格小于终点', true);
+                          return false;
+                        }
+                        if (val !== tier.xmin) {
+                          commitTgMutation(
+                            (d) => {
+                              d.tiers[selection.tierIndex].xmin = val;
+                            },
+                            undefined,
+                            '修改层起点'
+                          );
+                        }
+                        return true;
+                      }}
+                    />
+                    <ScrubNumberInput
+                      variant="floating"
+                      label="止"
+                      value={tier.xmax}
+                      min={tier.xmin}
+                      strictMin
+                      formatValue={formatPraatDouble}
+                      onCommit={(val) => {
+                        if (!Number.isFinite(val) || val <= tier.xmin) {
+                          showToast('终点必须严格大于起点', true);
+                          return false;
+                        }
+                        if (val !== tier.xmax) {
+                          commitTgMutation(
+                            (d) => {
+                              d.tiers[selection.tierIndex].xmax = val;
+                            },
+                            undefined,
+                            '修改层终点'
+                          );
+                        }
+                        return true;
+                      }}
+                    />
+                  </>
+                )
+              });
+              break;
+            case 'tier-move':
+              entries.push({
+                id,
+                node: (
+                  <>
+                    <button
+                      type="button"
+                      className="compact"
+                      disabled={selection.tierIndex === 0}
+                      onClick={() => moveTier(selection.tierIndex, -1)}
+                    >
+                      <UiIcon name="up" size={13} />
+                      <span>上移</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="compact"
+                      disabled={selection.tierIndex >= tg.tiers.length - 1}
+                      onClick={() => moveTier(selection.tierIndex, 1)}
+                    >
+                      <UiIcon name="down" size={13} />
+                      <span>下移</span>
+                    </button>
+                  </>
+                )
+              });
+              break;
+            case 'tier-delete':
+              entries.push({
+                id,
+                node: (
+                  <button
+                    type="button"
+                    className="compact danger"
+                    onClick={() => removeTierWithUndoToast(selection.tierIndex)}
+                  >
+                    <UiIcon name="trash" size={13} />
+                    <span>删除</span>
+                  </button>
+                )
+              });
+              break;
+          }
+        }
+        return assembleFloatingBarNodes(entries);
+      }
+
+      return null;
+    };
+
+    const floatingBarContent = renderFloatingBarContent();
+    const hasFloatingBarContent = Boolean(floatingBarContent);
+
     const [floatingPos, setFloatingPos] = useState<{ left: number; top: number } | null>(null);
 
     useLayoutEffect(() => {
-      if (!anchorRect || !anchorBand || !selection) {
+      if (!anchorRect || !anchorBand || !selection || !hasFloatingBarContent) {
         setFloatingPos(null);
         return;
       }
@@ -5164,13 +6218,15 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         let minLeft = margin;
         let maxLeft = Math.max(margin, layout.width - barW - margin);
         if (stageEl && sheetEl) {
+          const z = getElementRectScale(sheetEl);
           const stageRect = stageEl.getBoundingClientRect();
           const sheetRect = sheetEl.getBoundingClientRect();
-          const sheetOriginX = sheetRect.left + sheetEl.clientLeft;
-          const visMin = Math.max(margin, stageRect.left - sheetOriginX + margin);
+          const sheetOriginX = sheetRect.left + sheetEl.clientLeft * z;
+          const visLeftInSheet = (stageRect.left - sheetOriginX) / z;
+          const visMin = Math.max(margin, visLeftInSheet + margin);
           const visMax = Math.min(
             layout.width - barW - margin,
-            stageRect.left + stageEl.clientWidth - sheetOriginX - barW - margin
+            visLeftInSheet + stageEl.clientWidth - barW - margin
           );
           if (visMin <= visMax) {
             minLeft = visMin;
@@ -5185,10 +6241,11 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
         let top = belowTop;
         if (stageEl && sheetEl) {
+          const z = getElementRectScale(sheetEl);
           const stageRect = stageEl.getBoundingClientRect();
           const sheetRect = sheetEl.getBoundingClientRect();
-          const sheetOriginY = sheetRect.top + sheetEl.clientTop;
-          const visibleTopInSheet = stageRect.top - sheetOriginY;
+          const sheetOriginY = sheetRect.top + sheetEl.clientTop * z;
+          const visibleTopInSheet = (stageRect.top - sheetOriginY) / z;
           const visibleBottomInSheet = visibleTopInSheet + stageEl.clientHeight;
           const minVisTop = visibleTopInSheet + margin;
           const maxVisTop = Math.max(minVisTop, visibleBottomInSheet - barH - margin);
@@ -5241,18 +6298,12 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       anchorBand?.linearY,
       anchorBand?.tiersBottomY,
       selection,
+      hasFloatingBarContent,
+      floatingBarConfig,
       layout.width,
       layout.height,
       stageW
     ]);
-
-    const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (isComposingEvent(e)) return;
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        e.currentTarget.blur();
-      }
-    };
 
     const activeTab = useMemo(
       () => tabs.find((t) => t.id === activeTabId) ?? null,
@@ -5280,7 +6331,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             <div className="blank-quickstart-content">
               <span>
                 拖入 <strong>.wav</strong> / <strong>.TextGrid</strong> 文件，或在空白槽内拖拽划出新区间 · 按{' '}
-                <kbd>?</kbd> 查看快捷键
+                <kbd>{getEffectiveShortcutHint('shortcuts-modal', customShortcuts) || '?'}</kbd> 查看快捷键
               </span>
             </div>
             <button
@@ -5368,8 +6419,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               </>
             )}
 
-            {/* High-Contrast Dark Floating Contextual Bar */}
-            {selection && anchorRect && anchorBand && (
+            {/* High-Contrast Dark Customizable Floating Contextual Bar */}
+            {selection && anchorRect && anchorBand && floatingBarContent && (
               <div
                 ref={floatingBarRef}
                 className={`floating-bar ${floatingPos ? 'visible' : ''}`}
@@ -5379,469 +6430,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                     : { left: 6, top: Math.round(anchorBand.tiersBottomY + 8) }
                 }
               >
-                {selection.kind === 'interval' && (() => {
-                  const tier = tg.tiers[selection.tierIndex];
-                  const iv = tier?.intervals[selection.itemIndex];
-                  if (!iv) return null;
-                  const isZoomedHere = Boolean(
-                    viewDomain && Math.abs(viewDomain.min - iv.xmin) < 1e-4 && Math.abs(viewDomain.max - iv.xmax) < 1e-4
-                  );
-                  const durMs = Math.max(0, Math.round((iv.xmax - iv.xmin) * 1000));
-                  return (
-                    <>
-                      <label className="field-inline">
-                        起
-                        <input
-                          type="number"
-                          step="any"
-                          defaultValue={formatPraatDouble(iv.xmin)}
-                          key={`iv-min-${selection.tierIndex}-${selection.itemIndex}-${iv.xmin}`}
-                          onKeyDown={blurOnEnter}
-                          onBlur={(e) => {
-                            const raw = parseFloat(e.target.value);
-                            if (!Number.isFinite(raw)) {
-                              e.target.value = formatPraatDouble(iv.xmin);
-                              return;
-                            }
-                            const val = Number(raw.toFixed(6));
-                            const prev = tier.intervals[selection.itemIndex - 1];
-                            if (val >= iv.xmax) {
-                              showToast('起点必须严格小于终点', true);
-                              e.target.value = formatPraatDouble(iv.xmin);
-                              return;
-                            }
-                            if (prev && prev.xmax === iv.xmin && val <= prev.xmin) {
-                              showToast('起点不能越过左侧相邻区间', true);
-                              e.target.value = formatPraatDouble(iv.xmin);
-                              return;
-                            }
-                            if (val !== iv.xmin) {
-                              commitTgMutation(
-                                (draft) => {
-                                  const dTier = draft.tiers[selection.tierIndex];
-                                  const dPrev = dTier.intervals[selection.itemIndex - 1];
-                                  const cur = dTier.intervals[selection.itemIndex];
-                                  if (dPrev && dPrev.xmax === cur.xmin && val > dPrev.xmin) dPrev.xmax = val;
-                                  cur.xmin = val;
-                                },
-                                undefined,
-                                '修改区间起点'
-                              );
-                              setPlayRange({ start: val, end: iv.xmax });
-                            }
-                          }}
-                        />
-                      </label>
-                      <label className="field-inline">
-                        止
-                        <input
-                          type="number"
-                          step="any"
-                          defaultValue={formatPraatDouble(iv.xmax)}
-                          key={`iv-max-${selection.tierIndex}-${selection.itemIndex}-${iv.xmax}`}
-                          onKeyDown={blurOnEnter}
-                          onBlur={(e) => {
-                            const raw = parseFloat(e.target.value);
-                            if (!Number.isFinite(raw)) {
-                              e.target.value = formatPraatDouble(iv.xmax);
-                              return;
-                            }
-                            const val = Number(raw.toFixed(6));
-                            const next = tier.intervals[selection.itemIndex + 1];
-                            if (val <= iv.xmin) {
-                              showToast('终点必须严格大于起点', true);
-                              e.target.value = formatPraatDouble(iv.xmax);
-                              return;
-                            }
-                            if (next && next.xmin === iv.xmax && val >= next.xmax) {
-                              showToast('终点不能越过右侧相邻区间', true);
-                              e.target.value = formatPraatDouble(iv.xmax);
-                              return;
-                            }
-                            if (val !== iv.xmax) {
-                              commitTgMutation(
-                                (draft) => {
-                                  const dTier = draft.tiers[selection.tierIndex];
-                                  const dNext = dTier.intervals[selection.itemIndex + 1];
-                                  const cur = dTier.intervals[selection.itemIndex];
-                                  if (dNext && dNext.xmin === cur.xmax && val < dNext.xmax) dNext.xmin = val;
-                                  cur.xmax = val;
-                                },
-                                undefined,
-                                '修改区间终点'
-                              );
-                              setPlayRange({ start: iv.xmin, end: val });
-                            }
-                          }}
-                        />
-                      </label>
-                      <span
-                        className="floating-dur-badge"
-                        style={{
-                          fontFamily: 'var(--font-mono)',
-                          fontSize: '10.5px',
-                          color: '#C2BEB4',
-                          fontVariantNumeric: 'tabular-nums',
-                          padding: '0 3px'
-                        }}
-                      >
-                        {durMs} ms
-                      </span>
-                      <div className="sep" />
-                      <button type="button" className="compact" onClick={() => openInline(selection)}>
-                        <UiIcon name="edit" size={13} />
-                        <span>改字</span>
-                      </button>
-                      {iv.text !== '' && (
-                        <button
-                          type="button"
-                          className="compact"
-                          onClick={() =>
-                            commitTgMutation(
-                              (d) => {
-                                d.tiers[selection.tierIndex].intervals[selection.itemIndex].text = '';
-                              },
-                              selection,
-                              '清空区间文本'
-                            )
-                          }
-                        >
-                          <UiIcon name="clear" size={13} />
-                          <span>清空</span>
-                        </button>
-                      )}
-                      <button type="button" className="compact" onClick={() => splitInterval(selection.tierIndex, selection.itemIndex)}>
-                        <UiIcon name="split" size={13} />
-                        <span>切分</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="compact"
-                        disabled={selection.itemIndex === 0}
-                        onClick={() => mergeIntervalWith(selection.tierIndex, selection.itemIndex, -1)}
-                      >
-                        <UiIcon name="mergeLeft" size={13} />
-                        <span>合左</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="compact"
-                        disabled={selection.itemIndex >= tier.intervals.length - 1}
-                        onClick={() => mergeIntervalWith(selection.tierIndex, selection.itemIndex, 1)}
-                      >
-                        <UiIcon name="mergeRight" size={13} />
-                        <span>合右</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="compact"
-                        disabled={iv.xmax <= iv.xmin}
-                        onClick={() => {
-                          setPlayRange({ start: iv.xmin, end: iv.xmax });
-                          onStartPlayback(iv.xmin, iv.xmax);
-                        }}
-                      >
-                        <UiIcon name="play" size={13} />
-                        <span>播放</span>
-                      </button>
-                      {isZoomedHere ? (
-                        <button type="button" className="compact" onClick={() => setViewDomain(null)}>
-                          <UiIcon name="zoomReset" size={13} />
-                          <span>全长</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="compact"
-                          disabled={iv.xmax <= iv.xmin}
-                          onClick={() => setViewDomain({ min: iv.xmin, max: iv.xmax })}
-                        >
-                          <UiIcon name="zoomIn" size={13} />
-                          <span>放大</span>
-                        </button>
-                      )}
-                    </>
-                  );
-                })()}
-
-                {selection.kind === 'point' && (() => {
-                  const tier = tg.tiers[selection.tierIndex];
-                  const pt = tier?.points[selection.itemIndex];
-                  if (!tier || !pt) return null;
-                  return (
-                    <>
-                      <label className="field-inline">
-                        时间
-                        <input
-                          type="number"
-                          step="any"
-                          defaultValue={formatPraatDouble(pt.number)}
-                          key={`pt-${selection.tierIndex}-${selection.itemIndex}-${pt.number}`}
-                          onKeyDown={blurOnEnter}
-                          onBlur={(e) => {
-                            const raw = parseFloat(e.target.value);
-                            if (!Number.isFinite(raw)) {
-                              e.target.value = formatPraatDouble(pt.number);
-                              return;
-                            }
-                            const val = Number(raw.toFixed(6));
-                            if (tier.points.some((p, i) => i !== selection.itemIndex && p.number === val)) {
-                              showToast('目标时刻已存在标点', true);
-                              e.target.value = formatPraatDouble(pt.number);
-                              return;
-                            }
-                            if (val !== pt.number) {
-                              let nextIdx = selection.itemIndex;
-                              commitTgMutation(
-                                (draft) => {
-                                  const dTier = draft.tiers[selection.tierIndex];
-                                  const targetPt = dTier.points[selection.itemIndex];
-                                  if (!targetPt) return;
-                                  targetPt.number = val;
-                                  dTier.points.sort((a, b) => a.number - b.number);
-                                  nextIdx = dTier.points.indexOf(targetPt);
-                                },
-                                undefined,
-                                '修改标点时间'
-                              );
-                              setSelection({
-                                kind: 'point',
-                                tierIndex: selection.tierIndex,
-                                itemIndex: Math.max(0, nextIdx),
-                                bandIndex: selection.bandIndex
-                              });
-                            }
-                          }}
-                        />
-                      </label>
-                      <div className="sep" />
-                      <button type="button" className="compact" onClick={() => openInline(selection)}>
-                        <UiIcon name="edit" size={13} />
-                        <span>改字</span>
-                      </button>
-                      <button type="button" className="compact" onClick={() => { setPlayRange(null); onStartPlayback(pt.number, tg.xmax); }}>
-                        <UiIcon name="play" size={13} />
-                        <span>播放</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="compact danger"
-                        onClick={() =>
-                          commitTgMutation(
-                            (draft) => {
-                              draft.tiers[selection.tierIndex].points.splice(selection.itemIndex, 1);
-                            },
-                            null,
-                            '删除标点'
-                          )
-                        }
-                      >
-                        <UiIcon name="trash" size={13} />
-                        <span>删除</span>
-                      </button>
-                    </>
-                  );
-                })()}
-
-                {selection.kind === 'boundary' && (
-                  <>
-                    <label className="field-inline">
-                      边界
-                      <input
-                        type="number"
-                        step="any"
-                        defaultValue={formatPraatDouble(selection.time)}
-                        key={`bnd-${selection.tierIndex}-${selection.time}`}
-                        onKeyDown={blurOnEnter}
-                        onBlur={(e) => {
-                          const raw = parseFloat(e.target.value);
-                          const val = Number.isFinite(raw) ? Number(raw.toFixed(6)) : NaN;
-                          if (Number.isFinite(val) && moveTierBoundary(selection.tierIndex, selection.time, val, false)) {
-                            setSelection({ kind: 'boundary', tierIndex: selection.tierIndex, time: val, bandIndex: selection.bandIndex });
-                          } else {
-                            e.target.value = formatPraatDouble(selection.time);
-                          }
-                        }}
-                      />
-                    </label>
-                    <div className="sep" />
-                    <button
-                      type="button"
-                      className="compact"
-                      disabled={!analysis}
-                      title="吸附最近音频过零点 (Z)"
-                      onClick={() => void snapTargetToZeroCrossing(selection)}
-                    >
-                      <UiIcon name="zeroCross" size={13} />
-                      <span>过零</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="compact"
-                      onClick={() => {
-                        const s = Math.max(tg.xmin, selection.time - 0.2);
-                        const en = Math.min(tg.xmax, selection.time + 0.2);
-                        if (en > s) onStartPlayback(s, en);
-                      }}
-                    >
-                      <UiIcon name="play" size={13} />
-                      <span>试听 ±200ms</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="compact danger"
-                      onClick={() => deleteBoundaryAt(selection.tierIndex, selection.time)}
-                    >
-                      <UiIcon name="delBoundary" size={13} />
-                      <span>删除边界</span>
-                    </button>
-                  </>
-                )}
-
-                {selection.kind === 'spine' && (
-                  <>
-                    <label className="field-inline">
-                      对齐时刻
-                      <input
-                        type="number"
-                        step="any"
-                        defaultValue={formatPraatDouble(selection.time)}
-                        key={`sp-${selection.time}`}
-                        onKeyDown={blurOnEnter}
-                        onBlur={(e) => {
-                          const raw = parseFloat(e.target.value);
-                          const val = Number.isFinite(raw) ? Number(raw.toFixed(6)) : NaN;
-                          if (Number.isFinite(val) && moveSharedTimestamp(selection.time, val)) {
-                            setSelection({ kind: 'spine', time: val, bandIndex: selection.bandIndex });
-                          } else {
-                            e.target.value = formatPraatDouble(selection.time);
-                          }
-                        }}
-                      />
-                    </label>
-                    <div className="sep" />
-                    <button
-                      type="button"
-                      className="compact"
-                      disabled={!analysis}
-                      title="跨层吸附最近音频过零点 (Z)"
-                      onClick={() => void snapTargetToZeroCrossing(selection)}
-                    >
-                      <UiIcon name="zeroCross" size={13} />
-                      <span>过零</span>
-                    </button>
-                  </>
-                )}
-
-                {selection.kind === 'tier' && (() => {
-                  const tier = tg.tiers[selection.tierIndex];
-                  if (!tier) return null;
-                  return (
-                    <>
-                      <label className="field-inline">
-                        层名
-                        <input
-                          type="text"
-                          defaultValue={tier.name}
-                          key={`tn-${selection.tierIndex}-${tier.name}`}
-                          onKeyDown={blurOnEnter}
-                          onBlur={(e) => {
-                            if (e.target.value !== tier.name) {
-                              commitTgMutation(
-                                (d) => {
-                                  d.tiers[selection.tierIndex].name = e.target.value;
-                                },
-                                undefined,
-                                '重命名层级'
-                              );
-                            }
-                          }}
-                        />
-                      </label>
-                      <label className="field-inline">
-                        起
-                        <input
-                          type="number"
-                          step="any"
-                          defaultValue={formatPraatDouble(tier.xmin)}
-                          key={`tmin-${selection.tierIndex}-${tier.xmin}`}
-                          onKeyDown={blurOnEnter}
-                          onBlur={(e) => {
-                            const val = parseFloat(e.target.value);
-                            if (!Number.isFinite(val) || val >= tier.xmax) {
-                              showToast('起点必须严格小于终点', true);
-                              e.target.value = formatPraatDouble(tier.xmin);
-                              return;
-                            }
-                            if (val !== tier.xmin) {
-                              commitTgMutation(
-                                (d) => {
-                                  d.tiers[selection.tierIndex].xmin = val;
-                                },
-                                undefined,
-                                '修改层起点'
-                              );
-                            }
-                          }}
-                        />
-                      </label>
-                      <label className="field-inline">
-                        止
-                        <input
-                          type="number"
-                          step="any"
-                          defaultValue={formatPraatDouble(tier.xmax)}
-                          key={`tmax-${selection.tierIndex}-${tier.xmax}`}
-                          onKeyDown={blurOnEnter}
-                          onBlur={(e) => {
-                            const val = parseFloat(e.target.value);
-                            if (!Number.isFinite(val) || val <= tier.xmin) {
-                              showToast('终点必须严格大于起点', true);
-                              e.target.value = formatPraatDouble(tier.xmax);
-                              return;
-                            }
-                            if (val !== tier.xmax) {
-                              commitTgMutation(
-                                (d) => {
-                                  d.tiers[selection.tierIndex].xmax = val;
-                                },
-                                undefined,
-                                '修改层终点'
-                              );
-                            }
-                          }}
-                        />
-                      </label>
-                      <div className="sep" />
-                      <button
-                        type="button"
-                        className="compact"
-                        disabled={selection.tierIndex === 0}
-                        onClick={() => moveTier(selection.tierIndex, -1)}
-                      >
-                        <UiIcon name="up" size={13} />
-                        <span>上移</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="compact"
-                        disabled={selection.tierIndex >= tg.tiers.length - 1}
-                        onClick={() => moveTier(selection.tierIndex, 1)}
-                      >
-                        <UiIcon name="down" size={13} />
-                        <span>下移</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="compact danger"
-                        onClick={() => removeTierWithUndoToast(selection.tierIndex)}
-                      >
-                        <UiIcon name="trash" size={13} />
-                        <span>删除</span>
-                      </button>
-                    </>
-                  );
-                })()}
+                {floatingBarContent}
               </div>
             )}
 
@@ -5862,7 +6451,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           {/* Live Rust-Backed Yunlong / Praat Candidate Popover */}
           <IpaImePopover ime={ipaIme} />
 
-          {/* Right-Click Context Menu (with flyout submenus) */}
+          {/* Right-Click Context Menu (Standard Desktop Cascading Submenus) */}
           {ctxMenu && (
             <div className="context-menu open" style={{ left: ctxMenu.x, top: ctxMenu.y }}>
               {ctxMenu.items.map((item, idx) =>
@@ -5871,56 +6460,46 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                 ) : item.children && item.children.length > 0 ? (
                   <div
                     key={`${item.label}-${idx}`}
-                    style={{ position: 'relative' }}
+                    className="ctx-submenu-wrap"
                     onMouseEnter={() => {
+                      cancelSubmenuClose();
                       if (!item.disabled) setOpenSubmenuIdx(idx);
                     }}
+                    onMouseLeave={scheduleSubmenuClose}
                   >
                     <button
                       type="button"
+                      className={`ctx-submenu-trigger${openSubmenuIdx === idx ? ' is-open' : ''}`}
                       disabled={item.disabled}
                       onClick={(ev) => {
                         ev.stopPropagation();
+                        cancelSubmenuClose();
                         if (!item.disabled) {
                           setOpenSubmenuIdx((prev) => (prev === idx ? null : idx));
                         }
                       }}
                     >
-                      <span>{item.label}</span>
+                      <span className="ctx-item-main">
+                        <span className="ctx-item-icon" aria-hidden="true">
+                          {item.icon ? <UiIcon name={item.icon} size={14} /> : null}
+                        </span>
+                        <span>{item.label}</span>
+                      </span>
+                      <span className="ctx-submenu-arrow">
+                        <SubmenuChevronIcon size={12} />
+                      </span>
                     </button>
                     {openSubmenuIdx === idx && !item.disabled && (
-                      <div
-                        className="context-menu open"
-                        style={{
-                          position: 'absolute',
-                          top: -4,
-                          ...(ctxMenu.x + 410 > window.innerWidth
-                            ? { right: '100%', left: 'auto', marginRight: -1 }
-                            : { left: '100%', marginLeft: -1 }),
-                          maxHeight: '60vh',
-                          overflowY: 'auto'
+                      <CtxSubmenuPanel
+                        items={item.children}
+                        openLeft={ctxMenu.x + 410 > getLogicalViewportSize().width}
+                        onMouseEnter={cancelSubmenuClose}
+                        onSelectItem={(child) => {
+                          cancelSubmenuClose();
+                          setCtxMenu(null);
+                          child.action?.();
                         }}
-                      >
-                        {item.children.map((child, cIdx) =>
-                          child.divider ? (
-                            <div key={`sub-div-${cIdx}`} className="menu-divider" />
-                          ) : (
-                            <button
-                              key={`${child.label}-${cIdx}`}
-                              type="button"
-                              className={child.danger ? 'danger' : ''}
-                              disabled={child.disabled}
-                              onClick={() => {
-                                setCtxMenu(null);
-                                child.action?.();
-                              }}
-                            >
-                              <span>{child.label}</span>
-                              {child.shortcut && <span className="shortcut">{child.shortcut}</span>}
-                            </button>
-                          )
-                        )}
-                      </div>
+                      />
                     )}
                   </div>
                 ) : (
@@ -5929,19 +6508,41 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                     type="button"
                     className={item.danger ? 'danger' : ''}
                     disabled={item.disabled}
-                    onMouseEnter={() => setOpenSubmenuIdx(null)}
+                    onMouseEnter={() => {
+                      if (openSubmenuIdx !== null && submenuCloseTimerRef.current === null) {
+                        scheduleSubmenuClose();
+                      }
+                    }}
                     onClick={() => {
+                      cancelSubmenuClose();
                       setCtxMenu(null);
                       item.action?.();
                     }}
                   >
-                    <span>{item.label}</span>
+                    <span className="ctx-item-main">
+                      <span className="ctx-item-icon" aria-hidden="true">
+                        {item.icon ? <UiIcon name={item.icon} size={14} /> : null}
+                      </span>
+                      <span>{item.label}</span>
+                    </span>
                     {item.shortcut && <span className="shortcut">{item.shortcut}</span>}
                   </button>
                 )
               )}
             </div>
           )}
+          {/* Custom Architectural Equal-Split Slider Modal */}
+          <SplitEqualModal
+            state={splitEqualDialog}
+            onCancel={() => setSplitEqualDialog(null)}
+            onConfirm={(n) => {
+              const dlg = splitEqualDialog;
+              setSplitEqualDialog(null);
+              if (dlg) {
+                splitIntervalEqualN(dlg.tierIndex, dlg.itemIndex, n);
+              }
+            }}
+          />
         </main>
       </div>
     );

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { getPlatformBridge } from '../bridge/PlatformBridge';
 import type { AudioAnalysisSummary } from '../bridge/types';
+import { getElementRectScale } from '../utils/uiScale';
 
 export interface MicroLoupeAnchor {
   centerT: number;
@@ -380,12 +381,13 @@ export const AcousticMicroLoupe: React.FC<AcousticMicroLoupeProps> = ({
     const stageEl = stageRef.current;
     const sheetEl = sheetRef.current;
     if (stageEl && sheetEl) {
+      const z = getElementRectScale(sheetEl);
       const stageRect = stageEl.getBoundingClientRect();
       const sheetRect = sheetEl.getBoundingClientRect();
-      const visLeft = stageRect.left - sheetRect.left;
-      const visRight = stageRect.right - sheetRect.left;
-      visTop = stageRect.top - sheetRect.top;
-      visBottom = stageRect.bottom - sheetRect.top;
+      const visLeft = (stageRect.left - sheetRect.left) / z;
+      const visRight = (stageRect.right - sheetRect.left) / z;
+      visTop = (stageRect.top - sheetRect.top) / z;
+      visBottom = (stageRect.bottom - sheetRect.top) / z;
 
       const clampedMin = Math.max(8, visLeft + 8);
       const clampedMax = Math.min(layoutWidth - loupeW - 8, visRight - loupeW - 8);

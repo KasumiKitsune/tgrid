@@ -1,0 +1,28 @@
+<svg class="tg-icon tg-icon--nudge-boundary" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill, .tg-src-fill, .tg-dst-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-pane-fill {
+      opacity: 0.09;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill, svg:hover .tg-src-fill, svg:hover .tg-dst-fill { opacity: 0.14; }
+    svg:hover .tg-pane-fill { opacity: 0.2; }
+    svg:hover .tg-sub { opacity: 1; }
+    svg:hover .tg-arr-l { transform: translateX(-0.6px); }
+    svg:hover .tg-arr-r { transform: translateX(0.6px); }
+  </style>
+  <!-- 按下态边界平移通道底纹 -->
+  <rect class="tg-fill" x="6.5" y="2.25" width="3" height="11.5" rx="1" fill="currentColor" />
+  <!-- 中央选中边界线 -->
+  <path d="M8 1.75V14.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  <!-- 左 / 右 ±10ms 微调箭头 -->
+  <path class="tg-sub tg-arr-l" d="M5.5 8H1.75M3.75 5.75L1.75 8L3.75 10.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+  <path class="tg-sub tg-arr-r" d="M10.5 8H14.25M12.25 5.75L14.25 8L12.25 10.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

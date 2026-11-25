@@ -298,6 +298,126 @@
   transform: translate(0.5px, 0.5px);
 }
 
+/* Icon: copyTime */
+.tgi.tgi-copyTime .tg-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-copyTime .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-copyTime:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-copyTime .tg-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-copyTime:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-copyTime .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-copyTime .tg-clock {
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-copyTime:hover .tg-copy-back,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-copyTime .tg-copy-back {
+  transform: translate(-0.45px, -0.45px);
+}
+.tgi.tgi-copyTime:hover .tg-clock,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-copyTime .tg-clock {
+  transform: translate(0.35px, 0.35px);
+}
+
+/* Icon: createFromRange */
+.tgi.tgi-createFromRange .tg-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-createFromRange .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-createFromRange:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-createFromRange .tg-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-createFromRange:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-createFromRange .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-createFromRange .tg-plus {
+  transform-origin: 8px 8px;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-createFromRange:hover .tg-plus,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-createFromRange .tg-plus {
+  transform: scale(1.12);
+  stroke: var(--tgi-accent, #2563eb);
+}
+
+/* Icon: customize */
+.tgi.tgi-customize .cust-root {
+  transform-origin: 8px 8px;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-customize .cust-tile {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+  transition: stroke 0.2s ease, transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-customize .cust-tile-accent {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+  fill: var(--tgi-accent-bg-0, rgba(37, 99, 235, 0));
+  transform-origin: 11.55px 4.45px;
+  transform: translate(0.45px, -0.45px) rotate(14deg);
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+        stroke 0.2s ease,
+        fill 0.2s ease;
+}
+.tgi.tgi-customize:hover .cust-tile,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-customize .cust-tile {
+  stroke: var(--tgi-stroke-hover, #111827);
+}
+.tgi.tgi-customize:hover .cust-tile-accent,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-customize .cust-tile-accent {
+  stroke: var(--tgi-accent, #2563eb);
+  fill: var(--tgi-accent-bg, rgba(37, 99, 235, 0.14));
+  transform: translate(0, 0) rotate(0deg);
+}
+
+/* Icon: cut */
+.tgi.tgi-cut .tg-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-cut .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-cut:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-cut .tg-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-cut:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-cut .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-cut .tg-blade-a,
+.tgi.tgi-cut .tg-blade-b {
+  transform-origin: 8.62px 8px;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-cut:hover .tg-blade-a,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-cut .tg-blade-a {
+  transform: rotate(-7deg);
+}
+.tgi.tgi-cut:hover .tg-blade-b,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-cut .tg-blade-b {
+  transform: rotate(7deg);
+}
+
 /* Icon: delBoundary */
 .tgi.tgi-delBoundary .db-root {
   transform-origin: 8px 8px;
@@ -351,6 +471,76 @@
   transform: rotate(90deg) scale(1.06);
 }
 
+/* Icon: delBoundaryAll */
+.tgi.tgi-delBoundaryAll .tg-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-delBoundaryAll .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-delBoundaryAll:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-delBoundaryAll .tg-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-delBoundaryAll:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-delBoundaryAll .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-delBoundaryAll .tg-cross {
+  transform-origin: 8px 8px;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-delBoundaryAll .tg-bound-top,
+.tgi.tgi-delBoundaryAll .tg-bound-bottom {
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-delBoundaryAll:hover .tg-cross,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-delBoundaryAll .tg-cross {
+  transform: scale(1.08);
+  stroke: var(--tgi-danger, #dc2626);
+}
+.tgi.tgi-delBoundaryAll:hover .tg-bound-top,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-delBoundaryAll .tg-bound-top {
+  transform: translateY(-0.45px);
+}
+.tgi.tgi-delBoundaryAll:hover .tg-bound-bottom,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-delBoundaryAll .tg-bound-bottom {
+  transform: translateY(0.45px);
+}
+
+/* Icon: derivePointTier */
+.tgi.tgi-derivePointTier .tg-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-derivePointTier .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-derivePointTier:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-derivePointTier .tg-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-derivePointTier:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-derivePointTier .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-derivePointTier .tg-diamond {
+  transform-origin: 8px 12.75px;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), fill 0.2s ease;
+}
+.tgi.tgi-derivePointTier:hover .tg-derive,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-derivePointTier .tg-derive {
+  transform: translateY(0.75px);
+}
+.tgi.tgi-derivePointTier:hover .tg-diamond,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-derivePointTier .tg-diamond {
+  transform: scale(1.1);
+  fill: var(--tgi-accent, #2563eb);
+}
+
 /* Icon: dockBottom */
 .tgi.tgi-dockBottom .dbot-root {
   transform-origin: 8px 8px;
@@ -397,6 +587,37 @@
 :where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-down .dn-arrow {
   stroke: var(--tgi-accent, #2563eb);
   transform: translateY(1.2px);
+}
+
+/* Icon: duplicateTier */
+.tgi.tgi-duplicateTier .tg-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-duplicateTier .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-duplicateTier:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-duplicateTier .tg-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-duplicateTier:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-duplicateTier .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-duplicateTier .tg-plus {
+  transform-origin: 12.5px 11.5px;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-duplicateTier:hover .tg-clone,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-duplicateTier .tg-clone {
+  transform: translateY(0.5px);
+}
+.tgi.tgi-duplicateTier:hover .tg-plus,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-duplicateTier .tg-plus {
+  transform: scale(1.12);
+  stroke: var(--tgi-accent, #2563eb);
 }
 
 /* Icon: edit */
@@ -555,6 +776,32 @@
   stroke: var(--tgi-accent, #2563eb);
 }
 
+/* Icon: hideTier */
+.tgi.tgi-hideTier .tg-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-hideTier .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-hideTier:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-hideTier .tg-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-hideTier:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-hideTier .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-hideTier .tg-slash {
+  transform-origin: 8px 8px;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-hideTier:hover .tg-slash,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-hideTier .tg-slash {
+  transform: scale(1.05);
+}
+
 /* Icon: inspector */
 .tgi.tgi-inspector .insp-root {
   transform-origin: 8px 8px;
@@ -594,6 +841,92 @@
 .tgi.tgi-inspector:hover .k3,
 :where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-inspector .k3 {
   transform: translateX(4.2px);
+}
+
+/* Icon: ipaMode */
+.tgi.tgi-ipaMode .tg-fill,
+.tgi.tgi-ipaMode .tg-src-fill,
+.tgi.tgi-ipaMode .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-ipaMode .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-ipaMode .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-ipaMode:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-ipaMode .tg-fill,
+.tgi.tgi-ipaMode:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-ipaMode .tg-src-fill,
+.tgi.tgi-ipaMode:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-ipaMode .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-ipaMode:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-ipaMode .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-ipaMode:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-ipaMode .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-ipaMode .tg-cycle {
+  transform-origin: 8px 8px;
+}
+.tgi.tgi-ipaMode .tg-schwa {
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-ipaMode:hover .tg-cycle,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-ipaMode .tg-cycle {
+  transform: rotate(30deg);
+}
+.tgi.tgi-ipaMode:hover .tg-schwa,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-ipaMode .tg-schwa {
+  stroke: var(--tgi-accent, #2563eb);
+}
+
+/* Icon: ipaToggleLang */
+.tgi.tgi-ipaToggleLang .tg-fill,
+.tgi.tgi-ipaToggleLang .tg-src-fill,
+.tgi.tgi-ipaToggleLang .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-ipaToggleLang .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-ipaToggleLang .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-ipaToggleLang:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-ipaToggleLang .tg-fill,
+.tgi.tgi-ipaToggleLang:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-ipaToggleLang .tg-src-fill,
+.tgi.tgi-ipaToggleLang:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-ipaToggleLang .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-ipaToggleLang:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-ipaToggleLang .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-ipaToggleLang:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-ipaToggleLang .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-ipaToggleLang:hover .tg-swap-tr,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-ipaToggleLang .tg-swap-tr {
+  transform: translate(0.45px, -0.35px);
+}
+.tgi.tgi-ipaToggleLang:hover .tg-swap-bl,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-ipaToggleLang .tg-swap-bl {
+  transform: translate(-0.45px, 0.35px);
 }
 
 /* Icon: keyboard */
@@ -741,6 +1074,53 @@
   transform: translateX(0.65px);
 }
 
+/* Icon: locatePlayhead */
+.tgi.tgi-locatePlayhead .tg-fill,
+.tgi.tgi-locatePlayhead .tg-src-fill,
+.tgi.tgi-locatePlayhead .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-locatePlayhead .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-locatePlayhead .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-locatePlayhead:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-locatePlayhead .tg-fill,
+.tgi.tgi-locatePlayhead:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-locatePlayhead .tg-src-fill,
+.tgi.tgi-locatePlayhead:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-locatePlayhead .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-locatePlayhead:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-locatePlayhead .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-locatePlayhead:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-locatePlayhead .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-locatePlayhead .tg-head {
+  transition: stroke 0.2s ease, fill 0.2s ease;
+}
+.tgi.tgi-locatePlayhead:hover .tg-br-l,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-locatePlayhead .tg-br-l {
+  transform: translateX(-0.5px);
+}
+.tgi.tgi-locatePlayhead:hover .tg-br-r,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-locatePlayhead .tg-br-r {
+  transform: translateX(0.5px);
+}
+.tgi.tgi-locatePlayhead:hover .tg-head,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-locatePlayhead .tg-head {
+  stroke: var(--tgi-accent, #2563eb);
+}
+
 /* Icon: loop */
 .tgi.tgi-loop .loop-press {
   transform-origin: 8px 8px;
@@ -824,6 +1204,126 @@
   transform: translateX(1.1px);
 }
 
+/* Icon: navHorizontal */
+.tgi.tgi-navHorizontal .tg-fill,
+.tgi.tgi-navHorizontal .tg-src-fill,
+.tgi.tgi-navHorizontal .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-navHorizontal .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-navHorizontal .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-navHorizontal:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-navHorizontal .tg-fill,
+.tgi.tgi-navHorizontal:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-navHorizontal .tg-src-fill,
+.tgi.tgi-navHorizontal:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-navHorizontal .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-navHorizontal:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-navHorizontal .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-navHorizontal:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-navHorizontal .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-navHorizontal:hover .tg-chev-l,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-navHorizontal .tg-chev-l {
+  transform: translateX(-0.6px);
+}
+.tgi.tgi-navHorizontal:hover .tg-chev-r,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-navHorizontal .tg-chev-r {
+  transform: translateX(0.6px);
+}
+
+/* Icon: navVertical */
+.tgi.tgi-navVertical .tg-fill,
+.tgi.tgi-navVertical .tg-src-fill,
+.tgi.tgi-navVertical .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-navVertical .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-navVertical .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-navVertical:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-navVertical .tg-fill,
+.tgi.tgi-navVertical:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-navVertical .tg-src-fill,
+.tgi.tgi-navVertical:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-navVertical .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-navVertical:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-navVertical .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-navVertical:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-navVertical .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-navVertical:hover .tg-chev-t,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-navVertical .tg-chev-t {
+  transform: translateY(-0.6px);
+}
+.tgi.tgi-navVertical:hover .tg-chev-b,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-navVertical .tg-chev-b {
+  transform: translateY(0.6px);
+}
+
+/* Icon: nextEmpty */
+.tgi.tgi-nextEmpty .tg-fill,
+.tgi.tgi-nextEmpty .tg-src-fill,
+.tgi.tgi-nextEmpty .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-nextEmpty .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-nextEmpty .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-nextEmpty:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nextEmpty .tg-fill,
+.tgi.tgi-nextEmpty:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nextEmpty .tg-src-fill,
+.tgi.tgi-nextEmpty:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nextEmpty .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-nextEmpty:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nextEmpty .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-nextEmpty:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nextEmpty .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-nextEmpty .tg-jump {
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-nextEmpty:hover .tg-jump,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nextEmpty .tg-jump {
+  transform: translateX(0.65px);
+  stroke: var(--tgi-accent, #2563eb);
+}
+
 /* Icon: normalize */
 .tgi.tgi-normalize .norm-root {
   transform-origin: 8px 8px;
@@ -874,6 +1374,164 @@
   transform: scaleX(1.36);
 }
 
+/* Icon: nudgeBoundary */
+.tgi.tgi-nudgeBoundary .tg-fill,
+.tgi.tgi-nudgeBoundary .tg-src-fill,
+.tgi.tgi-nudgeBoundary .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-nudgeBoundary .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-nudgeBoundary .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-nudgeBoundary:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeBoundary .tg-fill,
+.tgi.tgi-nudgeBoundary:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeBoundary .tg-src-fill,
+.tgi.tgi-nudgeBoundary:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeBoundary .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-nudgeBoundary:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeBoundary .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-nudgeBoundary:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeBoundary .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-nudgeBoundary:hover .tg-arr-l,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeBoundary .tg-arr-l {
+  transform: translateX(-0.6px);
+}
+.tgi.tgi-nudgeBoundary:hover .tg-arr-r,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeBoundary .tg-arr-r {
+  transform: translateX(0.6px);
+}
+
+/* Icon: nudgeFine */
+.tgi.tgi-nudgeFine .tg-fill,
+.tgi.tgi-nudgeFine .tg-src-fill,
+.tgi.tgi-nudgeFine .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-nudgeFine .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-nudgeFine .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-nudgeFine:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeFine .tg-fill,
+.tgi.tgi-nudgeFine:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeFine .tg-src-fill,
+.tgi.tgi-nudgeFine:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeFine .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-nudgeFine:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeFine .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-nudgeFine:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeFine .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-nudgeFine .tg-node {
+  transform-origin: 8px 8px;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-nudgeFine:hover .tg-arr-l,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeFine .tg-arr-l {
+  transform: translateX(-0.5px);
+}
+.tgi.tgi-nudgeFine:hover .tg-arr-r,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeFine .tg-arr-r {
+  transform: translateX(0.5px);
+}
+.tgi.tgi-nudgeFine:hover .tg-node,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeFine .tg-node {
+  transform: scale(1.1);
+  stroke: var(--tgi-accent, #2563eb);
+}
+
+/* Icon: nudgeShared */
+.tgi.tgi-nudgeShared .tg-fill,
+.tgi.tgi-nudgeShared .tg-src-fill,
+.tgi.tgi-nudgeShared .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-nudgeShared .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-nudgeShared .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-nudgeShared:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeShared .tg-fill,
+.tgi.tgi-nudgeShared:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeShared .tg-src-fill,
+.tgi.tgi-nudgeShared:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeShared .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-nudgeShared:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeShared .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-nudgeShared:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeShared .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-nudgeShared:hover .tg-arr-l,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeShared .tg-arr-l {
+  transform: translateX(-0.6px);
+}
+.tgi.tgi-nudgeShared:hover .tg-arr-r,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-nudgeShared .tg-arr-r {
+  transform: translateX(0.6px);
+}
+
+/* Icon: paste */
+.tgi.tgi-paste .tg-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-paste .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-paste:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-paste .tg-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-paste:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-paste .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-paste .tg-clip {
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-paste:hover .tg-clip,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-paste .tg-clip {
+  transform: translateY(-0.45px);
+}
+.tgi.tgi-paste:hover .tg-lines,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-paste .tg-lines {
+  transform: translateY(0.35px);
+}
+
 /* Icon: play */
 .tgi.tgi-play .play-line {
   stroke: var(--tgi-stroke, #374151);
@@ -888,6 +1546,187 @@
   stroke: var(--tgi-accent, #2563eb);
   fill: var(--tgi-accent-bg, rgba(37, 99, 235, 0.12));
   transform: translateX(0.6px);
+}
+
+/* Icon: playContext */
+.tgi.tgi-playContext .tg-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-playContext .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-playContext:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-playContext .tg-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-playContext:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-playContext .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-playContext .tg-play {
+  transition: stroke 0.2s ease, fill 0.2s ease;
+}
+.tgi.tgi-playContext:hover .tg-play,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-playContext .tg-play {
+  stroke: var(--tgi-accent, #2563eb);
+}
+.tgi.tgi-playContext:hover .tg-wing-l,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-playContext .tg-wing-l {
+  transform: translateX(-0.65px);
+}
+.tgi.tgi-playContext:hover .tg-wing-r,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-playContext .tg-wing-r {
+  transform: translateX(0.65px);
+}
+
+/* Icon: prevEmpty */
+.tgi.tgi-prevEmpty .tg-fill,
+.tgi.tgi-prevEmpty .tg-src-fill,
+.tgi.tgi-prevEmpty .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-prevEmpty .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-prevEmpty .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-prevEmpty:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-prevEmpty .tg-fill,
+.tgi.tgi-prevEmpty:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-prevEmpty .tg-src-fill,
+.tgi.tgi-prevEmpty:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-prevEmpty .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-prevEmpty:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-prevEmpty .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-prevEmpty:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-prevEmpty .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-prevEmpty .tg-jump {
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-prevEmpty:hover .tg-jump,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-prevEmpty .tg-jump {
+  transform: translateX(-0.65px);
+  stroke: var(--tgi-accent, #2563eb);
+}
+
+/* Icon: projectToTier */
+.tgi.tgi-projectToTier .tg-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-projectToTier .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-projectToTier:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-projectToTier .tg-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-projectToTier:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-projectToTier .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-projectToTier .tg-arrow {
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-projectToTier:hover .tg-arrow,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-projectToTier .tg-arrow {
+  transform: translateY(0.75px);
+  stroke: var(--tgi-accent, #2563eb);
+}
+
+/* Icon: rateDown */
+.tgi.tgi-rateDown .tg-fill,
+.tgi.tgi-rateDown .tg-src-fill,
+.tgi.tgi-rateDown .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-rateDown .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-rateDown .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-rateDown:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-rateDown .tg-fill,
+.tgi.tgi-rateDown:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-rateDown .tg-src-fill,
+.tgi.tgi-rateDown:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-rateDown .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-rateDown:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-rateDown .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-rateDown:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-rateDown .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-rateDown .tg-needle {
+  transform-origin: 8px 10.5px;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-rateDown:hover .tg-needle,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-rateDown .tg-needle {
+  transform: rotate(-12deg);
+  stroke: var(--tgi-accent, #2563eb);
+}
+
+/* Icon: rateUp */
+.tgi.tgi-rateUp .tg-fill,
+.tgi.tgi-rateUp .tg-src-fill,
+.tgi.tgi-rateUp .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-rateUp .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-rateUp .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-rateUp:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-rateUp .tg-fill,
+.tgi.tgi-rateUp:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-rateUp .tg-src-fill,
+.tgi.tgi-rateUp:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-rateUp .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-rateUp:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-rateUp .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-rateUp:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-rateUp .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-rateUp .tg-needle {
+  transform-origin: 8px 10.5px;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-rateUp:hover .tg-needle,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-rateUp .tg-needle {
+  transform: rotate(12deg);
+  stroke: var(--tgi-accent, #2563eb);
 }
 
 /* Icon: redo */
@@ -945,6 +1784,167 @@
   transform: rotate(90deg) scale(1.08);
 }
 
+/* Icon: replace */
+.tgi.tgi-replace .tg-fill,
+.tgi.tgi-replace .tg-src-fill,
+.tgi.tgi-replace .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-replace .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-replace .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-replace:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-replace .tg-fill,
+.tgi.tgi-replace:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-replace .tg-src-fill,
+.tgi.tgi-replace:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-replace .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-replace:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-replace .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-replace:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-replace .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-replace .tg-rep-tr {
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-replace:hover .tg-rep-tr,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-replace .tg-rep-tr {
+  transform: translate(0.45px, -0.35px);
+  stroke: var(--tgi-accent, #2563eb);
+}
+.tgi.tgi-replace:hover .tg-rep-bl,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-replace .tg-rep-bl {
+  transform: translate(-0.45px, 0.35px);
+}
+
+/* Icon: save */
+.tgi.tgi-save .tg-fill,
+.tgi.tgi-save .tg-src-fill,
+.tgi.tgi-save .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-save .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-save .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-save:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-save .tg-fill,
+.tgi.tgi-save:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-save .tg-src-fill,
+.tgi.tgi-save:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-save .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-save:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-save .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-save:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-save .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-save:hover .tg-shutter,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-save .tg-shutter {
+  transform: translateY(0.35px);
+}
+
+/* Icon: saveAs */
+.tgi.tgi-saveAs .tg-fill,
+.tgi.tgi-saveAs .tg-src-fill,
+.tgi.tgi-saveAs .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-saveAs .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-saveAs .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-saveAs:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-saveAs .tg-fill,
+.tgi.tgi-saveAs:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-saveAs .tg-src-fill,
+.tgi.tgi-saveAs:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-saveAs .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-saveAs:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-saveAs .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-saveAs:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-saveAs .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-saveAs .tg-plus {
+  transform-origin: 12px 12px;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-saveAs:hover .tg-plus,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-saveAs .tg-plus {
+  transform: scale(1.12);
+  stroke: var(--tgi-accent, #2563eb);
+}
+
+/* Icon: search */
+.tgi.tgi-search .tg-fill,
+.tgi.tgi-search .tg-src-fill,
+.tgi.tgi-search .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-search .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-search .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-search:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-search .tg-fill,
+.tgi.tgi-search:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-search .tg-src-fill,
+.tgi.tgi-search:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-search .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-search:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-search .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-search:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-search .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-search .tg-mag {
+  transform-origin: 7px 7px;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-search:hover .tg-mag,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-search .tg-mag {
+  transform: scale(1.06);
+}
+
 /* Icon: section-chevron */
 .tgi.tgi-section-chevron .sec-chevron {
   stroke: var(--tgi-stroke-subtle, #6b7280);
@@ -962,6 +1962,267 @@
 .tgi.tgi-section-chevron:active .sec-chevron,
 :where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):active .tgi.tgi-section-chevron .sec-chevron {
   stroke: var(--tgi-accent, #2563eb);
+}
+
+/* Icon: seekBack */
+.tgi.tgi-seekBack .tg-fill,
+.tgi.tgi-seekBack .tg-src-fill,
+.tgi.tgi-seekBack .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-seekBack .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-seekBack .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-seekBack:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-seekBack .tg-fill,
+.tgi.tgi-seekBack:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-seekBack .tg-src-fill,
+.tgi.tgi-seekBack:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-seekBack .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-seekBack:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-seekBack .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-seekBack:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-seekBack .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-seekBack .tg-step {
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-seekBack:hover .tg-step,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-seekBack .tg-step {
+  transform: translateX(-0.65px);
+  stroke: var(--tgi-accent, #2563eb);
+}
+
+/* Icon: seekForward */
+.tgi.tgi-seekForward .tg-fill,
+.tgi.tgi-seekForward .tg-src-fill,
+.tgi.tgi-seekForward .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-seekForward .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-seekForward .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-seekForward:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-seekForward .tg-fill,
+.tgi.tgi-seekForward:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-seekForward .tg-src-fill,
+.tgi.tgi-seekForward:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-seekForward .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-seekForward:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-seekForward .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-seekForward:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-seekForward .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-seekForward .tg-step {
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-seekForward:hover .tg-step,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-seekForward .tg-step {
+  transform: translateX(0.65px);
+  stroke: var(--tgi-accent, #2563eb);
+}
+
+/* Icon: selectAll */
+.tgi.tgi-selectAll .tg-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-selectAll .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-selectAll:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-selectAll .tg-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-selectAll:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-selectAll .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-selectAll .tg-frame {
+  transform-origin: 8px 8px;
+}
+.tgi.tgi-selectAll:hover .tg-frame,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-selectAll .tg-frame {
+  transform: scale(1.04);
+}
+
+/* Icon: selectLeftEdge */
+.tgi.tgi-selectLeftEdge .tg-fill,
+.tgi.tgi-selectLeftEdge .tg-src-fill,
+.tgi.tgi-selectLeftEdge .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-selectLeftEdge .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-selectLeftEdge .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-selectLeftEdge:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-selectLeftEdge .tg-fill,
+.tgi.tgi-selectLeftEdge:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-selectLeftEdge .tg-src-fill,
+.tgi.tgi-selectLeftEdge:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-selectLeftEdge .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-selectLeftEdge:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-selectLeftEdge .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-selectLeftEdge:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-selectLeftEdge .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-selectLeftEdge .tg-ptr {
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-selectLeftEdge:hover .tg-ptr,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-selectLeftEdge .tg-ptr {
+  transform: translateX(-0.55px);
+  stroke: var(--tgi-accent, #2563eb);
+}
+
+/* Icon: selectRightEdge */
+.tgi.tgi-selectRightEdge .tg-fill,
+.tgi.tgi-selectRightEdge .tg-src-fill,
+.tgi.tgi-selectRightEdge .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-selectRightEdge .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-selectRightEdge .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-selectRightEdge:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-selectRightEdge .tg-fill,
+.tgi.tgi-selectRightEdge:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-selectRightEdge .tg-src-fill,
+.tgi.tgi-selectRightEdge:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-selectRightEdge .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-selectRightEdge:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-selectRightEdge .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-selectRightEdge:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-selectRightEdge .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-selectRightEdge .tg-ptr {
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-selectRightEdge:hover .tg-ptr,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-selectRightEdge .tg-ptr {
+  transform: translateX(0.55px);
+  stroke: var(--tgi-accent, #2563eb);
+}
+
+/* Icon: shortcuts */
+.tgi.tgi-shortcuts .sc-root {
+  transform-origin: 8px 8px;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-shortcuts .sc-ring {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.4;
+  fill: var(--tgi-accent-bg-0, rgba(37, 99, 235, 0));
+  transition: stroke 0.2s ease, fill 0.2s ease;
+}
+.tgi.tgi-shortcuts .sc-q {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform-origin: 8px 9px;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), stroke 0.2s ease;
+}
+.tgi.tgi-shortcuts .sc-dot {
+  fill: var(--tgi-stroke, #374151);
+  transform-origin: 8px 11.2px;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) 30ms, fill 0.2s ease;
+}
+.tgi.tgi-shortcuts:hover .sc-ring,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-shortcuts .sc-ring {
+  stroke: var(--tgi-stroke-hover, #111827);
+  fill: var(--tgi-accent-bg, rgba(37, 99, 235, 0.08));
+}
+.tgi.tgi-shortcuts:hover .sc-q,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-shortcuts .sc-q {
+  stroke: var(--tgi-accent, #2563eb);
+  transform: translateY(-0.55px) rotate(6deg);
+}
+.tgi.tgi-shortcuts:hover .sc-dot,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-shortcuts .sc-dot {
+  fill: var(--tgi-accent, #2563eb);
+  transform: translateY(0.25px) scale(1.1);
+}
+
+/* Icon: sidebarToggle */
+.tgi.tgi-sidebarToggle .tg-fill,
+.tgi.tgi-sidebarToggle .tg-src-fill,
+.tgi.tgi-sidebarToggle .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-sidebarToggle .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-sidebarToggle .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-sidebarToggle:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-sidebarToggle .tg-fill,
+.tgi.tgi-sidebarToggle:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-sidebarToggle .tg-src-fill,
+.tgi.tgi-sidebarToggle:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-sidebarToggle .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-sidebarToggle:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-sidebarToggle .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-sidebarToggle:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-sidebarToggle .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-sidebarToggle:hover .tg-chev,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-sidebarToggle .tg-chev {
+  transform: translateX(0.55px);
 }
 
 /* Icon: split */
@@ -1001,6 +2262,72 @@
   transform: scaleY(1.08);
 }
 
+/* Icon: splitAllTiers */
+.tgi.tgi-splitAllTiers .tg-fill,
+.tgi.tgi-splitAllTiers .tg-src-fill,
+.tgi.tgi-splitAllTiers .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-splitAllTiers .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-splitAllTiers .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-splitAllTiers:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-splitAllTiers .tg-fill,
+.tgi.tgi-splitAllTiers:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-splitAllTiers .tg-src-fill,
+.tgi.tgi-splitAllTiers:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-splitAllTiers .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-splitAllTiers:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-splitAllTiers .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-splitAllTiers:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-splitAllTiers .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-splitAllTiers .tg-drop {
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-splitAllTiers:hover .tg-drop,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-splitAllTiers .tg-drop {
+  transform: translateY(0.45px);
+  stroke: var(--tgi-accent, #2563eb);
+}
+
+/* Icon: splitEqual */
+.tgi.tgi-splitEqual .tg-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-splitEqual .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-splitEqual:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-splitEqual .tg-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-splitEqual:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-splitEqual .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-splitEqual:hover .tg-cut-top,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-splitEqual .tg-cut-top {
+  transform: translateY(0.6px);
+}
+.tgi.tgi-splitEqual:hover .tg-cut-bottom,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-splitEqual .tg-cut-bottom {
+  transform: translateY(-0.6px);
+}
+
 /* Icon: stepper-minus */
 .tgi.tgi-stepper-minus .step-m {
   stroke: var(--tgi-stroke-muted, #4b5563);
@@ -1029,6 +2356,27 @@
   transform: rotate(90deg) scale(1.06);
 }
 
+/* Icon: submenuChevron */
+.tgi.tgi-submenuChevron .sub-chev {
+  stroke: var(--tgi-stroke-subtle, #6b7280);
+  stroke-width: 1.85;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform-origin: 8px 8px;
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.18s ease;
+}
+.tgi.tgi-submenuChevron:hover .sub-chev,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-submenuChevron .sub-chev,
+.tgi.tgi-submenuChevron.is-open .sub-chev,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]).is-open .tgi.tgi-submenuChevron .sub-chev {
+  stroke: var(--tgi-stroke-hover, #111827);
+  transform: translateX(1.5px);
+}
+.tgi.tgi-submenuChevron:active .sub-chev,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):active .tgi.tgi-submenuChevron .sub-chev {
+  stroke: var(--tgi-accent, #2563eb);
+}
+
 /* Icon: tab-add */
 .tgi.tgi-tab-add .plus-group {
   transform-origin: 8px 8px;
@@ -1046,6 +2394,38 @@
 }
 .tgi.tgi-tab-add:hover .plus-line,
 :where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-tab-add .plus-line {
+  stroke: var(--tgi-accent, #2563eb);
+}
+
+/* Icon: toggleScale */
+.tgi.tgi-toggleScale .tg-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-toggleScale .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-toggleScale:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-toggleScale .tg-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-toggleScale:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-toggleScale .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-toggleScale .tg-head-l,
+.tgi.tgi-toggleScale .tg-head-r {
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-toggleScale:hover .tg-head-l,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-toggleScale .tg-head-l {
+  transform: translateX(-0.65px);
+  stroke: var(--tgi-accent, #2563eb);
+}
+.tgi.tgi-toggleScale:hover .tg-head-r,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-toggleScale .tg-head-r {
+  transform: translateX(0.65px);
   stroke: var(--tgi-accent, #2563eb);
 }
 
@@ -1373,6 +2753,46 @@
   transform: translate(-0.4px, 0.4px);
 }
 
+/* Icon: wrapToggle */
+.tgi.tgi-wrapToggle .tg-fill,
+.tgi.tgi-wrapToggle .tg-src-fill,
+.tgi.tgi-wrapToggle .tg-dst-fill {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-wrapToggle .tg-pane-fill {
+  opacity: 0.09;
+  transition: opacity 0.2s ease;
+}
+.tgi.tgi-wrapToggle .tg-sub {
+  opacity: 0.72;
+  transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-wrapToggle:hover .tg-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-wrapToggle .tg-fill,
+.tgi.tgi-wrapToggle:hover .tg-src-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-wrapToggle .tg-src-fill,
+.tgi.tgi-wrapToggle:hover .tg-dst-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-wrapToggle .tg-dst-fill {
+  opacity: 0.14;
+}
+.tgi.tgi-wrapToggle:hover .tg-pane-fill,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-wrapToggle .tg-pane-fill {
+  opacity: 0.2;
+}
+.tgi.tgi-wrapToggle:hover .tg-sub,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-wrapToggle .tg-sub {
+  opacity: 1;
+}
+.tgi.tgi-wrapToggle .tg-wrap {
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+}
+.tgi.tgi-wrapToggle:hover .tg-wrap,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-wrapToggle .tg-wrap {
+  transform: translateX(-0.45px);
+  stroke: var(--tgi-accent, #2563eb);
+}
+
 /* Icon: zeroCross */
 .tgi.tgi-zeroCross .zc-root {
   transform-origin: 8px 8px;
@@ -1569,6 +2989,11 @@
 
 .tgi.tgi-mergeRight:active .tgi-press,
 :where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):active .tgi.tgi-mergeRight .tgi-press {
+  transform: translateX(0.8px) scale(0.93);
+}
+
+.tgi.tgi-submenuChevron:active .tgi-press,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):active .tgi.tgi-submenuChevron .tgi-press {
   transform: translateX(0.8px) scale(0.93);
 }
 

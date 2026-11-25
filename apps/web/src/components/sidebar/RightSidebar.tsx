@@ -1,7 +1,9 @@
 import React, { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { TextGrid } from '../../bridge/types';
 import { useEditorStore, type SidebarTab } from '../../store/useEditorStore';
-import { CloseIcon, InfoIcon, UiIcon, type IconName } from '../Icons';
+import { getLogicalViewportSize, getViewportZoom } from '../../utils/uiScale';
+import { CloseIcon, InfoIcon, ShortcutsIcon, UiIcon, type IconName } from '../Icons';
+import { CustomizePanel } from './CustomizePanel';
 import { InspectorPanel, type InspectorPanelHandle } from './InspectorPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { TiersPanel } from './TiersPanel';
@@ -17,27 +19,6 @@ interface RightSidebarProps {
   onClearAudio: () => void;
   onBatchConvertIpa: (direction: 'toUnicode' | 'toPraat') => void;
 }
-
-const ShortcutsIcon: React.FC<{ size?: number }> = ({ size = 16 }) => (
-  <svg
-    className="ui-icon"
-    width={size}
-    height={size}
-    viewBox="0 0 16 16"
-    fill="none"
-    aria-hidden="true"
-  >
-    <circle cx="8" cy="8" r="5.8" stroke="currentColor" strokeWidth="1.4" />
-    <path
-      d="M6.25 6.35 C6.25 5.35 7.0 4.7 8.05 4.7 C9.05 4.7 9.75 5.3 9.75 6.15 C9.75 6.9 9.25 7.35 8.55 7.75 C8.15 7.98 7.95 8.25 7.95 8.75 V9.1"
-      stroke="currentColor"
-      strokeWidth="1.35"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <circle cx="8" cy="11.15" r="0.85" fill="currentColor" />
-  </svg>
-);
 
 function detectQuickQaIssues(tg: TextGrid): boolean {
   const EPS = 1e-9;
@@ -100,7 +81,8 @@ function detectQuickQaIssues(tg: TextGrid): boolean {
 const RAIL_ITEMS: Array<{ tab: SidebarTab; title: string; icon: IconName; tooltip: string }> = [
   { tab: 'inspector', title: '属性', icon: 'inspector', tooltip: '属性检查器 (Ctrl+B)' },
   { tab: 'tiers', title: '层级', icon: 'layers', tooltip: '层级列表与管理' },
-  { tab: 'settings', title: '设置', icon: 'gear', tooltip: '界面、版面与声学设置' }
+  { tab: 'settings', title: '设置', icon: 'gear', tooltip: '界面、版面与声学设置' },
+  { tab: 'customize', title: '自定义', icon: 'customize', tooltip: '自定义悬浮工具栏与快捷键 (Alt+4)' }
 ];
 
 export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
@@ -149,7 +131,10 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
 
       let collapsed = false;
       const onMove = (ev: PointerEvent) => {
-        const rawW = startWidth + (startX - ev.clientX);
+        const z = getViewportZoom();
+        const { width: vw } = getLogicalViewportSize();
+        const maxSafeW = Math.max(220, Math.min(460, Math.floor(vw * 0.48 - 42)));
+        const rawW = startWidth + (startX - ev.clientX) / z;
         if (rawW < 175) {
           if (!collapsed) {
             collapsed = true;
@@ -161,7 +146,7 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
           collapsed = false;
           setSidebarOpen(true);
         }
-        setSidebarWidth(rawW);
+        setSidebarWidth(Math.min(maxSafeW, rawW));
       };
 
       const onUp = () => {
@@ -182,6 +167,8 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
     let headBadge = '';
     if (sidebarTab === 'tiers') {
       headBadge = `${tierCount} 层`;
+    } else if (sidebarTab === 'customize') {
+      headBadge = '悬浮条 · 快捷键';
     } else if (sidebarTab === 'inspector') {
       if (selection?.kind === 'interval') headBadge = '区间';
       else if (selection?.kind === 'point') headBadge = '标点';
@@ -242,6 +229,7 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
                   onBatchConvertIpa={onBatchConvertIpa}
                 />
               )}
+              {sidebarTab === 'customize' && <CustomizePanel />}
             </div>
           </div>
         </div>

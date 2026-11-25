@@ -1,0 +1,24 @@
+<svg class="tg-icon tg-icon--select-all" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill { opacity: 0.14; }
+    svg:hover .tg-sub { opacity: 1; }
+    .tg-frame {
+      transform-origin: 8px 8px;
+    }
+    svg:hover .tg-frame { transform: scale(1.04); }
+  </style>
+  <!-- 悬停/按下态全选底纹高亮 -->
+  <rect class="tg-fill" x="3.5" y="3.5" width="9" height="9" rx="1" fill="currentColor" />
+  <!-- 四角选区角标 -->
+  <path class="tg-sub tg-frame" d="M2 5V3.25C2 2.56 2.56 2 3.25 2H5M11 2H12.75C13.44 2 14 2.56 14 3.25V5M14 11V12.75C14 13.44 13.44 14 12.75 14H11M5 14H3.25C2.56 14 2 13.44 2 12.75V11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- 内部全部文本行 -->
+  <path d="M5.25 5.25H10.75M5.25 8H10.75M5.25 10.75H9.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+</svg>

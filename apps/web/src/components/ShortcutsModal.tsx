@@ -3,10 +3,13 @@ import {
   IS_MAC,
   MOUSE_GESTURE_TIPS,
   SHORTCUT_GROUPS,
-  formatKeyCombo
+  formatKeyCombo,
+  getEffectiveKeys,
+  isShortcutCustomized
 } from '../shortcuts/registry';
 import { useEditorStore } from '../store/useEditorStore';
 import { CloseIcon, UiIcon } from './Icons';
+import { requestCustomizeSubtab } from './sidebar/CustomizePanel';
 
 interface DeleteMatrixRow {
   target: string;
@@ -71,7 +74,17 @@ const DELETE_MATRIX_ROWS: DeleteMatrixRow[] = [
 export const ShortcutsModal: React.FC = () => {
   const shortcutsOpen = useEditorStore((s) => s.shortcutsOpen);
   const setShortcutsOpen = useEditorStore((s) => s.setShortcutsOpen);
+  const customShortcuts = useEditorStore((s) => s.customShortcuts);
+  const setSidebarTab = useEditorStore((s) => s.setSidebarTab);
+  const setSidebarOpen = useEditorStore((s) => s.setSidebarOpen);
   const backdropPointerDownRef = useRef(false);
+
+  const handleOpenCustomizeShortcuts = () => {
+    requestCustomizeSubtab('shortcuts');
+    setShortcutsOpen(false);
+    setSidebarTab('customize');
+    setSidebarOpen(true);
+  };
 
   return (
     <div
@@ -117,22 +130,53 @@ export const ShortcutsModal: React.FC = () => {
                   {group.subtitle ? ` · ${group.subtitle}` : ''}
                 </div>
                 <div className="shortcuts-list">
-                  {group.entries.map((entry) => (
-                    <div
-                      key={entry.id}
-                      className="shortcuts-row"
-                      title={entry.description || undefined}
-                    >
-                      <span className="shortcuts-desc">{entry.label}</span>
-                      <span className="shortcuts-keys">
-                        {entry.keys.map((k) => (
-                          <kbd key={k} className="kbd">
-                            {formatKeyCombo(k)}
-                          </kbd>
-                        ))}
-                      </span>
-                    </div>
-                  ))}
+                  {group.entries.map((entry) => {
+                    const effectiveKeys = getEffectiveKeys(entry.id, customShortcuts);
+                    const customized = isShortcutCustomized(entry.id, customShortcuts);
+                    return (
+                      <div
+                        key={entry.id}
+                        className="shortcuts-row"
+                        title={entry.description || undefined}
+                      >
+                        <span className="shortcuts-desc">
+                          <span className="shortcuts-icon" aria-hidden="true">
+                            {entry.icon ? <UiIcon name={entry.icon} size={13} /> : null}
+                          </span>
+                          <span className="shortcuts-label-text">
+                            <span>{entry.label}</span>
+                            {customized && (
+                              <span
+                                className="cust-key-dot"
+                                title="已自定义快捷键"
+                                aria-label="已自定义"
+                              />
+                            )}
+                          </span>
+                        </span>
+                        <span className="shortcuts-keys">
+                          {effectiveKeys.length > 0 ? (
+                            effectiveKeys.map((k) => (
+                              <kbd key={k} className="kbd">
+                                {formatKeyCombo(k)}
+                              </kbd>
+                            ))
+                          ) : (
+                            <span
+                              className="kbd"
+                              style={{
+                                color: 'var(--ink-faint)',
+                                borderStyle: 'dashed',
+                                background: 'var(--bg-subtle)'
+                              }}
+                            >
+                              未绑定
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
             ))}
@@ -218,9 +262,19 @@ export const ShortcutsModal: React.FC = () => {
             {IS_MAC ? 'macOS 键位（⌘）' : 'Windows / Linux 键位（Ctrl）'} · 按 ? 或{' '}
             {formatKeyCombo('Mod+/')} 随时唤出
           </span>
-          <button type="button" className="compact" onClick={() => setShortcutsOpen(false)}>
-            关闭
-          </button>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <button
+              type="button"
+              className="compact"
+              onClick={handleOpenCustomizeShortcuts}
+            >
+              <UiIcon name="customize" size={13} />
+              <span>自定义快捷键…</span>
+            </button>
+            <button type="button" className="compact" onClick={() => setShortcutsOpen(false)}>
+              关闭
+            </button>
+          </div>
         </div>
       </div>
     </div>

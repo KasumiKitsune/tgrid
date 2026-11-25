@@ -110,6 +110,7 @@ export interface SpineCol {
   label: string;
   usage: number;
   labelVisible: boolean;
+  isSliverEdge?: boolean;
 }
 
 export interface IsolatedPointTick {
@@ -191,6 +192,8 @@ export interface ComputeLayoutOptions {
   richOpts?: RichLayoutOptions | null;
   fontScale?: number;
   hiddenTierIndices?: number[];
+  isInteractive?: boolean;
+  viewportHeight?: number;
   legendConfig?: {
     mode: 'full' | 'compact' | 'off';
     lang: 'zh' | 'en';
@@ -225,6 +228,8 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     richOpts = null,
     fontScale = 1,
     hiddenTierIndices,
+    isInteractive = false,
+    viewportHeight = 0,
     legendConfig = null
   } = options;
 
@@ -249,16 +254,13 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
   const PAD_BOTTOM = marginPreset === 'tight' ? 12 : marginPreset === 'wide' ? 32 : basePadBot;
 
   const WAVE_H = showSpec ? (isTinyView ? 20 : 24) : hasAudio ? 34 : 0;
-  const SPEC_H = showSpec ? (isTinyView ? 88 : 108) : 0;
-  const ANCHOR_H = showSpec ? 8 : 0;
-  const LINEAR_H = showSpec ? WAVE_H + SPEC_H + ANCHOR_H : hasAudio ? 34 : 11;
   const NECK_H = isLinear ? 8 : 16;
   const TIER_GAP = 7;
   const BAND_GAP =
     marginPreset === 'tight' ? 20 : marginPreset === 'wide' ? 40 : isTinyView ? 24 : 32;
   const MIN_COL_W = isTinyView ? 17 : 19;
-  const SILENCE_THRESHOLD = 1.6;
-  const SILENCE_COLLAPSE_W = isTinyView ? 38 : 48;
+  const SILENCE_THRESHOLD = 0.8;
+  const SILENCE_COLLAPSE_W = isTinyView ? 48 : 58;
 
   const fontFamily = richOpts?.fontFamily || IPA_FONT_STACK;
   const textFontMeasure =
@@ -380,14 +382,65 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
   const tickStrings = hideTicks
     ? spineT.map(() => '')
     : buildDisplayTickStrings(spineT, tickPrecision, tickFixedDecimals);
+  const isoTickFontMeasure =
+    fontScale !== 1 ? `${(9.5 * fontScale).toFixed(2)}px ${MONO_FONT_STACK}` : `9.5px ${MONO_FONT_STACK}`;
+
+  // Pre-compute disambiguated labels for all isolated TextTier point ticks so SPINE_H & RIGHT_OVERHANG
+  // reserve full vertical/horizontal clearance before band layout runs (P1-3).
+  const globalIsoTimeSet = new Set<number>();
+  const globalMinT = spineT[0];
+  const globalMaxT = spineT[spineT.length - 1];
+  for (let ti = 0; ti < tg.tiers.length; ti++) {
+    if (!isTierVisible(ti)) continue;
+    const tier = tg.tiers[ti];
+    if (tier.kind !== 'textTier') continue;
+    for (const pt of tier.points) {
+      const t = pt.number;
+      if (Number.isFinite(t) && t >= globalMinT && t <= globalMaxT && !tToIdx.has(t)) {
+        globalIsoTimeSet.add(t);
+      }
+    }
+  }
+  const globalIsoTimes = Array.from(globalIsoTimeSet).sort((a, b2) => a - b2);
+  const globalIsoLabels: string[] = hideTicks
+    ? globalIsoTimes.map(() => '')
+    : globalIsoTimes.map((t) => formatDisplayTick(t, tickPrecision, tickFixedDecimals));
+  if (!hideTicks && globalIsoTimes.length > 0 && tickPrecision !== 'full') {
+    const allSpineLabelSet = new Set<string>(tickStrings);
+    const baseDigits = parseInt(tickPrecision, 10) || 3;
+    for (let d = baseDigits + 1; d <= 6; d++) {
+      const colliding = new Set<number>();
+      for (let i = 0; i < globalIsoTimes.length; i++) {
+        if (allSpineLabelSet.has(globalIsoLabels[i])) colliding.add(i);
+        if (i > 0 && globalIsoLabels[i] === globalIsoLabels[i - 1]) {
+          colliding.add(i - 1);
+          colliding.add(i);
+        }
+      }
+      if (colliding.size === 0) break;
+      colliding.forEach((idx) => {
+        globalIsoLabels[idx] = formatDisplayTick(globalIsoTimes[idx], String(d), tickFixedDecimals);
+      });
+    }
+  }
+  const globalIsoLabelMap = new Map<number, string>();
+  for (let i = 0; i < globalIsoTimes.length; i++) {
+    globalIsoLabelMap.set(globalIsoTimes[i], globalIsoLabels[i]);
+  }
+
   let maxTickW = 22;
   if (!hideTicks) {
     for (const s of tickStrings) {
       const w = measurePx(s, tickFontMeasure);
       if (w > maxTickW) maxTickW = w;
     }
+    for (const s of globalIsoLabels) {
+      const w = measurePx(s, isoTickFontMeasure);
+      if (w > maxTickW) maxTickW = w;
+    }
   }
-  const SPINE_H = hideTicks ? 8 : Math.ceil(maxTickW * Math.sin(ANGLE_RAD)) + 16;
+  // +20 (instead of +16) reserves a clean ~4 px breathing gap below the neckBotY separator rule
+  const SPINE_H = hideTicks ? 8 : Math.ceil(maxTickW * Math.sin(ANGLE_RAD)) + 20;
   const RIGHT_OVERHANG = hideTicks
     ? 10
     : Math.min(isTinyView ? 22 : 52, Math.ceil(maxTickW * Math.cos(ANGLE_RAD)) + (isTinyView ? 8 : 16));
@@ -470,6 +523,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
 
   const numCols = Math.max(0, spineT.length - 1);
   const colCollapsed = new Array<boolean>(numCols).fill(false);
+  const colIsCrossSliver = new Array<boolean>(numCols).fill(false);
   const dx = new Array<number>(numCols).fill(MIN_COL_W);
   const maxBandContentW = Math.max(120, targetWidth - PAD_X * 2 - GUTTER_FULL - RIGHT_OVERHANG);
 
@@ -484,19 +538,24 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       dx[i] = Math.max(0, spineT[i + 1] - spineT[i]) * linearPxPerSec;
     }
   } else {
+    const minSliverW = isTinyView ? 3 : 4;
     for (let i = 0; i < numCols; i++) {
       const a = spineT[i];
       const b = spineT[i + 1];
       const dt = b - a;
       let hasActiveText = false;
+      let isExactSingleTierAtom = false;
+      let hasInteriorPoint = false;
       for (let ti = 0; ti < tg.tiers.length; ti++) {
         if (!isTierVisible(ti)) continue;
         const tm = tierMeta[ti];
         if (tm.kind === 'intervalTier') {
           for (const iv of tm.normalIvs) {
-            if (iv.xmin <= a && iv.xmax >= b && iv.text !== '') {
+            if (Math.abs(iv.xmin - a) <= 1e-12 && Math.abs(iv.xmax - b) <= 1e-12) {
+              isExactSingleTierAtom = true;
+            }
+            if (!hasActiveText && iv.xmin <= a && iv.xmax >= b && iv.text !== '') {
               hasActiveText = true;
-              break;
             }
           }
         } else {
@@ -504,22 +563,31 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
             if (pt.number >= b) break;
             if (pt.number > a) {
               hasActiveText = true;
+              if (pt.mark !== '') hasInteriorPoint = true;
               break;
             }
           }
         }
-        if (hasActiveText) break;
       }
       if (!hasActiveText && dt >= SILENCE_THRESHOLD) {
         colCollapsed[i] = true;
         dx[i] = SILENCE_COLLAPSE_W;
       } else {
-        dx[i] = Math.max(MIN_COL_W, Math.round(14 + 54 * Math.pow(Math.max(dt, 0.001), 0.55)));
+        const naturalW = Math.round(14 + 54 * Math.pow(Math.max(dt, 0.001), 0.55));
+        if (!isExactSingleTierAtom && !hasInteriorPoint) {
+          // Pure cross-tier overlap sliver: exempt from MIN_COL_W=19px inflation; scale by true duration
+          colIsCrossSliver[i] = true;
+          dx[i] = Math.min(naturalW, Math.max(minSliverW, Math.round(dt * 110)));
+        } else {
+          dx[i] = Math.max(MIN_COL_W, naturalW);
+        }
       }
     }
 
     const MAX_SINGLE_INTERVAL_W =
-      wrapMode === 'single' ? 220 : Math.min(220, Math.max(84, Math.floor(maxBandContentW * 0.72)));
+      wrapMode === 'single' ? 360 : Math.min(360, Math.max(120, Math.floor(maxBandContentW * 0.72)));
+    const MAX_GLOSS_INTERVAL_W =
+      wrapMode === 'single' ? 440 : Math.min(440, Math.max(120, Math.floor(maxBandContentW * 0.85)));
 
     tg.tiers.forEach((_tier, ti) => {
       if (!isTierVisible(ti)) return;
@@ -533,7 +601,8 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
           let curSpanW = 0;
           for (let c = aIdx; c < bIdx; c++) curSpanW += dx[c];
           const unwrapped = layoutRichText(iv.text, 0, textFontMeasure, mode, effectiveRichOpts);
-          const desiredW = Math.min(unwrapped.width + 22, Math.max(curSpanW, MAX_SINGLE_INTERVAL_W));
+          const capW = unwrapped.gloss ? MAX_GLOSS_INTERVAL_W : MAX_SINGLE_INTERVAL_W;
+          const desiredW = Math.min(unwrapped.width + 22, Math.max(curSpanW, capW));
           if (curSpanW < desiredW) {
             const extra = desiredW - curSpanW;
             let useAll = true;
@@ -560,19 +629,71 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       }
     });
 
-    if (wrapMode === 'single' && numCols > 0) {
-      let collapsedSum = 0;
-      let activeSum = 0;
-      for (let i = 0; i < numCols; i++) {
-        if (colCollapsed[i]) collapsedSum += dx[i];
-        else activeSum += dx[i];
-      }
-      const targetActive = maxBandContentW - collapsedSum;
-      if (activeSum > 0 && targetActive > activeSum) {
-        const factor = targetActive / activeSum;
-        for (let i = 0; i < numCols; i++) {
-          if (!colCollapsed[i]) dx[i] *= factor;
+    // Bounded Point Tier width feedback (P0-4): allow adjacent non-empty points within the same column
+    // (or immediately adjacent columns) to gently widen their host column by up to +16 px so nearby
+    // short marks (e.g. H* / L-) stay cleanly on one row instead of prematurely stacking.
+    if (numCols > 0) {
+      const MAX_PT_COL_FEEDBACK = 16;
+      const ptColExtra = new Float64Array(numCols);
+      const findColForTime = (t: number): number => {
+        if (t < spineT[0] || t > spineT[numCols]) return -1;
+        let lo = 0;
+        let hi = numCols - 1;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          if (t < spineT[mid]) hi = mid - 1;
+          else if (t > spineT[mid + 1]) lo = mid + 1;
+          else return mid;
         }
+        return -1;
+      };
+      for (let ti = 0; ti < tg.tiers.length; ti++) {
+        if (!isTierVisible(ti)) continue;
+        const tm = tierMeta[ti];
+        if (tm.kind !== 'textTier') continue;
+        const marked = tm.finitePts.filter(
+          (pt) => pt.mark !== '' && pt.number >= spineT[0] && pt.number <= spineT[numCols]
+        );
+        if (marked.length < 2) continue;
+        const widths = marked.map((pt) => {
+          const r = layoutRichText(pt.mark, 160, ptFontMeasure, mode, effectiveRichOpts);
+          return Math.max(18, Math.ceil(r.width) + 10);
+        });
+        for (let k = 0; k < marked.length - 1; k++) {
+          const p0 = marked[k];
+          const p1 = marked[k + 1];
+          if (p1.number <= p0.number) continue;
+          const c0 = findColForTime(p0.number);
+          const c1 = findColForTime(p1.number);
+          if (c0 < 0 || c1 < 0) continue;
+          const needDist = (widths[k] + widths[k + 1]) / 2 + 3;
+          if (c0 === c1 && !colCollapsed[c0]) {
+            const dtCol = spineT[c0 + 1] - spineT[c0];
+            if (dtCol <= 0) continue;
+            const curDist = ((p1.number - p0.number) / dtCol) * dx[c0];
+            if (curDist < needDist) {
+              const reqColW = (needDist * dtCol) / (p1.number - p0.number);
+              const add = Math.min(MAX_PT_COL_FEEDBACK, Math.max(0, reqColW - dx[c0]));
+              if (add > ptColExtra[c0]) ptColExtra[c0] = add;
+            }
+          } else if (c1 === c0 + 1 && !colCollapsed[c0] && !colCollapsed[c1]) {
+            const dt0 = spineT[c0 + 1] - spineT[c0];
+            const dt1 = spineT[c1 + 1] - spineT[c1];
+            if (dt0 <= 0 || dt1 <= 0) continue;
+            const curDist =
+              ((spineT[c0 + 1] - p0.number) / dt0) * dx[c0] +
+              ((p1.number - spineT[c1]) / dt1) * dx[c1];
+            if (curDist < needDist) {
+              const deficit = needDist - curDist;
+              const halfAdd = Math.min(MAX_PT_COL_FEEDBACK, deficit * 0.65);
+              if (halfAdd > ptColExtra[c0]) ptColExtra[c0] = halfAdd;
+              if (halfAdd > ptColExtra[c1]) ptColExtra[c1] = halfAdd;
+            }
+          }
+        }
+      }
+      for (let c = 0; c < numCols; c++) {
+        if (ptColExtra[c] > 0) dx[c] += ptColExtra[c];
       }
     }
   }
@@ -702,6 +823,62 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     }
   }
 
+  // Single-band horizontal expansion (P0-1):
+  // - In 'single' mode, always expand active columns to fill maxBandContentW.
+  // - In interactive 'auto' mode when the entire document fits on 1 band, smoothly stretch active
+  //   columns to fill available workspace width (with a comfort cap for 1-2 column mini files so a
+  //   single cell never stretches into a giant 1200px box; offline ExportModal remains untouched).
+  if (!isLinear && numCols > 0 && (wrapMode === 'single' || (wrapMode === 'auto' && bands.length === 1 && isInteractive))) {
+    let collapsedSum = 0;
+    let activeSum = 0;
+    let activeColCount = 0;
+    for (let i = 0; i < numCols; i++) {
+      if (colCollapsed[i]) {
+        collapsedSum += dx[i];
+      } else {
+        activeSum += dx[i];
+        activeColCount++;
+      }
+    }
+    const rawTargetActive = maxBandContentW - collapsedSum;
+    const targetActive =
+      wrapMode === 'single'
+        ? rawTargetActive
+        : Math.min(rawTargetActive, 220 + activeColCount * 145);
+    if (activeSum > 0 && targetActive > activeSum) {
+      const factor = targetActive / activeSum;
+      for (let i = 0; i < numCols; i++) {
+        if (!colCollapsed[i]) dx[i] *= factor;
+      }
+    }
+  }
+
+  // Elastic spectrogram height in single-band interactive mode: clamp(108px, 28vh, 220px).
+  // Multi-band views and offline exports retain fixed publication height.
+  const baseSpecH = isTinyView ? 88 : 108;
+  const SPEC_H = showSpec
+    ? isInteractive && bands.length === 1 && viewportHeight > 0
+      ? Math.round(Math.max(baseSpecH, Math.min(220, viewportHeight * 0.28)))
+      : baseSpecH
+    : 0;
+  const ANCHOR_H = showSpec ? 8 : 0;
+  const LINEAR_H = showSpec ? WAVE_H + SPEC_H + ANCHOR_H : hasAudio ? 34 : 11;
+
+  // Helper for P0-4: does any visible IntervalTier start a non-empty interval at `breakT`?
+  const hasNonEmptyOnsetAt = (breakT: number): boolean => {
+    for (let ti = 0; ti < tg.tiers.length; ti++) {
+      if (!isTierVisible(ti)) continue;
+      const tm = tierMeta[ti];
+      if (tm.kind !== 'intervalTier') continue;
+      for (const iv of tm.normalIvs) {
+        if (Math.abs(iv.xmin - breakT) <= 1e-12 && iv.text !== '') {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
   let curY = PAD_TOP + captionHeight;
   let totalSvgW = 0;
 
@@ -714,13 +891,18 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     const spineCols: SpineCol[] = [];
     let cx = originX;
     for (let i = b.startIdx; i <= b.endIdx; i++) {
+      const isSliverEdge =
+        !isLinear &&
+        spineUsage[i] === 1 &&
+        ((i > 0 && colIsCrossSliver[i - 1]) || (i < numCols && colIsCrossSliver[i]));
       spineCols.push({
         globalIdx: i,
         t: spineT[i],
         x: cx,
         label: tickStrings[i],
         usage: spineUsage[i],
-        labelVisible: false
+        labelVisible: false,
+        ...(isSliverEdge ? { isSliverEdge: true } : {})
       });
       if (i < b.endIdx) cx += dx[i];
     }
@@ -786,26 +968,9 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     const isoTimes = Array.from(isoTimeSet).sort((a, b2) => a - b2);
     const isoLabels: string[] = hideTicks
       ? isoTimes.map(() => '')
-      : isoTimes.map((t) => formatDisplayTick(t, tickPrecision, tickFixedDecimals));
-    if (!hideTicks && isoTimes.length > 0 && tickPrecision !== 'full') {
-      const spineLabelSet = new Set<string>();
-      for (const col of spineCols) spineLabelSet.add(col.label);
-      const baseDigits = parseInt(tickPrecision, 10) || 3;
-      for (let d = baseDigits + 1; d <= 6; d++) {
-        const colliding = new Set<number>();
-        for (let i = 0; i < isoTimes.length; i++) {
-          if (spineLabelSet.has(isoLabels[i])) colliding.add(i);
-          if (i > 0 && isoLabels[i] === isoLabels[i - 1]) {
-            colliding.add(i - 1);
-            colliding.add(i);
-          }
-        }
-        if (colliding.size === 0) break;
-        colliding.forEach((idx) => {
-          isoLabels[idx] = formatDisplayTick(isoTimes[idx], String(d), tickFixedDecimals);
-        });
-      }
-    }
+      : isoTimes.map(
+          (t) => globalIsoLabelMap.get(t) ?? formatDisplayTick(t, tickPrecision, tickFixedDecimals)
+        );
     const isolatedPointTicks: IsolatedPointTick[] = [];
     for (let i = 0; i < isoTimes.length; i++) {
       const t = isoTimes[i];
@@ -922,7 +1087,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
           const x1 = clippedRight ? originX + bandContentW : xForGlobalIdx(tToIdx.get(iv.xmax)!);
           const w = Math.max(1.5, x1 - x0);
           const showText = !clippedLeft && iv.text !== '';
-          const richMaxW = isLinear ? Math.max(12, w - 6) : Math.max(24, w - 16);
+          const richMaxW = isLinear ? Math.max(12, w - 6) : Math.max(24, w - 12);
           const rich = showText
             ? layoutRichText(iv.text, richMaxW, textFontMeasure, mode, effectiveRichOpts)
             : null;
@@ -998,20 +1163,39 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       } else {
         const bandLeft = originX;
         const bandRight = originX + bandContentW;
+        const domStart = Math.max(startT, Number.isFinite(tier.xmin) ? tier.xmin : startT);
+        const domEnd = Math.min(endT, Number.isFinite(tier.xmax) ? tier.xmax : endT);
+        const domStartX =
+          domStart <= startT ? bandLeft : domStart >= endT ? bandRight : elasticXLocal(domStart);
+        const domEndX =
+          domEnd >= endT ? bandRight : domEnd <= startT ? bandLeft : elasticXLocal(domEnd);
+        const clampLeft = Math.max(bandLeft, domStartX);
+        const clampRight = Math.min(bandRight, domEndX);
+
+        const includeStartBoundary = bandIndex === 0 || hasNonEmptyOnsetAt(startT);
+        const hasNextBand = bandIndex < bands.length - 1;
+        const deferEndBoundary = hasNextBand && endT < tg.xmax && hasNonEmptyOnsetAt(endT);
+
         const maxFlagW = Math.min(184, Math.max(88, bandContentW));
         const visiblePts: VisiblePoint[] = tm.finitePts
-          .filter((pt) => (bandIndex === 0 ? pt.number >= startT : pt.number > startT) && pt.number <= endT)
+          .filter(
+            (pt) =>
+              (includeStartBoundary ? pt.number >= startT : pt.number > startT) &&
+              (deferEndBoundary ? pt.number < endT : pt.number <= endT)
+          )
           .map((pt) => {
             const x = elasticXLocal(pt.number);
             const rich =
               pt.mark !== ''
-                ? layoutRichText(pt.mark, Math.max(48, maxFlagW - 18), ptFontMeasure, mode, effectiveRichOpts)
+                ? layoutRichText(pt.mark, Math.max(48, maxFlagW - 10), ptFontMeasure, mode, effectiveRichOpts)
                 : null;
-            const boxW = rich ? Math.max(24, Math.ceil(rich.width) + 18) : 0;
+            const boxW = rich ? Math.max(18, Math.ceil(rich.width) + 10) : 0;
             const boxH = rich ? Math.max(20, rich.height + 6) : 0;
             let bx = x - boxW / 2;
-            if (bx + boxW > bandRight) bx = bandRight - boxW;
-            if (bx < bandLeft) bx = bandLeft;
+            const effLeft = clampRight - clampLeft >= boxW ? clampLeft : bandLeft;
+            const effRight = clampRight - clampLeft >= boxW ? clampRight : bandRight;
+            if (bx + boxW > effRight) bx = effRight - boxW;
+            if (bx < effLeft) bx = effLeft;
             return { pt, x, bx, rich, boxW, boxH, level: 0 };
           });
 
@@ -1025,7 +1209,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
           const left = vp.bx;
           const right = vp.bx + vp.boxW;
           let lvl = 0;
-          while (lvl < levelRightEdge.length && levelRightEdge[lvl] + 5 > left) lvl++;
+          while (lvl < levelRightEdge.length && levelRightEdge[lvl] + 3 > left) lvl++;
           vp.level = lvl;
           levelRightEdge[lvl] = right;
           levelMaxH[lvl] = Math.max(levelMaxH[lvl] || 0, vp.boxH);

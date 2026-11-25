@@ -37,6 +37,7 @@ pub struct AudioAnalysisSummary {
     pub offset: f64,
     pub peak_amplitude: f32,
     pub spec_max_db: f64,
+    pub f0_floor: f64,
     pub f0_ceil: f64,
     pub pitch_track: Vec<PitchPoint>,
     pub formant_track: Vec<FormantPoint>,
@@ -55,6 +56,7 @@ pub struct AudioAnalysis {
     pub spec_max_db: f64,
     pub max_rms: f64,
     pub pitch_track: Vec<PitchPoint>,
+    pub f0_floor: f64,
     pub f0_ceil: f64,
     pub formant_track: Vec<FormantPoint>,
 }
@@ -69,6 +71,7 @@ impl AudioAnalysis {
             offset: self.offset,
             peak_amplitude: self.peak_amplitude,
             spec_max_db: self.spec_max_db,
+            f0_floor: self.f0_floor,
             f0_ceil: self.f0_ceil,
             pitch_track: self.pitch_track.clone(),
             formant_track: self.formant_track.clone(),
@@ -183,8 +186,26 @@ pub fn summarize_pcm_f32(samples: &[f32], sample_rate: u32) -> Result<AudioSumma
     })
 }
 
-/// Full acoustic analysis: pre-emphasis, global peak spectrogram dB, MPM F0 pitch tracker,
-/// and anti-aliased decimated Levinson-Durbin LPC F1–F3 formant tracker.
+fn percentile_sorted(sorted: &[f64], q: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    if sorted.len() == 1 {
+        return sorted[0];
+    }
+    let pos = q.clamp(0.0, 1.0) * (sorted.len() - 1) as f64;
+    let lo = pos.floor() as usize;
+    let hi = pos.ceil() as usize;
+    if lo == hi {
+        sorted[lo]
+    } else {
+        let frac = pos - lo as f64;
+        sorted[lo] + (sorted[hi] - sorted[lo]) * frac
+    }
+}
+
+/// Full acoustic analysis: pre-emphasis, robust P99.5 spectrogram peak dB, MPM F0 pitch tracker,
+/// speaker-adaptive F0 range, and anti-aliased decimated Levinson-Durbin LPC F1–F3 formant tracker.
 pub fn analyze_pcm_f32(
     samples: Vec<f32>,
     sample_rate: u32,
@@ -200,10 +221,11 @@ pub fn analyze_pcm_f32(
     let (fft_size, half_win, g_win) = build_gaussian_window(sample_rate);
     let win_len = g_win.len();
 
-    // Estimate global peak spectrogram dB across sampled frames
+    // Estimate robust P99.5 spectrogram peak dB across sampled frames so single-frame pop spikes
+    // cannot raise the noise floor and wash out weak fricatives.
     let mut re = vec![0.0_f64; fft_size];
     let mut im = vec![0.0_f64; fft_size];
-    let mut spec_max_db = -120.0_f64;
+    let mut frame_peaks: Vec<f64> = Vec::new();
     let probe_step = ((sr * 0.008).round() as usize)
         .max(len / 420)
         .max(1);
@@ -218,18 +240,28 @@ pub fn analyze_pcm_f32(
                 re[k] = (pre[c - half_win + k] as f64) * g_win[k];
             }
             fft_in_place(&mut re, &mut im);
+            let mut frame_max = -120.0_f64;
             for b in 1..=max_bin {
                 let p = re[b] * re[b] + im[b] * im[b];
                 if p > 1e-18 {
                     let db = 10.0 * p.log10();
-                    if db > spec_max_db {
-                        spec_max_db = db;
+                    if db > frame_max {
+                        frame_max = db;
                     }
                 }
+            }
+            if frame_max > -120.0 {
+                frame_peaks.push(frame_max);
             }
             c += probe_step;
         }
     }
+    let mut spec_max_db = if frame_peaks.is_empty() {
+        -120.0_f64
+    } else {
+        frame_peaks.sort_by(|a, b| a.total_cmp(b));
+        percentile_sorted(&frame_peaks, 0.995)
+    };
     if spec_max_db < -90.0 {
         spec_max_db = 0.0;
     }
@@ -361,15 +393,47 @@ pub fn analyze_pcm_f32(
         }
     }
 
-    let mut max_f0 = 500.0_f64;
-    for p in &pitch_track {
-        if let Some(f0) = p.f0 {
-            if f0 > max_f0 {
-                max_f0 = f0;
+    // Speaker-adaptive robust F0 display bounds (P2–P98 after removing isolated single-frame spikes,
+    // with 20 Hz margin snapped to 25 Hz ticks, floor >= 50 Hz, min span >= 125 Hz)
+    let mut voiced_f0: Vec<f64> = Vec::new();
+    let pt_len = pitch_track.len();
+    for (i, p) in pitch_track.iter().enumerate() {
+        let Some(f0) = p.f0 else { continue };
+        if !f0.is_finite() {
+            continue;
+        }
+        // Reject isolated endpoint spikes with no voiced neighbor when multiple frames exist
+        if pt_len >= 2 {
+            let has_prev = i > 0 && pitch_track[i - 1].f0.is_some();
+            let has_next = i + 1 < pt_len && pitch_track[i + 1].f0.is_some();
+            if !has_prev && !has_next {
+                continue;
             }
         }
+        voiced_f0.push(f0);
     }
-    let f0_ceil = ((max_f0 / 50.0).ceil() * 50.0).clamp(500.0, 700.0);
+
+    let (f0_floor, f0_ceil) = if voiced_f0.is_empty() {
+        (65.0_f64, 500.0_f64)
+    } else {
+        voiced_f0.sort_by(|a, b| a.total_cmp(b));
+        let p2 = percentile_sorted(&voiced_f0, 0.02);
+        let p98 = percentile_sorted(&voiced_f0, 0.98);
+        let mut floor = (((p2 - 20.0).max(50.0) / 25.0).floor() * 25.0).max(50.0);
+        let mut ceil = (((p98 + 20.0).min(700.0) / 25.0).ceil() * 25.0).clamp(175.0, 700.0);
+        if ceil - floor < 125.0 {
+            let mid = 0.5 * (p2 + p98);
+            floor = (((mid - 62.5) / 25.0).floor() * 25.0).max(50.0);
+            ceil = (floor + 125.0).min(700.0);
+            if ceil < p98 + 15.0 {
+                ceil = (((p98 + 20.0) / 25.0).ceil() * 25.0).min(700.0);
+            }
+            if ceil - floor < 125.0 {
+                floor = (ceil - 125.0).max(50.0);
+            }
+        }
+        (floor, ceil)
+    };
 
     // 2. Formants F1-F3 Extraction (Anti-Aliased Windowed-Sinc FIR Decimation + Levinson-Durbin Order-10 LPC)
     let mut formant_track = Vec::new();
@@ -546,6 +610,7 @@ pub fn analyze_pcm_f32(
         spec_max_db,
         max_rms,
         pitch_track,
+        f0_floor,
         f0_ceil,
         formant_track,
     })

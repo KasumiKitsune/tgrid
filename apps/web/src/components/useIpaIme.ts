@@ -5,6 +5,7 @@ import {
   type PraatMatch
 } from '../bridge/PlatformBridge';
 import { splitGraphemes } from '../layout/richText';
+import { matchesShortcut } from '../shortcuts/registry';
 import { useEditorStore, type IpaInputMode } from '../store/useEditorStore';
 
 const CONSONANT_BASES = new Set(
@@ -108,9 +109,9 @@ export function useIpaIme({
 }: UseIpaImeOptions): IpaImeState {
   const ipaMode = useEditorStore((s) => s.ipaMode);
   const cycleIpaMode = useEditorStore((s) => s.cycleIpaMode);
+  const customShortcuts = useEditorStore((s) => s.customShortcuts);
 
   const osComposingRef = useRef(false);
-  const shiftAloneRef = useRef(false);
   const valueRef = useRef(value);
   valueRef.current = value;
 
@@ -175,9 +176,10 @@ export function useIpaIme({
     setPopIdx(0);
   }, []);
 
-  // Reset composing buffers if mode changes or input becomes inactive
+  // Reset composing buffers & temporary English toggle if mode changes or input becomes inactive
   useEffect(() => {
     clearComposing();
+    setIpaTempEn(false);
   }, [ipaMode, active, clearComposing]);
 
   const showPopover = Boolean(active && (ylBuf || prPrefix !== null));
@@ -273,19 +275,18 @@ export function useIpaIme({
     async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (osComposingRef.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
 
-      if (e.key === 'Shift' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        if (!e.repeat) shiftAloneRef.current = true;
-        return;
-      }
-      shiftAloneRef.current = false;
-
-      if (
-        ((e.ctrlKey || e.metaKey) && (e.key === '\\' || e.code === 'Backslash')) ||
-        (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyI')
-      ) {
+      if (matchesShortcut('ipa-cycle', e, customShortcuts)) {
         e.preventDefault();
+        e.stopPropagation();
         clearComposing();
         cycleIpaMode();
+        return;
+      }
+
+      if (ipaMode !== 'off' && matchesShortcut('ipa-temp-en', e, customShortcuts)) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleTempEn();
         return;
       }
 
@@ -550,12 +551,14 @@ export function useIpaIme({
     },
     [
       clearComposing,
+      customShortcuts,
       cycleIpaMode,
       insertAtCaret,
       ipaMode,
       ipaTempEn,
       onUnhandledKeyDown,
-      refreshAnchorRect
+      refreshAnchorRect,
+      toggleTempEn
     ]
   );
 
@@ -566,20 +569,9 @@ export function useIpaIme({
     [handleKeyDownAsync]
   );
 
-  const onKeyUp = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Shift' && shiftAloneRef.current && ipaMode === 'yunlong') {
-        shiftAloneRef.current = false;
-        if (ylBufRef.current && ylCandsRef.current.length > 0) {
-          const gIdx = popPageRef.current * IPA_POPOVER_PAGE_SIZE + popIdxRef.current;
-          insertAtCaret(ylCandsRef.current[gIdx]?.text || ylCandsRef.current[0].text);
-        }
-        clearComposing();
-        setIpaTempEn((v) => !v);
-      }
-    },
-    [ipaMode, insertAtCaret, clearComposing]
-  );
+  const onKeyUp = useCallback((_e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Bare Shift toggle intentionally removed to avoid conflicts with OS IME switching
+  }, []);
 
   const onCompositionStart = useCallback(() => {
     osComposingRef.current = true;

@@ -1,0 +1,28 @@
+<svg class="tg-icon tg-icon--derive-point" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill { opacity: 0.14; }
+    svg:hover .tg-sub { opacity: 1; }
+    .tg-diamond {
+      transform-origin: 8px 12.75px;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), fill 0.2s ease;
+    }
+    svg:hover .tg-derive { transform: translateY(0.75px); }
+    svg:hover .tg-diamond { transform: scale(1.1); fill: #2563eb; }
+  </style>
+  <!-- 上方源区间层（按下态采样底纹） -->
+  <rect class="tg-fill" x="2" y="1.5" width="12" height="3.5" rx="1" fill="currentColor" />
+  <rect x="2" y="1.5" width="12" height="3.5" rx="1" stroke="currentColor" stroke-width="1.5" />
+  <!-- 中点向下派生引导 -->
+  <path class="tg-sub tg-derive" d="M6.5 7.25L8 8.75L9.5 7.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- 下方派生点层轴线 + T·Grid 菱形标点（正中 x=8） -->
+  <path class="tg-sub" d="M2 12.75H14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  <path class="tg-diamond" d="M8 10.5L10.25 12.75L8 15L5.75 12.75Z" fill="currentColor" />
+</svg>

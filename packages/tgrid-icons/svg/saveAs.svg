@@ -1,0 +1,29 @@
+<svg class="tg-icon tg-icon--save-as" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill, .tg-src-fill, .tg-dst-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-pane-fill {
+      opacity: 0.09;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill, svg:hover .tg-src-fill, svg:hover .tg-dst-fill { opacity: 0.14; }
+    svg:hover .tg-pane-fill { opacity: 0.2; }
+    svg:hover .tg-sub { opacity: 1; }
+    .tg-plus { transform-origin: 12px 12px; transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease; }
+    svg:hover .tg-plus { transform: scale(1.12); stroke: #2563eb; }
+  </style>
+  <!-- 按下态软盘主体底纹 -->
+  <path class="tg-fill" d="M2 3.25C2 2.56 2.56 2 3.25 2H11.15L14 4.85V8.75H8.75V14H3.25C2.56 14 2 13.44 2 12.75V3.25Z" fill="currentColor" />
+  <!-- 右下开口软盘外框（与 save 同坐标对齐） -->
+  <path d="M8.25 14H3.25C2.56 14 2 13.44 2 12.75V3.25C2 2.56 2.56 2 3.25 2H11.15L14 4.85V8.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- 顶部滑窗与左下标签 -->
+  <path class="tg-sub" d="M5 2V5.25C5 5.66 5.34 6 5.75 6H9.75C10.16 6 10.5 5.66 10.5 5.25V2M4.75 14V9.75C4.75 9.2 5.2 8.75 5.75 8.75H8.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- 右下新建另存加号 -->
+  <path class="tg-plus" d="M12.5 10.75V14.25M10.75 12.5H14.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+</svg>

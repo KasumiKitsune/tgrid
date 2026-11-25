@@ -1,0 +1,27 @@
+<svg class="tg-icon tg-icon--sidebar-toggle" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill, .tg-src-fill, .tg-dst-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-pane-fill {
+      opacity: 0.09;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill, svg:hover .tg-src-fill, svg:hover .tg-dst-fill { opacity: 0.14; }
+    svg:hover .tg-pane-fill { opacity: 0.2; }
+    svg:hover .tg-sub { opacity: 1; }
+    svg:hover .tg-chev { transform: translateX(0.55px); }
+  </style>
+  <!-- 右侧任务窗格微底纹 -->
+  <path class="tg-pane-fill" d="M10.5 2.5H12.75C13.58 2.5 14.25 3.17 14.25 4V12C14.25 12.83 13.58 13.5 12.75 13.5H10.5V2.5Z" fill="currentColor" />
+  <!-- 窗口外框与右侧栏分割线 -->
+  <rect x="1.75" y="2.5" width="12.5" height="11" rx="1.5" stroke="currentColor" stroke-width="1.5" />
+  <path d="M10.5 2.5V13.5" stroke="currentColor" stroke-width="1.5" />
+  <!-- 展开 / 收起方向尖角 -->
+  <path class="tg-sub tg-chev" d="M5.5 6.25L7.25 8L5.5 9.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

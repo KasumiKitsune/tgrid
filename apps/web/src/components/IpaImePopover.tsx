@@ -1,5 +1,8 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { getEffectiveShortcutHint } from '../shortcuts/registry';
+import { useEditorStore } from '../store/useEditorStore';
+import { getLogicalViewportSize, getViewportZoom } from '../utils/uiScale';
 import {
   IPA_POPOVER_PAGE_SIZE,
   formatIpaDisplayGlyph,
@@ -13,7 +16,13 @@ interface IpaModePillProps {
 }
 
 export const IpaModePill: React.FC<IpaModePillProps> = ({ ime, style, className = '' }) => {
+  const customShortcuts = useEditorStore((s) => s.customShortcuts);
   if (ime.ipaMode === 'off') return null;
+
+  const ipaTempEnHint = getEffectiveShortcutHint('ipa-temp-en', customShortcuts);
+  const ipaCycleHint = getEffectiveShortcutHint('ipa-cycle', customShortcuts);
+  const tempHintSuffix = ipaTempEnHint ? `或按 ${ipaTempEnHint}` : '';
+  const cycleHintSuffix = ipaCycleHint ? `（${ipaCycleHint} 切换方案）` : '';
 
   const stateClass = ime.ipaTempEn
     ? 'is-en'
@@ -29,15 +38,15 @@ export const IpaModePill: React.FC<IpaModePillProps> = ({ ime, style, className 
       style={style}
       title={
         ime.ipaMode === 'yunlong'
-          ? '点击或轻按 Shift 临时切换英文 / 云龙国际音标（Ctrl+\\ 切换方案）'
-          : '点击临时切换英文 / Praat \\xx 输入（Ctrl+\\ 切换方案）'
+          ? `点击${tempHintSuffix}临时切换英文 / 云龙国际音标${cycleHintSuffix}`
+          : `点击${tempHintSuffix}临时切换英文 / Praat 音标输入${cycleHintSuffix}`
       }
       onMouseDown={(e) => {
         e.preventDefault();
         ime.toggleTempEn();
       }}
     >
-      {ime.ipaTempEn ? 'EN' : ime.ipaMode === 'yunlong' ? '云龙 IPA' : 'Praat \\xx'}
+      {ime.ipaTempEn ? 'EN' : ime.ipaMode === 'yunlong' ? '云龙 IPA' : 'Praat'}
     </button>
   );
 };
@@ -56,21 +65,24 @@ export const IpaImePopover: React.FC<IpaImePopoverProps> = ({ ime }) => {
       return;
     }
     const anchor = ime.anchorRect;
+    const z = getViewportZoom();
+    const { width: vw, height: vh } = getLogicalViewportSize();
+    const aLeft = anchor.left / z;
+    const aTop = anchor.top / z;
+    const aBottom = anchor.bottom / z;
     const el = popRef.current;
     const popW = el ? Math.max(el.offsetWidth, 236) : 256;
     const popH = el ? Math.max(el.offsetHeight, 180) : 220;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
 
     // Clamp horizontally so popover near right edge of sidebar never clips off-screen
-    const left = Math.max(8, Math.min(vw - popW - 8, anchor.left));
+    const left = Math.max(8, Math.min(Math.max(8, vw - popW - 8), aLeft));
 
     // Place below anchor when room permits, otherwise flip cleanly above
-    const spaceBelow = vh - anchor.bottom - 8;
+    const spaceBelow = vh - aBottom - 8;
     const top =
       spaceBelow >= popH
-        ? Math.min(vh - popH - 8, anchor.bottom + 6)
-        : Math.max(8, anchor.top - popH - 6);
+        ? Math.min(vh - popH - 8, aBottom + 6)
+        : Math.max(8, aTop - popH - 6);
 
     setCoords({ left: Math.round(left), top: Math.round(top) });
   }, [
@@ -91,10 +103,12 @@ export const IpaImePopover: React.FC<IpaImePopoverProps> = ({ ime }) => {
   const ylSlice = isYunlong ? ime.ylCands.slice(start, start + IPA_POPOVER_PAGE_SIZE) : [];
   const prSlice = !isYunlong ? ime.prMatches.slice(start, start + IPA_POPOVER_PAGE_SIZE) : [];
 
-  const fallbackLeft = Math.max(8, Math.min(window.innerWidth - 264, Math.round(ime.anchorRect.left)));
+  const zFallback = getViewportZoom();
+  const { width: vwFallback, height: vhFallback } = getLogicalViewportSize();
+  const fallbackLeft = Math.max(8, Math.min(Math.max(8, vwFallback - 264), Math.round(ime.anchorRect.left / zFallback)));
   const fallbackTop = Math.max(
     8,
-    Math.min(window.innerHeight - 230, Math.round(ime.anchorRect.bottom + 6))
+    Math.min(Math.max(8, vhFallback - 230), Math.round(ime.anchorRect.bottom / zFallback + 6))
   );
 
   const pos = coords ?? { left: fallbackLeft, top: fallbackTop };
@@ -109,7 +123,7 @@ export const IpaImePopover: React.FC<IpaImePopoverProps> = ({ ime }) => {
       <div className="ipa-pop-head">
         <span className="ipa-pop-buf">{isYunlong ? ime.ylBuf : `\\${ime.prPrefix ?? ''}`}</span>
         <span className="ipa-pop-meta">
-          <span>{isYunlong ? '云龙音标' : 'Praat \\xx'}</span>
+          <span>{isYunlong ? '云龙音标' : 'Praat 音标'}</span>
           {ime.totalPages > 1 ? (
             <>
               <button
