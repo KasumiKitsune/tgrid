@@ -68,6 +68,10 @@ export function isIpaRelatedElement(target: EventTarget | null): boolean {
   );
 }
 
+function isEnterKey(e: { key?: string; code?: string }): boolean {
+  return e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter';
+}
+
 export interface UseIpaImeOptions {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   value: string;
@@ -96,6 +100,7 @@ export interface IpaImeState {
   toggleTempEn: () => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onKeyUp: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  onBlur: () => void;
   onCompositionStart: () => void;
   onCompositionEnd: () => void;
 }
@@ -176,11 +181,20 @@ export function useIpaIme({
     setPopIdx(0);
   }, []);
 
-  // Reset composing buffers & temporary English toggle if mode changes or input becomes inactive
+  // Reset composing buffers, OS IME guard & temporary English toggle if mode/activity changes or window blurs
   useEffect(() => {
+    osComposingRef.current = false;
     clearComposing();
     setIpaTempEn(false);
   }, [ipaMode, active, clearComposing]);
+
+  useEffect(() => {
+    const onWindowBlur = () => {
+      osComposingRef.current = false;
+    };
+    window.addEventListener('blur', onWindowBlur);
+    return () => window.removeEventListener('blur', onWindowBlur);
+  }, []);
 
   const showPopover = Boolean(active && (ylBuf || prPrefix !== null));
 
@@ -273,7 +287,15 @@ export function useIpaIme({
 
   const handleKeyDownAsync = useCallback(
     async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (osComposingRef.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
+      const nativeComposing = Boolean(e.nativeEvent.isComposing || e.keyCode === 229);
+      if (nativeComposing) return;
+      if (osComposingRef.current) {
+        if (e.ctrlKey || e.metaKey || !active) {
+          osComposingRef.current = false;
+        } else {
+          return;
+        }
+      }
 
       if (matchesShortcut('ipa-cycle', e, customShortcuts)) {
         e.preventDefault();
@@ -363,14 +385,15 @@ export function useIpaIme({
             return;
           }
         }
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        if (isEnterKey(e) && (e.ctrlKey || e.metaKey)) {
           e.preventDefault();
+          e.stopPropagation();
           const raw = curYlBuf ? curYlBuf : '\\' + (curPrPrefix ?? '');
           clearComposing();
           if (raw) insertAtCaret(raw);
           return;
         }
-        if (e.key === ' ' || (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.shiftKey)) {
+        if (e.key === ' ' || (isEnterKey(e) && !e.ctrlKey && !e.metaKey && !e.shiftKey)) {
           e.preventDefault();
           const globalIdx = curPopPage * IPA_POPOVER_PAGE_SIZE + curPopIdx;
           if (curYlBuf && curYlCands[globalIdx]) {
@@ -550,6 +573,7 @@ export function useIpaIme({
       onUnhandledKeyDown?.(e);
     },
     [
+      active,
       clearComposing,
       customShortcuts,
       cycleIpaMode,
@@ -571,6 +595,10 @@ export function useIpaIme({
 
   const onKeyUp = useCallback((_e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Bare Shift toggle intentionally removed to avoid conflicts with OS IME switching
+  }, []);
+
+  const onBlur = useCallback(() => {
+    osComposingRef.current = false;
   }, []);
 
   const onCompositionStart = useCallback(() => {
@@ -602,6 +630,7 @@ export function useIpaIme({
     toggleTempEn,
     onKeyDown,
     onKeyUp,
+    onBlur,
     onCompositionStart,
     onCompositionEnd
   };

@@ -1147,11 +1147,14 @@ export function parseWaveformPathToBins(
 export function extractVoicedPitchRuns(
   analysis: AudioAnalysisSummary | null,
   tMin: number,
-  tMax: number
+  tMax: number,
+  f0RangeOverride?: { floor: number; ceil: number } | null
 ): Array<Array<{ t: number; normF0: number }>> {
   if (!analysis || !analysis.pitchTrack || analysis.pitchTrack.length < 2) return [];
-  const floor = Math.max(50, analysis.f0Floor || 75);
-  const ceil = Math.max(floor + 80, analysis.f0Ceil || 480);
+  const floor = f0RangeOverride ? f0RangeOverride.floor : Math.max(50, analysis.f0Floor || 75);
+  const ceil = f0RangeOverride
+    ? Math.max(floor + 25, f0RangeOverride.ceil)
+    : Math.max(floor + 80, analysis.f0Ceil || 480);
   const span = ceil - floor;
 
   const runs: Array<Array<{ t: number; normF0: number }>> = [];

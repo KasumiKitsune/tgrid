@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getPlatformBridge } from '../bridge/PlatformBridge';
 import { primeTrigraphString } from '../layout/richText';
 import { isComposingEvent } from '../shortcuts/registry';
+import { formatQuote, formatTierLabel } from '../store/historyModel';
 import { useEditorStore } from '../store/useEditorStore';
 import { getElementRectScale } from '../utils/uiScale';
 import { CloseIcon, UiIcon } from './Icons';
@@ -40,6 +41,7 @@ export const FindReplaceBar: React.FC = () => {
   const [wholeWord, setWholeWord] = useState(false);
   const [useRegex, setUseRegex] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
+  const [hasNavigated, setHasNavigated] = useState(false);
   const [tierMenuOpen, setTierMenuOpen] = useState(false);
   const [tierFocusIdx, setTierFocusIdx] = useState(0);
 
@@ -47,7 +49,6 @@ export const FindReplaceBar: React.FC = () => {
   const replaceInputRef = useRef<HTMLInputElement>(null);
   const tierDropdownRef = useRef<HTMLDivElement>(null);
   const tierTriggerRef = useRef<HTMLButtonElement>(null);
-  const hasNavigatedForQueryRef = useRef(false);
 
   const tierOptions = useMemo<Array<{ value: 'all' | number; label: string }>>(
     () => [
@@ -110,7 +111,7 @@ export const FindReplaceBar: React.FC = () => {
   // Reset navigation anchor when search parameters change
   useEffect(() => {
     setActiveIdx(0);
-    hasNavigatedForQueryRef.current = false;
+    setHasNavigated(false);
   }, [query, tierScope, caseSensitive, wholeWord, useRegex]);
 
   const { matches, regexError } = useMemo<{ matches: FindMatch[]; regexError: string | null }>(() => {
@@ -244,28 +245,28 @@ export const FindReplaceBar: React.FC = () => {
   const goNext = useCallback(() => {
     if (matches.length === 0) return;
     let nextIdx: number;
-    if (!hasNavigatedForQueryRef.current) {
-      hasNavigatedForQueryRef.current = true;
+    if (!hasNavigated) {
+      setHasNavigated(true);
       nextIdx = 0;
     } else {
       nextIdx = (safeActiveIdx + 1) % matches.length;
     }
     setActiveIdx(nextIdx);
     navigateToMatch(matches[nextIdx]);
-  }, [matches, safeActiveIdx, navigateToMatch]);
+  }, [matches, hasNavigated, safeActiveIdx, navigateToMatch]);
 
   const goPrev = useCallback(() => {
     if (matches.length === 0) return;
     let prevIdx: number;
-    if (!hasNavigatedForQueryRef.current) {
-      hasNavigatedForQueryRef.current = true;
+    if (!hasNavigated) {
+      setHasNavigated(true);
       prevIdx = matches.length - 1;
     } else {
       prevIdx = (safeActiveIdx - 1 + matches.length) % matches.length;
     }
     setActiveIdx(prevIdx);
     navigateToMatch(matches[prevIdx]);
-  }, [matches, safeActiveIdx, navigateToMatch]);
+  }, [matches, hasNavigated, safeActiveIdx, navigateToMatch]);
 
   const applyReplacement = useCallback(
     (source: string): string => {
@@ -298,16 +299,21 @@ export const FindReplaceBar: React.FC = () => {
       );
     }
 
+    const tierName = formatTierLabel(tg.tiers[target.tierIndex]?.name, target.tierIndex);
     commitTgMutation(
-      (draft) => {
-        const dTier = draft.tiers[target.tierIndex];
-        if (!dTier) return;
+      (_draft, ctx) => {
+        const dTier = ctx.editTier(target.tierIndex);
+        if (!dTier) return false;
         if (target.kind === 'interval' && dTier.kind === 'intervalTier') {
           const iv = dTier.intervals[target.itemIndex];
-          if (iv) iv.text = nextText;
+          if (!iv || iv.text === nextText) return false;
+          iv.text = nextText;
         } else if (target.kind === 'point' && dTier.kind === 'textTier') {
           const pt = dTier.points[target.itemIndex];
-          if (pt) pt.mark = nextText;
+          if (!pt || pt.mark === nextText) return false;
+          pt.mark = nextText;
+        } else {
+          return false;
         }
       },
       {
@@ -315,11 +321,18 @@ export const FindReplaceBar: React.FC = () => {
         tierIndex: target.tierIndex,
         itemIndex: target.itemIndex
       },
-      '替换标注文本'
+      {
+        type: 'replace-one',
+        title: '替换标注文本',
+        detail: `${tierName} · ${formatQuote(target.text)}→${formatQuote(nextText)}`,
+        icon: 'replace',
+        tierName,
+        focusTime: target.tmin
+      }
     );
 
-    hasNavigatedForQueryRef.current = true;
-  }, [mode, matches, safeActiveIdx, regexError, applyReplacement, goNext, commitTgMutation]);
+    setHasNavigated(true);
+  }, [mode, matches, safeActiveIdx, regexError, applyReplacement, goNext, commitTgMutation, tg.tiers]);
 
   const handleReplaceAll = useCallback(() => {
     if (mode !== 'edit' || matches.length === 0 || regexError) return;
@@ -341,21 +354,34 @@ export const FindReplaceBar: React.FC = () => {
     }
 
     commitTgMutation(
-      (draft) => {
+      (_draft, ctx) => {
+        let applied = 0;
         for (const { match, nextText } of updates) {
-          const dTier = draft.tiers[match.tierIndex];
+          const dTier = ctx.editTier(match.tierIndex);
           if (!dTier) continue;
           if (match.kind === 'interval' && dTier.kind === 'intervalTier') {
             const iv = dTier.intervals[match.itemIndex];
-            if (iv) iv.text = nextText;
+            if (iv && iv.text !== nextText) {
+              iv.text = nextText;
+              applied++;
+            }
           } else if (match.kind === 'point' && dTier.kind === 'textTier') {
             const pt = dTier.points[match.itemIndex];
-            if (pt) pt.mark = nextText;
+            if (pt && pt.mark !== nextText) {
+              pt.mark = nextText;
+              applied++;
+            }
           }
         }
+        if (applied === 0) return false;
       },
       undefined,
-      '批量替换标注文本'
+      {
+        type: 'replace-all',
+        title: '批量替换文本',
+        detail: `共替换 ${changedCount} 处 · ${formatQuote(query)}→${formatQuote(replaceText)}`,
+        icon: 'replace'
+      }
     );
 
     if (replaceText.includes('\\')) {
@@ -370,7 +396,11 @@ export const FindReplaceBar: React.FC = () => {
   if (!findBarOpen) return null;
 
   const countLabel =
-    matches.length > 0 ? `${safeActiveIdx + 1} / ${matches.length}` : '0 / 0';
+    matches.length === 0
+      ? '0 / 0'
+      : hasNavigated
+        ? `${safeActiveIdx + 1} / ${matches.length}`
+        : `— / ${matches.length}`;
   const countClass = `find-replace-count ${query && matches.length === 0 ? 'no-match' : ''}`;
   const isReadOnly = mode !== 'edit';
   const canReplace = !isReadOnly && matches.length > 0 && !regexError;
@@ -420,8 +450,9 @@ export const FindReplaceBar: React.FC = () => {
                 closeFindBar();
                 return;
               }
-              if (e.key === 'Enter') {
+              if (e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter') {
                 e.preventDefault();
+                e.stopPropagation();
                 if (e.shiftKey) goPrev();
                 else goNext();
               }
@@ -519,8 +550,9 @@ export const FindReplaceBar: React.FC = () => {
                   closeFindBar();
                   return;
                 }
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter') {
                   e.preventDefault();
+                  e.stopPropagation();
                   if (e.ctrlKey || e.metaKey || e.altKey) handleReplaceAll();
                   else handleReplaceOne();
                 }

@@ -1055,6 +1055,74 @@
   transform: scale(1.05);
 }
 
+/* Icon: history */
+.tgi.tgi-history .hist-root {
+  transform-origin: 8px 8px;
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-history .hist-leap {
+  transform-origin: 8px 8px;
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-history .hist-arc,
+.tgi.tgi-history .hist-arrow {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-history .hist-track {
+  stroke: var(--tgi-stroke-muted, #4b5563);
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-history .hist-mid {
+  fill: var(--tgi-stroke, #374151);
+  transition: fill 0.2s ease;
+}
+.tgi.tgi-history .hist-origin {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.4;
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-history .hist-target {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.4;
+  fill: var(--tgi-accent-bg-0, rgba(37, 99, 235, 0));
+  transform-origin: 4px 11.8px;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+        stroke 0.2s ease,
+        fill 0.22s ease;
+}
+.tgi.tgi-history:hover .hist-leap,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-history .hist-leap {
+  transform: rotate(-7deg) translateY(-0.25px);
+}
+.tgi.tgi-history:hover .hist-arc,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-history .hist-arc,
+.tgi.tgi-history:hover .hist-arrow,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-history .hist-arrow {
+  stroke: var(--tgi-accent, #2563eb);
+}
+.tgi.tgi-history:hover .hist-track,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-history .hist-track,
+.tgi.tgi-history:hover .hist-origin,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-history .hist-origin {
+  stroke: var(--tgi-stroke-hover, #111827);
+}
+.tgi.tgi-history:hover .hist-mid,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-history .hist-mid {
+  fill: var(--tgi-stroke-hover, #111827);
+}
+.tgi.tgi-history:hover .hist-target,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-history .hist-target {
+  stroke: var(--tgi-accent, #2563eb);
+  fill: var(--tgi-accent-bg, rgba(37, 99, 235, 0.14));
+  transform: scale(1.12);
+}
+
 /* Icon: info */
 .tgi.tgi-info .inf-root {
   transform-origin: 8px 8px;

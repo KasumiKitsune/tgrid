@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .hist-root {
+      transform-origin: 8px 8px;
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .hist-leap {
+      transform-origin: 8px 8px;
+      transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .hist-arc, .hist-arrow {
+      stroke: #374151;
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: stroke 0.2s ease;
+    }
+    .hist-track {
+      stroke: #4b5563;
+      stroke-width: 1.35;
+      stroke-linecap: round;
+      transition: stroke 0.2s ease;
+    }
+    .hist-mid {
+      fill: #374151;
+      transition: fill 0.2s ease;
+    }
+    .hist-origin {
+      stroke: #374151;
+      stroke-width: 1.4;
+      transition: stroke 0.2s ease;
+    }
+    .hist-target {
+      stroke: #374151;
+      stroke-width: 1.4;
+      fill: rgba(37, 99, 235, 0);
+      transform-origin: 4px 11.8px;
+      transition:
+        transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+        stroke 0.2s ease,
+        fill 0.22s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .hist-leap { transform: rotate(-7deg) translateY(-0.25px); }
+    svg:hover .hist-arc, svg:hover .hist-arrow { stroke: #2563eb; }
+    svg:hover .hist-track, svg:hover .hist-origin { stroke: #111827; }
+    svg:hover .hist-mid { fill: #111827; }
+    svg:hover .hist-target {
+      stroke: #2563eb;
+      fill: rgba(37, 99, 235, 0.14);
+      transform: scale(1.12);
+    }
+    svg:active .hist-root { transform: scale(0.91); }
+    svg:active .hist-leap { transform: rotate(-11deg) translateY(0.25px); }
+    svg:active .hist-target { transform: scale(1.04); }
+  </style>
+
+  <defs>
+    <mask id="hist-leap-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+      <rect width="16" height="16" fill="#ffffff" />
+      <circle cx="4" cy="11.8" r="2.0" fill="#000000" />
+      <circle cx="12" cy="11.8" r="2.0" fill="#000000" />
+    </mask>
+  </defs>
+
+  <g class="hist-root">
+    <!-- 上方跨步回溯飞弧 -->
+    <g class="hist-leap">
+      <path class="hist-arc" d="M12 7.8 A4.0 4.8 0 0 0 4 7.8" />
+      <path class="hist-arrow" d="M2.45 6.3 L4 7.85 L5.55 6.3" />
+    </g>
+    <!-- 底部水平时间轴基线（节点处精准镂空） -->
+    <g mask="url(#hist-leap-mask)">
+      <path class="hist-track" d="M4 11.8 H12" />
+    </g>
+    <!-- 历史目标节点 / 途经节点 / 当前状态节点 -->
+    <circle class="hist-target" cx="4" cy="11.8" r="1.35" />
+    <circle class="hist-mid" cx="8" cy="11.8" r="0.95" />
+    <circle class="hist-origin" cx="12" cy="11.8" r="1.35" />
+  </g>
+</svg>

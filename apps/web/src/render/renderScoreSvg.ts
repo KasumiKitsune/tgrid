@@ -18,6 +18,7 @@ import {
   type ScorePalette
 } from '../layout/legendCore';
 import { elasticXInBand, type BandLayout, type ScoreLayout } from '../layout/computeLayout';
+import type { F0RangeBounds } from '../utils/f0Range';
 
 export type EditorSelection =
   | { kind: 'interval'; tierIndex: number; itemIndex: number; bandIndex?: number }
@@ -113,6 +114,7 @@ export interface RenderScoreInput {
   audioOffset: number;
   analysis: AudioAnalysisSummary | null;
   maxFreq: number;
+  f0RangeOverride?: F0RangeBounds | null;
   mode: 'read' | 'edit';
   selection: EditorSelection;
   playRange: { start: number; end: number } | null;
@@ -1343,8 +1345,10 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
           );
           let pathD = '';
           let penDown = false;
-          const f0Floor = analysis.f0Floor ?? 65;
-          const f0Ceil = Math.max(f0Floor + 50, analysis.f0Ceil || 500);
+          const f0Floor = input.f0RangeOverride ? input.f0RangeOverride.floor : (analysis.f0Floor ?? 65);
+          const f0Ceil = input.f0RangeOverride
+            ? Math.max(f0Floor + 25, input.f0RangeOverride.ceil)
+            : Math.max(f0Floor + 50, analysis.f0Ceil || 500);
           for (const p of analysis.pitchTrack) {
             if (p.t < band.startT || p.t > band.endT || p.f0 === null || !Number.isFinite(p.f0)) {
               penDown = false;
@@ -1434,8 +1438,10 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
 
       // F0 Range Readout
       if (analysis && band.bandContentW >= 90 && (!isExp || pitchOpacity > 0.001)) {
-        const f0Floor = analysis.f0Floor ?? 65;
-        const f0Ceil = Math.max(f0Floor + 50, analysis.f0Ceil || 500);
+        const f0Floor = input.f0RangeOverride ? input.f0RangeOverride.floor : (analysis.f0Floor ?? 65);
+        const f0Ceil = input.f0RangeOverride
+          ? Math.max(f0Floor + 25, input.f0RangeOverride.ceil)
+          : Math.max(f0Floor + 50, analysis.f0Ceil || 500);
         const f0Lbl = `F0 ${Math.round(f0Floor)}–${Math.round(f0Ceil)} Hz`;
         const f0LblW = Math.ceil(measurePx(f0Lbl, `${(8.5 * fScale).toFixed(1)}px ${MONO_FONT_STACK}`)) + 8;
         const f0BoxX = band.originX + band.bandContentW - f0LblW - 4;

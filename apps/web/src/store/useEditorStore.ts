@@ -5,6 +5,44 @@ import type { EditorSelection } from '../render/renderScoreSvg';
 import type { ScoreLayout } from '../layout/computeLayout';
 import { getShortcutEntry, normalizeKeyCombo } from '../shortcuts/registry';
 import {
+  canRedoTimeline,
+  canUndoTimeline,
+  clampHistoryLimit,
+  clearTimelineToCurrent,
+  cloneTier,
+  commitToTimeline,
+  createHistoryTimeline,
+  formatDeltaTime,
+  formatDocBaselineDetail,
+  formatDurationLabel,
+  formatQuote,
+  formatTierLabel,
+  formatTimeSec,
+  formatTimeSpan,
+  getCurrentEntryId,
+  getCurrentSnapshot,
+  getLatestRedoEntry,
+  getLatestUndoEntry,
+  isTimelineDirty,
+  loadSavedHistoryLimit,
+  markTimelineSaved,
+  produceTgMutation,
+  saveHistoryLimit,
+  sealTimelineCoalesce,
+  setTimelineCursor,
+  setTimelineMaxEntries,
+  type BaselineKind,
+  type HistoryActionMeta,
+  type HistoryTimeline,
+  type MutationContext
+} from './historyModel';
+import {
+  clampCustomF0Range,
+  loadF0RangePrefs,
+  saveF0RangePrefs,
+  type F0RangeMode
+} from '../utils/f0Range';
+import {
   clampCanvasScale,
   clampUiScale,
   loadSavedCanvasScale,
@@ -14,7 +52,7 @@ import {
 } from '../utils/uiScale';
 
 export type IpaInputMode = 'off' | 'yunlong' | 'praat';
-export type SidebarTab = 'inspector' | 'tiers' | 'settings' | 'customize';
+export type SidebarTab = 'inspector' | 'tiers' | 'history' | 'settings' | 'customize';
 export type EditInspectorMode = 'sidebar' | 'floating';
 export type ExportRangePreset = 'all' | 'view' | 'selection' | 'custom';
 
@@ -324,6 +362,7 @@ function loadSidebarPrefs(): StoredSidebarPrefs {
       const tab: SidebarTab =
         raw.sidebarTab === 'inspector' ||
         raw.sidebarTab === 'tiers' ||
+        raw.sidebarTab === 'history' ||
         raw.sidebarTab === 'settings' ||
         raw.sidebarTab === 'customize'
           ? raw.sidebarTab
@@ -388,10 +427,17 @@ function extractSidebarPrefs(
 }
 
 const initialSidebarPrefs = loadSidebarPrefs();
+const initialF0RangePrefs = loadF0RangePrefs();
 
 export interface ToastAction {
   label: string;
   onClick: () => void;
+}
+
+export interface AlignMicroResult {
+  aligned: number;
+  skippedPointCollision: number;
+  skippedBoundConstraint: number;
 }
 
 export interface ToastState {
@@ -401,10 +447,21 @@ export interface ToastState {
   action?: ToastAction | null;
 }
 
-export interface UndoSnapshot {
-  tg: TextGrid;
+export interface HistoryNavSignal {
+  seq: number;
+  tabId: string;
+  focusTime?: number;
   selection: EditorSelection;
-  label?: string;
+}
+
+export interface HistoryJumpOptions {
+  showToastLabel?: 'undo' | 'redo';
+}
+
+export interface BoundaryMoveOptions {
+  coalesce?: boolean;
+  nextSelection?: EditorSelection;
+  actionMeta?: Partial<HistoryActionMeta>;
 }
 
 export interface TabRecord {
@@ -416,9 +473,9 @@ export interface TabRecord {
   currentFilePath: string | null;
   currentFileFormat: TextGridFormat;
   isDirty: boolean;
-  cleanUndoDepth: number | null;
-  undoStack: UndoSnapshot[];
-  redoStack: UndoSnapshot[];
+  baselineKind: BaselineKind;
+  history: HistoryTimeline;
+  collectionHistories: Record<number, HistoryTimeline>;
   viewDomain: { min: number; max: number } | null;
   selection: EditorSelection;
   lastActiveTierIndex: number;
@@ -442,6 +499,7 @@ export interface CreateTabOptions {
   filePath?: string | null;
   fileFormat?: TextGridFormat;
   isBlankPlaceholder?: boolean;
+  baselineKind?: BaselineKind;
   activate?: boolean;
 }
 
@@ -464,7 +522,11 @@ export interface EditorState {
   currentFilePath: string | null;
   currentFileFormat: TextGridFormat;
   isDirty: boolean;
-  cleanUndoDepth: number | null;
+  baselineKind: BaselineKind;
+  history: HistoryTimeline;
+  collectionHistories: Record<number, HistoryTimeline>;
+  historyLimit: number;
+  lastHistoryNav: HistoryNavSignal | null;
   mode: 'read' | 'edit';
   wrapMode: 'auto' | 'single';
   scaleMode: 'elastic' | 'linear';
@@ -499,6 +561,8 @@ export interface EditorState {
   tierOrder: 'raw' | 'spec';
   maxFreq: 5000 | 8000 | 10000;
   maxFreqUserSet: boolean;
+  f0RangeMode: F0RangeMode;
+  f0RangeCustom: [number, number];
 
   // IPA System
   ipaMode: IpaInputMode;
@@ -528,8 +592,6 @@ export interface EditorState {
   findBarReplaceMode: boolean;
   shortcutsOpen: boolean;
   layout: ScoreLayout | null;
-  undoStack: UndoSnapshot[];
-  redoStack: UndoSnapshot[];
   toast: ToastState;
   docVersion: number;
 
@@ -541,7 +603,12 @@ export interface EditorState {
   findTabByPath: (filePath: string) => TabRecord | null;
   markTabSaved: (
     tabId: string,
-    meta?: { filePath?: string | null; filename?: string; fileFormat?: TextGridFormat }
+    meta?: {
+      filePath?: string | null;
+      filename?: string;
+      fileFormat?: TextGridFormat;
+      markAllCollectionItems?: boolean;
+    }
   ) => void;
   setAudioMetaForTab: (
     tabId: string,
@@ -561,17 +628,31 @@ export interface EditorState {
     filename: string,
     collectionTgs?: TextGrid[],
     activeIdx?: number,
-    meta?: { filePath?: string | null; fileFormat?: TextGridFormat; isBlankPlaceholder?: boolean }
+    meta?: {
+      filePath?: string | null;
+      fileFormat?: TextGridFormat;
+      isBlankPlaceholder?: boolean;
+      baselineKind?: BaselineKind;
+    }
   ) => void;
-  markSaved: (meta?: { filePath?: string | null; filename?: string; fileFormat?: TextGridFormat }) => void;
+  markSaved: (meta?: {
+    filePath?: string | null;
+    filename?: string;
+    fileFormat?: TextGridFormat;
+    markAllCollectionItems?: boolean;
+  }) => void;
   switchCollectionItem: (idx: number) => void;
   commitTgMutation: (
-    mutator: (draft: TextGrid) => void,
-    nextSelection?: EditorSelection,
-    label?: string
-  ) => void;
-  undo: () => void;
-  redo: () => void;
+    mutator: (draft: TextGrid, ctx: MutationContext) => boolean | void,
+    nextSelection: EditorSelection | undefined,
+    meta: HistoryActionMeta
+  ) => boolean;
+  jumpToHistory: (targetCursor: number, opts?: HistoryJumpOptions) => boolean;
+  jumpToSavedPoint: () => boolean;
+  clearHistoryToCurrent: () => boolean;
+  setHistoryLimit: (limit: number) => void;
+  undo: () => boolean;
+  redo: () => boolean;
   setMode: (mode: 'read' | 'edit') => void;
   setWrapMode: (wrapMode: 'auto' | 'single') => void;
   setScaleMode: (scaleMode: 'elastic' | 'linear') => void;
@@ -604,6 +685,8 @@ export interface EditorState {
   setCueMode: (m: 'auto' | 'pitch' | 'formant' | 'plain') => void;
   setTierOrder: (o: 'raw' | 'spec') => void;
   setMaxFreq: (f: 5000 | 8000 | 10000) => void;
+  setF0RangeMode: (m: F0RangeMode) => void;
+  setF0RangeCustom: (minHz: number, maxHz: number) => void;
   setIpaMode: (m: IpaInputMode) => void;
   cycleIpaMode: () => void;
   setIpaDockOpen: (open: boolean) => void;
@@ -652,7 +735,7 @@ export interface EditorState {
   duplicateTier: (tierIndex: number, opts: { copyText: boolean; insertAt?: number }) => number;
   derivePointTierFromIntervals: (tierIndex: number, anchor: 'start' | 'mid' | 'end') => number;
   moveTier: (tierIndex: number, delta: -1 | 1) => void;
-  reorderTier: (fromIdx: number, toIdx: number) => void;
+  reorderTier: (fromIdx: number, toIdx: number, overrideSelection?: EditorSelection) => void;
   deleteTier: (tierIndex: number) => void;
   removeTierWithUndoToast: (tierIndex: number) => void;
   clearTierText: (tierIndex: number) => void;
@@ -664,16 +747,30 @@ export interface EditorState {
     copyText: boolean
   ) => boolean;
   splitIntervalEqualN: (tierIndex: number, itemIndex: number, n: number) => boolean;
-  alignMicroBoundaries: (targetTierIndex?: number, thresholdSec?: number) => number;
+  alignMicroBoundaries: (targetTierIndex?: number, thresholdSec?: number) => AlignMicroResult;
   updateBlankTabDuration: (audioOffset: number, audioDuration: number) => boolean;
   normalizeTextGrid: () => void;
-  moveTierBoundary: (tierIndex: number, oldT: number, newT: number, shared: boolean) => boolean;
-  moveSharedTimestamp: (oldT: number, newT: number) => boolean;
+  moveTierBoundary: (
+    tierIndex: number,
+    oldT: number,
+    newT: number,
+    shared: boolean,
+    opts?: BoundaryMoveOptions
+  ) => boolean;
+  moveSharedTimestamp: (oldT: number, newT: number, opts?: BoundaryMoveOptions) => boolean;
 }
 
-function cloneTg(tg: TextGrid): TextGrid {
-  return JSON.parse(JSON.stringify(tg)) as TextGrid;
+let beforeHistoryNavigateHook: (() => void) | null = null;
+
+export function registerBeforeHistoryNavigate(fn: (() => void) | null): void {
+  beforeHistoryNavigateHook = fn;
 }
+
+function flushBeforeHistoryNavigate(): void {
+  beforeHistoryNavigateHook?.();
+}
+
+let nextHistoryNavSeq = 1;
 
 function roundTimeClean(t: number): number {
   return Number(t.toFixed(6));
@@ -688,22 +785,51 @@ function generateTabId(): string {
   return `tab-${nextTabSeq++}`;
 }
 
-function createTabRecord(opts?: CreateTabOptions): TabRecord {
+function computeCollectionDirty(
+  activeHistory: HistoryTimeline,
+  collectionHistories: Record<number, HistoryTimeline>,
+  activeIdx: number
+): boolean {
+  if (isTimelineDirty(activeHistory)) return true;
+  for (const [k, tl] of Object.entries(collectionHistories)) {
+    if (Number(k) !== activeIdx && isTimelineDirty(tl)) return true;
+  }
+  return false;
+}
+
+function createTabRecord(opts?: CreateTabOptions, historyLimit = loadSavedHistoryLimit()): TabRecord {
   const isDefaultBlank = !opts?.tg;
   const tg = opts?.tg ?? createSample('blank').tg;
   const filename = opts?.filename ?? tg.name ?? '未命名.TextGrid';
+  const collectionTgs = opts?.collectionTgs ?? [];
+  const activeIdx = opts?.activeIdx ?? 0;
+  const isBlank = opts?.isBlankPlaceholder ?? isDefaultBlank;
+  const baselineKind: BaselineKind = opts?.baselineKind ?? (isBlank ? 'blank' : 'open');
+  const history = createHistoryTimeline(
+    baselineKind,
+    filename,
+    {
+      tg,
+      selection: null,
+      hiddenTierIndices: [],
+      playRange: null
+    },
+    historyLimit
+  );
+  const collectionHistories: Record<number, HistoryTimeline> =
+    collectionTgs.length > 0 ? { [activeIdx]: history } : {};
   return {
     id: generateTabId(),
     tg,
-    collectionTgs: opts?.collectionTgs ?? [],
-    collectionActiveIdx: opts?.activeIdx ?? 0,
+    collectionTgs,
+    collectionActiveIdx: activeIdx,
     filename,
     currentFilePath: opts?.filePath ?? null,
     currentFileFormat: opts?.fileFormat ?? 'longText',
     isDirty: false,
-    cleanUndoDepth: 0,
-    undoStack: [],
-    redoStack: [],
+    baselineKind,
+    history,
+    collectionHistories,
     viewDomain: null,
     selection: null,
     lastActiveTierIndex: 0,
@@ -716,7 +842,7 @@ function createTabRecord(opts?: CreateTabOptions): TabRecord {
     audioDuration: 0,
     audioSampleRate: 0,
     analysis: null,
-    isBlankPlaceholder: opts?.isBlankPlaceholder ?? isDefaultBlank
+    isBlankPlaceholder: isBlank
   };
 }
 
@@ -730,9 +856,9 @@ function fieldsFromTab(tab: TabRecord) {
     currentFilePath: tab.currentFilePath,
     currentFileFormat: tab.currentFileFormat,
     isDirty: tab.isDirty,
-    cleanUndoDepth: tab.cleanUndoDepth,
-    undoStack: tab.undoStack,
-    redoStack: tab.redoStack,
+    baselineKind: tab.baselineKind,
+    history: tab.history,
+    collectionHistories: tab.collectionHistories,
     viewDomain: tab.viewDomain,
     selection: tab.selection,
     lastActiveTierIndex: tab.lastActiveTierIndex,
@@ -753,14 +879,6 @@ function syncActivePatch(s: EditorState, patch: Partial<TabRecord>) {
     ...patch,
     tabs: s.tabs.map((t) => (t.id === s.activeTabId ? { ...t, ...patch } : t))
   };
-}
-
-export function getLatestUndoLabel(undoStack: UndoSnapshot[]): string | undefined {
-  return undoStack.length > 0 ? undoStack[undoStack.length - 1].label : undefined;
-}
-
-export function getLatestRedoLabel(redoStack: UndoSnapshot[]): string | undefined {
-  return redoStack.length > 0 ? redoStack[redoStack.length - 1].label : undefined;
 }
 
 function extractTierIndex(sel: EditorSelection): number | null {
@@ -874,6 +992,45 @@ function validateSelectionForTg(tg: TextGrid, sel: EditorSelection): EditorSelec
   return null;
 }
 
+function clampTabTemporalToTg(
+  tg: TextGrid,
+  curTime: number,
+  playRange: { start: number; end: number } | null,
+  viewDomain: { min: number; max: number } | null
+): {
+  currentTime: number;
+  playRange: { start: number; end: number } | null;
+  viewDomain: { min: number; max: number } | null;
+} {
+  const gMin = Number.isFinite(tg.xmin) ? tg.xmin : 0;
+  const gMax = Number.isFinite(tg.xmax) && tg.xmax >= gMin ? tg.xmax : gMin;
+  const eps = 1e-9;
+
+  const nextTime = Number.isFinite(curTime)
+    ? Math.max(gMin, Math.min(gMax, curTime))
+    : gMin;
+
+  let nextPlayRange: { start: number; end: number } | null = null;
+  if (playRange && Number.isFinite(playRange.start) && Number.isFinite(playRange.end)) {
+    const s = Math.max(gMin, playRange.start);
+    const e = Math.min(gMax, playRange.end);
+    if (e > s + eps) {
+      nextPlayRange = { start: s, end: e };
+    }
+  }
+
+  let nextViewDomain: { min: number; max: number } | null = null;
+  if (viewDomain && Number.isFinite(viewDomain.min) && Number.isFinite(viewDomain.max)) {
+    const min = Math.max(gMin, viewDomain.min);
+    const max = Math.min(gMax, viewDomain.max);
+    if (max > min + eps && !(min <= gMin + eps && max >= gMax - eps)) {
+      nextViewDomain = { min, max };
+    }
+  }
+
+  return { currentTime: nextTime, playRange: nextPlayRange, viewDomain: nextViewDomain };
+}
+
 function loadSavedVolume(): number {
   try {
     const raw = localStorage.getItem('tg_audio_volume');
@@ -888,18 +1045,25 @@ function loadSavedVolume(): number {
 }
 
 let toastTimeout: ReturnType<typeof setTimeout> | null = null;
+const initialHistoryLimit = loadSavedHistoryLimit();
 const initialSample = createSample('poem');
-const initialTab = createTabRecord({
-  tg: initialSample.tg,
-  filename: initialSample.tg.name,
-  filePath: null,
-  fileFormat: 'longText',
-  isBlankPlaceholder: false
-});
+const initialTab = createTabRecord(
+  {
+    tg: initialSample.tg,
+    filename: initialSample.tg.name,
+    filePath: null,
+    fileFormat: 'longText',
+    isBlankPlaceholder: false,
+    baselineKind: 'sample'
+  },
+  initialHistoryLimit
+);
 
 export const useEditorStore = create<EditorState>((set, get) => ({
   tabs: [initialTab],
   ...fieldsFromTab(initialTab),
+  historyLimit: initialHistoryLimit,
+  lastHistoryNav: null,
 
   mode: 'read',
   wrapMode: 'auto',
@@ -928,6 +1092,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   tierOrder: 'raw',
   maxFreq: 8000,
   maxFreqUserSet: false,
+  f0RangeMode: initialF0RangePrefs.mode,
+  f0RangeCustom: initialF0RangePrefs.custom,
 
   ipaMode: (() => {
     try {
@@ -971,7 +1137,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   docVersion: 1,
 
   createNewTab: (opts) => {
-    const newTab = createTabRecord(opts);
+    const newTab = createTabRecord(opts, get().historyLimit);
     const shouldActivate = opts?.activate !== false;
     set((s) => {
       const updatedTabs = s.tabs.map((t) =>
@@ -1064,9 +1230,25 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((s) => {
       const target = s.tabs.find((t) => t.id === tabId);
       if (!target) return s;
+      const activeHistory = tabId === s.activeTabId ? s.history : target.history;
+      const activeColHistories =
+        tabId === s.activeTabId ? s.collectionHistories : target.collectionHistories;
+      const nextHistory = markTimelineSaved(activeHistory);
+      const nextColHistories: Record<number, HistoryTimeline> = {};
+      if (target.collectionTgs.length > 0) {
+        for (const [k, tl] of Object.entries(activeColHistories)) {
+          nextColHistories[Number(k)] = meta?.markAllCollectionItems ? markTimelineSaved(tl) : tl;
+        }
+        nextColHistories[target.collectionActiveIdx] = nextHistory;
+      }
+      const nextDirty =
+        target.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextColHistories, target.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
       const patch: Partial<TabRecord> = {
-        isDirty: false,
-        cleanUndoDepth: target.undoStack.length,
+        isDirty: nextDirty,
+        history: nextHistory,
+        collectionHistories: nextColHistories,
         isBlankPlaceholder: false,
         ...(meta?.filePath !== undefined ? { currentFilePath: meta.filePath } : {}),
         ...(meta?.filename !== undefined ? { filename: meta.filename } : {}),
@@ -1076,8 +1258,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (tabId === s.activeTabId) {
         return {
           tabs: nextTabs,
-          isDirty: false,
-          cleanUndoDepth: patch.cleanUndoDepth!,
+          isDirty: nextDirty,
+          history: nextHistory,
+          collectionHistories: nextColHistories,
           ...(meta?.filePath !== undefined ? { currentFilePath: meta.filePath } : {}),
           ...(meta?.filename !== undefined ? { filename: meta.filename } : {}),
           ...(meta?.fileFormat !== undefined ? { currentFileFormat: meta.fileFormat } : {})
@@ -1130,13 +1313,30 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   setDocument: (tg, filename, collectionTgs = [], activeIdx = 0, meta) =>
     set((s) => {
+      const isBlank = meta?.isBlankPlaceholder ?? false;
+      const baselineKind: BaselineKind = meta?.baselineKind ?? (isBlank ? 'blank' : 'open');
+      const history = createHistoryTimeline(
+        baselineKind,
+        filename,
+        {
+          tg,
+          selection: null,
+          hiddenTierIndices: [],
+          playRange: null
+        },
+        s.historyLimit
+      );
+      const collectionHistories: Record<number, HistoryTimeline> =
+        collectionTgs.length > 0 ? { [activeIdx]: history } : {};
       const patch: Partial<TabRecord> = {
         tg,
         filename,
         currentFilePath: meta?.filePath ?? null,
         currentFileFormat: meta?.fileFormat ?? 'longText',
         isDirty: false,
-        cleanUndoDepth: 0,
+        baselineKind,
+        history,
+        collectionHistories,
         collectionTgs,
         collectionActiveIdx: activeIdx,
         viewDomain: null,
@@ -1146,13 +1346,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         playRange: null,
         currentTime: Number.isFinite(tg.xmin) ? tg.xmin : 0,
         audioLoading: false,
-        undoStack: [],
-        redoStack: [],
-        isBlankPlaceholder: meta?.isBlankPlaceholder ?? false
+        isBlankPlaceholder: isBlank
       };
       return {
         ...syncActivePatch(s, patch),
         showPlayhead: false,
+        lastHistoryNav: null,
         docVersion: s.docVersion + 1
       };
     }),
@@ -1164,179 +1363,366 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   switchCollectionItem: (idx) =>
     set((s) => {
-      if (idx < 0 || idx >= s.collectionTgs.length) return s;
+      if (idx === s.collectionActiveIdx || idx < 0 || idx >= s.collectionTgs.length) return s;
       const nextCollection = [...s.collectionTgs];
+      const nextHistories: Record<number, HistoryTimeline> = { ...s.collectionHistories };
       if (s.collectionActiveIdx >= 0 && s.collectionActiveIdx < nextCollection.length) {
         nextCollection[s.collectionActiveIdx] = s.tg;
+        nextHistories[s.collectionActiveIdx] = sealTimelineCoalesce(s.history);
       }
-      const nextTg = nextCollection[idx];
+
+      const rawTargetTg = nextCollection[idx];
+      let targetHistory = nextHistories[idx];
+      if (!targetHistory) {
+        targetHistory = createHistoryTimeline(
+          s.baselineKind,
+          rawTargetTg.name || s.filename,
+          {
+            tg: rawTargetTg,
+            selection: null,
+            hiddenTierIndices: [],
+            playRange: null
+          },
+          s.historyLimit
+        );
+      } else {
+        targetHistory = sealTimelineCoalesce(targetHistory);
+      }
+      nextHistories[idx] = targetHistory;
+
+      const targetSnap = getCurrentSnapshot(targetHistory);
+      const nextTg = targetSnap.tg;
+      nextCollection[idx] = nextTg;
+      const nextSelection = validateSelectionForTg(nextTg, targetSnap.selection);
+      const nextHidden = sanitizeHiddenTiers(targetSnap.hiddenTierIndices, nextTg.tiers.length);
+      const temporal = clampTabTemporalToTg(nextTg, s.currentTime, targetSnap.playRange, null);
+      const selTierIdx = extractTierIndex(nextSelection);
+      const nextLastActive =
+        selTierIdx !== null ? clampTierIndex(selTierIdx, nextTg.tiers.length) : 0;
+      const nextDirty = computeCollectionDirty(targetHistory, nextHistories, idx);
+
       const patch: Partial<TabRecord> = {
         collectionTgs: nextCollection,
         collectionActiveIdx: idx,
+        collectionHistories: nextHistories,
+        history: targetHistory,
+        isDirty: nextDirty,
         tg: nextTg,
         filename: nextTg.name || s.filename,
         viewDomain: null,
-        selection: null,
-        lastActiveTierIndex: 0,
-        hiddenTierIndices: [],
-        playRange: null,
-        undoStack: [],
-        redoStack: [],
-        cleanUndoDepth: s.isDirty ? null : 0
+        selection: nextSelection,
+        lastActiveTierIndex: nextLastActive,
+        hiddenTierIndices: nextHidden,
+        playRange: temporal.playRange,
+        currentTime: temporal.currentTime
       };
       return {
         ...syncActivePatch(s, patch),
+        showPlayhead: false,
         docVersion: s.docVersion + 1
       };
     }),
 
-  commitTgMutation: (mutator, nextSelection, label) =>
+  commitTgMutation: (mutator, nextSelection, meta) => {
+    let committed = false;
     set((s) => {
-      const prevSnapshot: UndoSnapshot = {
-        tg: cloneTg(s.tg),
-        selection: s.selection ? { ...s.selection } : null,
-        ...(label ? { label } : {})
-      };
-      const draft = cloneTg(s.tg);
-      mutator(draft);
-      const undoStack = [...s.undoStack, prevSnapshot];
-      let nextCleanDepth =
-        s.cleanUndoDepth !== null && s.undoStack.length < s.cleanUndoDepth ? null : s.cleanUndoDepth;
-      if (undoStack.length > 80) {
-        undoStack.shift();
-        if (nextCleanDepth !== null) {
-          nextCleanDepth = nextCleanDepth > 0 ? nextCleanDepth - 1 : null;
-        }
-      }
-      const nextCollection =
-        s.collectionTgs.length > 0
-          ? s.collectionTgs.map((item, i) => (i === s.collectionActiveIdx ? draft : item))
-          : s.collectionTgs;
-      const resolvedSelection = nextSelection !== undefined ? nextSelection : s.selection;
+      const produced = produceTgMutation(s.tg, mutator);
+      if (!produced.changed) return s;
+      committed = true;
+
+      const nextTg = produced.nextTg;
+      const rawSelection = produced.hasNextSelection
+        ? produced.nextSelection!
+        : nextSelection !== undefined
+          ? nextSelection
+          : s.selection;
+      const resolvedSelection = validateSelectionForTg(nextTg, rawSelection);
+      const rawHidden = produced.hasNextHiddenTiers
+        ? produced.nextHiddenTiers!
+        : s.hiddenTierIndices;
+      const nextHidden = sanitizeHiddenTiers(rawHidden, nextTg.tiers.length);
+      const rawPlayRange = produced.hasNextPlayRange ? produced.nextPlayRange! : s.playRange;
+      const temporal = clampTabTemporalToTg(nextTg, s.currentTime, rawPlayRange, s.viewDomain);
+
       const selTierIdx = extractTierIndex(resolvedSelection);
       const nextLastActive =
         selTierIdx !== null
-          ? clampTierIndex(selTierIdx, draft.tiers.length)
-          : clampTierIndex(s.lastActiveTierIndex, draft.tiers.length);
-      const nextHidden = sanitizeHiddenTiers(s.hiddenTierIndices, draft.tiers.length);
+          ? clampTierIndex(selTierIdx, nextTg.tiers.length)
+          : clampTierIndex(s.lastActiveTierIndex, nextTg.tiers.length);
+
+      const nextHistory = commitToTimeline(s.history, meta, {
+        tg: nextTg,
+        selection: resolvedSelection,
+        hiddenTierIndices: nextHidden,
+        playRange: temporal.playRange
+      });
+
+      const nextCollection =
+        s.collectionTgs.length > 0
+          ? s.collectionTgs.map((item, i) => (i === s.collectionActiveIdx ? nextTg : item))
+          : s.collectionTgs;
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+
       const patch: Partial<TabRecord> = {
-        tg: draft,
+        tg: nextTg,
         collectionTgs: nextCollection,
-        undoStack,
-        redoStack: [],
-        isDirty: true,
-        cleanUndoDepth: nextCleanDepth,
+        collectionHistories: nextCollectionHistories,
+        history: nextHistory,
+        isDirty: nextDirty,
         selection: resolvedSelection,
         lastActiveTierIndex: nextLastActive,
         hiddenTierIndices: nextHidden,
+        currentTime: temporal.currentTime,
+        playRange: temporal.playRange,
+        viewDomain: temporal.viewDomain,
         isBlankPlaceholder: false
       };
       return {
         ...syncActivePatch(s, patch),
         docVersion: s.docVersion + 1
       };
-    }),
+    });
+    return committed;
+  },
 
-  undo: () => {
-    let undoneLabel: string | undefined;
+  jumpToHistory: (targetCursor, opts) => {
+    if (get().mode === 'read') {
+      get().showToast('当前为只读模式，切至编辑模式后可回退历史（按 E 切换）', false, {
+        label: '切至编辑',
+        onClick: () => useEditorStore.getState().setMode('edit')
+      });
+      return false;
+    }
+
+    flushBeforeHistoryNavigate();
+
+    let jumped = false;
+    let toastMessage: string | null = null;
     set((s) => {
-      if (s.undoStack.length === 0) return s;
-      const prev = s.undoStack[s.undoStack.length - 1];
-      undoneLabel = prev.label;
-      const undoStack = s.undoStack.slice(0, -1);
-      const redoStack = [
-        ...s.redoStack,
-        {
-          tg: cloneTg(s.tg),
-          selection: s.selection ? { ...s.selection } : null,
-          ...(prev.label ? { label: prev.label } : {})
-        }
-      ];
-      const nextCollection =
-        s.collectionTgs.length > 0
-          ? s.collectionTgs.map((item, i) => (i === s.collectionActiveIdx ? prev.tg : item))
-          : s.collectionTgs;
-      const viewDomain =
-        s.viewDomain && (s.viewDomain.max <= prev.tg.xmin || s.viewDomain.min >= prev.tg.xmax)
-          ? null
-          : s.viewDomain;
-      const nextSelection = validateSelectionForTg(prev.tg, prev.selection);
+      const h = s.history;
+      const clampedTarget = Math.max(-1, Math.min(h.entries.length - 1, Math.trunc(targetCursor)));
+      if (clampedTarget === h.cursor) return s;
+
+      const departingEntry = h.cursor >= 0 ? h.entries[h.cursor] : null;
+      const targetEntry = clampedTarget >= 0 ? h.entries[clampedTarget] : null;
+      const targetSnap = clampedTarget === -1 ? h.baseline.snapshot : targetEntry!.snapshot;
+
+      const nextHistory = setTimelineCursor(h, clampedTarget);
+      const nextTg = targetSnap.tg;
+      const nextSelection = validateSelectionForTg(nextTg, targetSnap.selection);
+      const nextHidden = sanitizeHiddenTiers(targetSnap.hiddenTierIndices, nextTg.tiers.length);
+      const temporal = clampTabTemporalToTg(
+        nextTg,
+        s.currentTime,
+        targetSnap.playRange,
+        s.viewDomain
+      );
+
       const selTierIdx = extractTierIndex(nextSelection);
       const nextLastActive =
         selTierIdx !== null
-          ? clampTierIndex(selTierIdx, prev.tg.tiers.length)
-          : clampTierIndex(s.lastActiveTierIndex, prev.tg.tiers.length);
-      const nextHidden = sanitizeHiddenTiers(s.hiddenTierIndices, prev.tg.tiers.length);
+          ? clampTierIndex(selTierIdx, nextTg.tiers.length)
+          : clampTierIndex(s.lastActiveTierIndex, nextTg.tiers.length);
+
+      const nextCollection =
+        s.collectionTgs.length > 0
+          ? s.collectionTgs.map((item, i) => (i === s.collectionActiveIdx ? nextTg : item))
+          : s.collectionTgs;
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+
+      const focusTime = targetEntry?.meta.focusTime ?? departingEntry?.meta.focusTime;
+      const navSignal: HistoryNavSignal = {
+        seq: nextHistoryNavSeq++,
+        tabId: s.activeTabId,
+        focusTime,
+        selection: nextSelection
+      };
+
+      jumped = true;
+      if (opts?.showToastLabel === 'undo' && departingEntry) {
+        const suffix = departingEntry.meta.tierName ? `「${departingEntry.meta.tierName}」` : '';
+        toastMessage = `已撤销：${departingEntry.meta.title}${suffix}`;
+      } else if (opts?.showToastLabel === 'redo' && targetEntry) {
+        const suffix = targetEntry.meta.tierName ? `「${targetEntry.meta.tierName}」` : '';
+        toastMessage = `已重做：${targetEntry.meta.title}${suffix}`;
+      }
+
       const patch: Partial<TabRecord> = {
-        tg: prev.tg,
+        tg: nextTg,
         collectionTgs: nextCollection,
-        undoStack,
-        redoStack,
-        isDirty: s.cleanUndoDepth === null || undoStack.length !== s.cleanUndoDepth,
-        viewDomain,
+        collectionHistories: nextCollectionHistories,
+        history: nextHistory,
+        isDirty: nextDirty,
+        currentTime: temporal.currentTime,
+        playRange: temporal.playRange,
+        viewDomain: temporal.viewDomain,
         selection: nextSelection,
         lastActiveTierIndex: nextLastActive,
         hiddenTierIndices: nextHidden
       };
       return {
         ...syncActivePatch(s, patch),
+        lastHistoryNav: navSignal,
         docVersion: s.docVersion + 1
       };
     });
-    if (undoneLabel) {
-      get().showToast(`已撤销：${undoneLabel}`);
+
+    if (toastMessage) {
+      get().showToast(toastMessage);
     }
+    return jumped;
+  },
+
+  jumpToSavedPoint: () => {
+    if (get().mode === 'read') {
+      get().showToast('当前为只读模式，切至编辑模式后可回退历史（按 E 切换）', false, {
+        label: '切至编辑',
+        onClick: () => useEditorStore.getState().setMode('edit')
+      });
+      return false;
+    }
+    flushBeforeHistoryNavigate();
+    const h = get().history;
+    if (h.savedEntryId === null || getCurrentEntryId(h) === h.savedEntryId) {
+      return false;
+    }
+    const targetCursor =
+      h.baseline.id === h.savedEntryId
+        ? -1
+        : h.entries.findIndex((e) => e.id === h.savedEntryId);
+    if (targetCursor < -1 || (h.baseline.id !== h.savedEntryId && targetCursor === -1)) {
+      return false;
+    }
+    const ok = get().jumpToHistory(targetCursor);
+    if (ok) {
+      get().showToast('已恢复至上次保存状态');
+    }
+    return ok;
+  },
+
+  clearHistoryToCurrent: () => {
+    if (get().mode === 'read') {
+      get().showToast('当前为只读模式，切至编辑模式后可清空历史（按 E 切换）', false, {
+        label: '切至编辑',
+        onClick: () => useEditorStore.getState().setMode('edit')
+      });
+      return false;
+    }
+    flushBeforeHistoryNavigate();
+    let cleared = false;
+    set((s) => {
+      if (s.history.entries.length === 0) return s;
+      cleared = true;
+      const curSnapshot = {
+        tg: s.tg,
+        selection: s.selection,
+        hiddenTierIndices: s.hiddenTierIndices,
+        playRange: s.playRange
+      };
+      const nextHistory = clearTimelineToCurrent(s.history, s.filename, curSnapshot);
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+      const patch: Partial<TabRecord> = {
+        history: nextHistory,
+        collectionHistories: nextCollectionHistories,
+        isDirty: nextDirty
+      };
+      return syncActivePatch(s, patch);
+    });
+    if (cleared) {
+      get().showToast('已清空操作历史，当前状态已设为基线');
+    }
+    return cleared;
+  },
+
+  setHistoryLimit: (limit) => {
+    const nextLimit = clampHistoryLimit(limit);
+    saveHistoryLimit(nextLimit);
+    set((s) => {
+      const nextTabs = s.tabs.map((tab) => {
+        const curHistory = tab.id === s.activeTabId ? s.history : tab.history;
+        const curColHistories =
+          tab.id === s.activeTabId ? s.collectionHistories : tab.collectionHistories;
+        const nextHistory = setTimelineMaxEntries(curHistory, nextLimit);
+        const nextColHistories: Record<number, HistoryTimeline> = {};
+        if (tab.collectionTgs.length > 0) {
+          for (const [k, tl] of Object.entries(curColHistories)) {
+            nextColHistories[Number(k)] = setTimelineMaxEntries(tl, nextLimit);
+          }
+          nextColHistories[tab.collectionActiveIdx] = nextHistory;
+        }
+        const nextDirty =
+          tab.collectionTgs.length > 0
+            ? computeCollectionDirty(nextHistory, nextColHistories, tab.collectionActiveIdx)
+            : isTimelineDirty(nextHistory);
+        return {
+          ...tab,
+          history: nextHistory,
+          collectionHistories: nextColHistories,
+          isDirty: nextDirty
+        };
+      });
+      const activeTab = nextTabs.find((t) => t.id === s.activeTabId);
+      return {
+        historyLimit: nextLimit,
+        tabs: nextTabs,
+        ...(activeTab
+          ? {
+              history: activeTab.history,
+              collectionHistories: activeTab.collectionHistories,
+              isDirty: activeTab.isDirty
+            }
+          : {})
+      };
+    });
+  },
+
+  undo: () => {
+    if (get().mode === 'read') {
+      get().showToast('当前为只读模式，切至编辑模式后可回退历史（按 E 切换）', false, {
+        label: '切至编辑',
+        onClick: () => useEditorStore.getState().setMode('edit')
+      });
+      return false;
+    }
+    flushBeforeHistoryNavigate();
+    const h = get().history;
+    if (!canUndoTimeline(h)) return false;
+    return get().jumpToHistory(h.cursor - 1, { showToastLabel: 'undo' });
   },
 
   redo: () => {
-    let redoneLabel: string | undefined;
-    set((s) => {
-      if (s.redoStack.length === 0) return s;
-      const next = s.redoStack[s.redoStack.length - 1];
-      redoneLabel = next.label;
-      const redoStack = s.redoStack.slice(0, -1);
-      const undoStack = [
-        ...s.undoStack,
-        {
-          tg: cloneTg(s.tg),
-          selection: s.selection ? { ...s.selection } : null,
-          ...(next.label ? { label: next.label } : {})
-        }
-      ];
-      const nextCollection =
-        s.collectionTgs.length > 0
-          ? s.collectionTgs.map((item, i) => (i === s.collectionActiveIdx ? next.tg : item))
-          : s.collectionTgs;
-      const viewDomain =
-        s.viewDomain && (s.viewDomain.max <= next.tg.xmin || s.viewDomain.min >= next.tg.xmax)
-          ? null
-          : s.viewDomain;
-      const nextSelection = validateSelectionForTg(next.tg, next.selection);
-      const selTierIdx = extractTierIndex(nextSelection);
-      const nextLastActive =
-        selTierIdx !== null
-          ? clampTierIndex(selTierIdx, next.tg.tiers.length)
-          : clampTierIndex(s.lastActiveTierIndex, next.tg.tiers.length);
-      const nextHidden = sanitizeHiddenTiers(s.hiddenTierIndices, next.tg.tiers.length);
-      const patch: Partial<TabRecord> = {
-        tg: next.tg,
-        collectionTgs: nextCollection,
-        undoStack,
-        redoStack,
-        isDirty: s.cleanUndoDepth === null || undoStack.length !== s.cleanUndoDepth,
-        viewDomain,
-        selection: nextSelection,
-        lastActiveTierIndex: nextLastActive,
-        hiddenTierIndices: nextHidden
-      };
-      return {
-        ...syncActivePatch(s, patch),
-        docVersion: s.docVersion + 1
-      };
-    });
-    if (redoneLabel) {
-      get().showToast(`已重做：${redoneLabel}`);
+    if (get().mode === 'read') {
+      get().showToast('当前为只读模式，切至编辑模式后可重做历史（按 E 切换）', false, {
+        label: '切至编辑',
+        onClick: () => useEditorStore.getState().setMode('edit')
+      });
+      return false;
     }
+    flushBeforeHistoryNavigate();
+    const h = get().history;
+    if (!canRedoTimeline(h)) return false;
+    return get().jumpToHistory(h.cursor + 1, { showToastLabel: 'redo' });
   },
 
   setMode: (mode) => set({ mode, ...(mode === 'read' ? { ipaDockOpen: false } : {}) }),
@@ -1445,6 +1831,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setCueMode: (cueMode) => set({ cueMode }),
   setTierOrder: (tierOrder) => set({ tierOrder }),
   setMaxFreq: (maxFreq) => set({ maxFreq, maxFreqUserSet: true }),
+  setF0RangeMode: (f0RangeMode) =>
+    set((s) => {
+      saveF0RangePrefs(f0RangeMode, s.f0RangeCustom);
+      return { f0RangeMode };
+    }),
+  setF0RangeCustom: (minHz, maxHz) =>
+    set((s) => {
+      const f0RangeCustom = clampCustomF0Range(minHz, maxHz);
+      saveF0RangePrefs(s.f0RangeMode, f0RangeCustom);
+      return { f0RangeCustom };
+    }),
   setIpaMode: (ipaMode) => {
     try {
       localStorage.setItem('tg_ipa_mode', ipaMode);
@@ -1656,18 +2053,27 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       st.showToast('切分时间必须位于区间起止之间', true);
       return false;
     }
-    st.commitTgMutation(
-      (draft) => {
-        const dTier = draft.tiers[tierIndex];
+    const tierName = formatTierLabel(tier.name, tierIndex);
+    return st.commitTgMutation(
+      (_draft, ctx) => {
+        const dTier = ctx.editTier(tierIndex);
+        if (!dTier || dTier.kind !== 'intervalTier') return false;
         const dIv = dTier.intervals[itemIndex];
+        if (!dIv || t <= dIv.xmin || t >= dIv.xmax) return false;
         const right = { xmin: t, xmax: dIv.xmax, text: '' };
         dIv.xmax = t;
         dTier.intervals.splice(itemIndex + 1, 0, right);
       },
       { kind: 'interval', tierIndex, itemIndex: itemIndex + 1 },
-      `切分区间「${tier.name || '未命名'}」`
+      {
+        type: 'split-interval',
+        title: '切分区间',
+        detail: `${tierName} · ${formatTimeSec(t)}`,
+        icon: 'split',
+        tierName,
+        focusTime: t
+      }
     );
-    return true;
   },
 
   mergeIntervalWith: (tierIndex, itemIndex, dir) => {
@@ -1678,17 +2084,30 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (targetIdx < 0 || targetIdx >= tier.intervals.length) return;
     const aIdx = Math.min(itemIndex, targetIdx);
     const bIdx = Math.max(itemIndex, targetIdx);
+    const origA = tier.intervals[aIdx];
+    const origB = tier.intervals[bIdx];
+    if (!origA || !origB) return;
+    const tierName = formatTierLabel(tier.name, tierIndex);
     st.commitTgMutation(
-      (draft) => {
-        const dTier = draft.tiers[tierIndex];
+      (_draft, ctx) => {
+        const dTier = ctx.editTier(tierIndex);
+        if (!dTier || dTier.kind !== 'intervalTier') return false;
         const a = dTier.intervals[aIdx];
         const b = dTier.intervals[bIdx];
+        if (!a || !b) return false;
         a.xmax = b.xmax;
         a.text = a.text && b.text ? `${a.text} ${b.text}` : a.text || b.text;
         dTier.intervals.splice(bIdx, 1);
       },
       { kind: 'interval', tierIndex, itemIndex: aIdx },
-      `合并区间「${tier.name || '未命名'}」`
+      {
+        type: 'merge-interval',
+        title: dir === -1 ? '向左合并' : '向右合并',
+        detail: `${tierName} · ${formatQuote(origA.text)}+${formatQuote(origB.text)}`,
+        icon: dir === -1 ? 'mergeLeft' : 'mergeRight',
+        tierName,
+        focusTime: origA.xmin
+      }
     );
   },
 
@@ -1698,9 +2117,31 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (!tier || tier.kind !== 'intervalTier') return;
     const leftIdx = tier.intervals.findIndex((iv) => iv.xmax === time);
     const rightIdx = tier.intervals.findIndex((iv) => iv.xmin === time);
-    if (leftIdx !== -1 && rightIdx !== -1 && leftIdx !== rightIdx) {
-      st.mergeIntervalWith(tierIndex, leftIdx, 1);
-    }
+    if (leftIdx === -1 || rightIdx === -1 || leftIdx === rightIdx) return;
+    const aIdx = Math.min(leftIdx, rightIdx);
+    const bIdx = Math.max(leftIdx, rightIdx);
+    const tierName = formatTierLabel(tier.name, tierIndex);
+    st.commitTgMutation(
+      (_draft, ctx) => {
+        const dTier = ctx.editTier(tierIndex);
+        if (!dTier || dTier.kind !== 'intervalTier') return false;
+        const a = dTier.intervals[aIdx];
+        const b = dTier.intervals[bIdx];
+        if (!a || !b) return false;
+        a.xmax = b.xmax;
+        a.text = a.text && b.text ? `${a.text} ${b.text}` : a.text || b.text;
+        dTier.intervals.splice(bIdx, 1);
+      },
+      { kind: 'interval', tierIndex, itemIndex: aIdx },
+      {
+        type: 'delete-boundary',
+        title: '删除边界',
+        detail: `${tierName} · ${formatTimeSec(time)}`,
+        icon: 'delBoundary',
+        tierName,
+        focusTime: time
+      }
+    );
   },
 
   deleteBoundaryAcrossAllTiers: (time) => {
@@ -1731,27 +2172,38 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ? { kind: 'interval', tierIndex: selTier, itemIndex: selectedTierMergedIdx }
         : null;
 
-    st.commitTgMutation(
-      (draft) => {
-        for (const tier of draft.tiers) {
-          if (tier.kind !== 'intervalTier') continue;
-          const leftIdx = tier.intervals.findIndex((iv) => Math.abs(iv.xmax - time) <= eps);
-          const rightIdx = tier.intervals.findIndex((iv) => Math.abs(iv.xmin - time) <= eps);
+    return st.commitTgMutation(
+      (draft, ctx) => {
+        let applied = 0;
+        for (let ti = 0; ti < draft.tiers.length; ti++) {
+          const origTier = draft.tiers[ti];
+          if (origTier.kind !== 'intervalTier') continue;
+          const leftIdx = origTier.intervals.findIndex((iv) => Math.abs(iv.xmax - time) <= eps);
+          const rightIdx = origTier.intervals.findIndex((iv) => Math.abs(iv.xmin - time) <= eps);
           if (leftIdx !== -1 && rightIdx !== -1 && leftIdx !== rightIdx) {
+            const dTier = ctx.editTier(ti);
+            if (!dTier || dTier.kind !== 'intervalTier') continue;
             const aIdx = Math.min(leftIdx, rightIdx);
             const bIdx = Math.max(leftIdx, rightIdx);
-            const a = tier.intervals[aIdx];
-            const b = tier.intervals[bIdx];
+            const a = dTier.intervals[aIdx];
+            const b = dTier.intervals[bIdx];
             a.xmax = b.xmax;
             a.text = a.text && b.text ? `${a.text} ${b.text}` : a.text || b.text;
-            tier.intervals.splice(bIdx, 1);
+            dTier.intervals.splice(bIdx, 1);
+            applied++;
           }
         }
+        if (applied === 0) return false;
       },
       nextSelection,
-      `跨层删除边界 (${time.toFixed(3)}s)`
+      {
+        type: 'delete-boundary-all',
+        title: '跨层删除边界',
+        detail: `${matchCount} 个层级 · ${formatTimeSec(time)}`,
+        icon: 'delBoundaryAll',
+        focusTime: time
+      }
     );
-    return true;
   },
 
   addPointAt: (tierIndex, time, opts) => {
@@ -1764,36 +2216,46 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       st.showToast('该时间点已存在标点');
       return null;
     }
+    const tierName = formatTierLabel(tier.name, tierIndex);
     let insertedIdx = 0;
-    st.commitTgMutation(
-      (draft) => {
-        const dTier = draft.tiers[tierIndex];
+    const ok = st.commitTgMutation(
+      (_draft, ctx) => {
+        const dTier = ctx.editTier(tierIndex);
+        if (!dTier || dTier.kind !== 'textTier') return false;
         const pt = { number: finalT, mark: '' };
         dTier.points.push(pt);
         dTier.points.sort((a, b) => a.number - b.number);
         insertedIdx = dTier.points.indexOf(pt);
+        ctx.setNextSelection({ kind: 'point', tierIndex, itemIndex: insertedIdx });
       },
       undefined,
-      `添加标点「${tier.name || '未命名'}」`
+      {
+        type: 'add-point',
+        title: '添加标注点',
+        detail: `${tierName} · ${formatTimeSec(finalT)}`,
+        icon: 'addPointTier',
+        tierName,
+        focusTime: finalT
+      }
     );
-    get().setSelection({ kind: 'point', tierIndex, itemIndex: insertedIdx });
-    return insertedIdx;
+    return ok ? insertedIdx : null;
   },
 
   insertTierAt: (index, kind) => {
     const st = get();
     const insertAt = Math.max(0, Math.min(st.tg.tiers.length, index));
     const nextHidden = remapHiddenOnInsert(st.hiddenTierIndices, insertAt, st.tg.tiers.length + 1);
+    const n = st.tg.tiers.length + 1;
+    const newName = kind === 'intervalTier' ? `区间层 ${n}` : `点层 ${n}`;
     st.commitTgMutation(
-      (draft) => {
-        const n = draft.tiers.length + 1;
+      (draft, ctx) => {
         draft.tiers.splice(
           insertAt,
           0,
           kind === 'intervalTier'
             ? {
                 kind: 'intervalTier',
-                name: `区间层 ${n}`,
+                name: newName,
                 xmin: draft.xmin,
                 xmax: draft.xmax,
                 intervals: [{ xmin: draft.xmin, xmax: draft.xmax, text: '' }],
@@ -1801,18 +2263,24 @@ export const useEditorStore = create<EditorState>((set, get) => ({
               }
             : {
                 kind: 'textTier',
-                name: `点层 ${n}`,
+                name: newName,
                 xmin: draft.xmin,
                 xmax: draft.xmax,
                 intervals: [],
                 points: []
               }
         );
+        ctx.setNextHiddenTiers(nextHidden);
       },
       { kind: 'tier', tierIndex: insertAt },
-      `新建${kind === 'intervalTier' ? '区间层' : '点层'}`
+      {
+        type: 'insert-tier',
+        title: kind === 'intervalTier' ? '新建区间层' : '新建点层',
+        detail: `${formatQuote(newName)} · 位置 #${insertAt + 1}`,
+        icon: kind === 'intervalTier' ? 'addIntervalTier' : 'addPointTier',
+        tierName: newName
+      }
     );
-    set((s) => syncActivePatch(s, { hiddenTierIndices: nextHidden, lastActiveTierIndex: insertAt }));
   },
 
   duplicateTier: (tierIndex, opts) => {
@@ -1824,9 +2292,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const newName = `${src.name || '层'}${copyText ? ' (副本)' : ' (同界)'}`;
     const nextHidden = remapHiddenOnInsert(st.hiddenTierIndices, insertAt, st.tg.tiers.length + 1);
 
-    st.commitTgMutation(
-      (draft) => {
+    const ok = st.commitTgMutation(
+      (draft, ctx) => {
         const dSrc = draft.tiers[tierIndex];
+        if (!dSrc) return false;
         const cloned =
           dSrc.kind === 'intervalTier'
             ? {
@@ -1853,12 +2322,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
                 }))
               };
         draft.tiers.splice(insertAt, 0, cloned);
+        ctx.setNextHiddenTiers(nextHidden);
       },
       { kind: 'tier', tierIndex: insertAt },
-      copyText ? `复制层级「${src.name || '未命名'}」` : `同界复制层级「${src.name || '未命名'}」`
+      {
+        type: 'duplicate-tier',
+        title: copyText ? '复制层级' : '仅复制边界',
+        detail: formatQuote(newName),
+        icon: 'duplicateTier',
+        tierName: newName
+      }
     );
-    set((s) => syncActivePatch(s, { hiddenTierIndices: nextHidden, lastActiveTierIndex: insertAt }));
-    return insertAt;
+    return ok ? insertAt : -1;
   },
 
   derivePointTierFromIntervals: (tierIndex, anchor) => {
@@ -1894,8 +2369,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
     }
 
-    st.commitTgMutation(
-      (draft) => {
+    const ok = st.commitTgMutation(
+      (draft, ctx) => {
         draft.tiers.splice(insertAt, 0, {
           kind: 'textTier',
           name: newName,
@@ -1904,24 +2379,30 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           intervals: [],
           points: dedupPoints
         });
+        ctx.setNextHiddenTiers(nextHidden);
       },
       { kind: 'tier', tierIndex: insertAt },
-      `派生点层「${newName}」`
+      {
+        type: 'derive-point-tier',
+        title: '派生点层',
+        detail: `${formatQuote(newName)} · ${dedupPoints.length} 个点`,
+        icon: 'derivePointTier',
+        tierName: newName
+      }
     );
-    set((s) => syncActivePatch(s, { hiddenTierIndices: nextHidden, lastActiveTierIndex: insertAt }));
-    return insertAt;
+    return ok ? insertAt : -1;
   },
 
-  reorderTier: (fromIdx, toIdx) => {
+  reorderTier: (fromIdx, toIdx, overrideSelection) => {
     const st = get();
     const n = st.tg.tiers.length;
     if (fromIdx < 0 || fromIdx >= n || toIdx < 0 || toIdx >= n || fromIdx === toIdx) return;
-    const srcName = st.tg.tiers[fromIdx]?.name || '未命名';
+    const srcName = formatTierLabel(st.tg.tiers[fromIdx]?.name, fromIdx);
     const nextHidden = remapHiddenOnReorder(st.hiddenTierIndices, fromIdx, toIdx, n);
     const nextLastActive = remapIndexOnReorder(st.lastActiveTierIndex, fromIdx, toIdx);
     const prevSel = st.selection;
-    let nextSelection: EditorSelection = prevSel;
-    if (prevSel && extractTierIndex(prevSel) !== null) {
+    let nextSelection: EditorSelection = overrideSelection !== undefined ? overrideSelection : prevSel;
+    if (overrideSelection === undefined && prevSel && extractTierIndex(prevSel) !== null) {
       nextSelection = {
         ...prevSel,
         tierIndex: remapIndexOnReorder(extractTierIndex(prevSel)!, fromIdx, toIdx)
@@ -1934,19 +2415,37 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
 
     st.commitTgMutation(
-      (draft) => {
+      (draft, ctx) => {
+        if (!draft.tiers[fromIdx]) return false;
         const [moved] = draft.tiers.splice(fromIdx, 1);
         draft.tiers.splice(toIdx, 0, moved);
+        ctx.setNextHiddenTiers(nextHidden);
+        ctx.setNextSelection(nextSelection);
       },
       nextSelection,
-      `调整层序「${srcName}」`
+      {
+        type: 'reorder-tier',
+        title: '调整层级顺序',
+        detail: `${formatQuote(srcName)} · 第 ${fromIdx + 1} 层 → 第 ${toIdx + 1} 层`,
+        icon: 'navVertical',
+        tierName: srcName,
+        coalesce: {
+          key: 'reorder-tier',
+          originValue: fromIdx,
+          latestValue: toIdx,
+          chainPrevLatest: fromIdx,
+          formatMergedDetail: (orig, latest) =>
+            `${formatQuote(srcName)} · 第 ${Number(orig) + 1} 层 → 第 ${Number(latest) + 1} 层`
+        }
+      }
     );
-    set((s) =>
-      syncActivePatch(s, {
-        hiddenTierIndices: nextHidden,
-        lastActiveTierIndex: clampTierIndex(nextLastActive, n)
-      })
-    );
+    if (extractTierIndex(nextSelection) === null) {
+      set((s) =>
+        syncActivePatch(s, {
+          lastActiveTierIndex: clampTierIndex(nextLastActive, n)
+        })
+      );
+    }
     if (switchedFromSpec) {
       get().showToast('已切回原始层序以反映调整');
     }
@@ -1956,38 +2455,44 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const st = get();
     const target = tierIndex + delta;
     if (target < 0 || target >= st.tg.tiers.length) return;
-    st.reorderTier(tierIndex, target);
-    get().setSelection({ kind: 'tier', tierIndex: target });
+    st.reorderTier(tierIndex, target, { kind: 'tier', tierIndex: target });
   },
 
   removeTierWithUndoToast: (tierIndex) => {
     const st = get();
     const tier = st.tg.tiers[tierIndex];
     if (!tier) return;
-    const name = tier.name || '未命名';
+    const name = formatTierLabel(tier.name, tierIndex);
+    const itemCount = tier.kind === 'intervalTier' ? tier.intervals.length : tier.points.length;
+    const itemUnit = tier.kind === 'intervalTier' ? '段区间' : '个标点';
     const nextCount = st.tg.tiers.length - 1;
     const nextHidden = remapHiddenOnDelete(st.hiddenTierIndices, tierIndex, nextCount);
     const nextTierIdx = nextCount > 0 ? Math.min(tierIndex, nextCount - 1) : 0;
     const nextSelection: EditorSelection =
       nextCount > 0 ? { kind: 'tier', tierIndex: nextTierIdx } : null;
 
-    st.commitTgMutation(
-      (draft) => {
+    const ok = st.commitTgMutation(
+      (draft, ctx) => {
+        if (!draft.tiers[tierIndex]) return false;
         draft.tiers.splice(tierIndex, 1);
+        ctx.setNextHiddenTiers(nextHidden);
+        ctx.setNextSelection(nextSelection);
       },
       nextSelection,
-      `删除层级「${name}」`
+      {
+        type: 'delete-tier',
+        title: '删除层级',
+        detail: `${formatQuote(name)} · 含 ${itemCount} ${itemUnit}`,
+        icon: 'trash',
+        tierName: name
+      }
     );
-    set((s) =>
-      syncActivePatch(s, {
-        hiddenTierIndices: nextHidden,
-        lastActiveTierIndex: nextTierIdx
-      })
-    );
-    get().showToast(`已删除层级「${name}」`, false, {
-      label: '撤销',
-      onClick: () => useEditorStore.getState().undo()
-    });
+    if (ok) {
+      get().showToast(`已删除层级「${name}」`, false, {
+        label: '撤销',
+        onClick: () => useEditorStore.getState().undo()
+      });
+    }
   },
 
   deleteTier: (tierIndex) => {
@@ -1998,18 +2503,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const st = get();
     const tier = st.tg.tiers[tierIndex];
     if (!tier) return;
-    const name = tier.name || '未命名';
-    const hasContent =
+    const name = formatTierLabel(tier.name, tierIndex);
+    const nonEmptyCount =
       tier.kind === 'intervalTier'
-        ? tier.intervals.some((iv) => iv.text !== '')
-        : tier.points.some((pt) => pt.mark !== '');
-    if (!hasContent) {
+        ? tier.intervals.filter((iv) => iv.text !== '').length
+        : tier.points.filter((pt) => pt.mark !== '').length;
+    if (nonEmptyCount === 0) {
       st.showToast(`层级「${name}」文本已为空`);
       return;
     }
-    st.commitTgMutation(
-      (draft) => {
-        const dTier = draft.tiers[tierIndex];
+    const ok = st.commitTgMutation(
+      (_draft, ctx) => {
+        const dTier = ctx.editTier(tierIndex);
+        if (!dTier) return false;
         if (dTier.kind === 'intervalTier') {
           for (const iv of dTier.intervals) iv.text = '';
         } else {
@@ -2017,19 +2523,27 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }
       },
       undefined,
-      `清空层级文本「${name}」`
+      {
+        type: 'clear-tier-text',
+        title: '清空整层文本',
+        detail: `${name} · ${nonEmptyCount} 处已清空`,
+        icon: 'clear',
+        tierName: name
+      }
     );
-    get().showToast(`已清空层级「${name}」文本`, false, {
-      label: '撤销',
-      onClick: () => useEditorStore.getState().undo()
-    });
+    if (ok) {
+      get().showToast(`已清空层级「${name}」文本`, false, {
+        label: '撤销',
+        onClick: () => useEditorStore.getState().undo()
+      });
+    }
   },
 
   projectBoundaryToTier: (targetTierIndex, time) => {
     const st = get();
     const tier = st.tg.tiers[targetTierIndex];
     if (!tier || tier.kind !== 'intervalTier' || !Number.isFinite(time)) return false;
-    const targetName = tier.name || '未命名';
+    const targetName = formatTierLabel(tier.name, targetTierIndex);
     const eps = 1e-9;
     const alreadyExists = tier.intervals.some(
       (iv) => Math.abs(iv.xmin - time) <= eps || Math.abs(iv.xmax - time) <= eps
@@ -2043,19 +2557,30 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       st.showToast(`该时刻不在「${targetName}」有效区间内`, true);
       return false;
     }
-    st.commitTgMutation(
-      (draft) => {
-        const dTier = draft.tiers[targetTierIndex];
+    const ok = st.commitTgMutation(
+      (_draft, ctx) => {
+        const dTier = ctx.editTier(targetTierIndex);
+        if (!dTier || dTier.kind !== 'intervalTier') return false;
         const dIv = dTier.intervals[itemIdx];
+        if (!dIv || !(dIv.xmin < time && time < dIv.xmax)) return false;
         const right = { xmin: time, xmax: dIv.xmax, text: '' };
         dIv.xmax = time;
         dTier.intervals.splice(itemIdx + 1, 0, right);
       },
       undefined,
-      `投射边界至「${targetName}」`
+      {
+        type: 'project-boundary',
+        title: '投射边界至层',
+        detail: `→ ${targetName} · ${formatTimeSec(time)}`,
+        icon: 'projectToTier',
+        tierName: targetName,
+        focusTime: time
+      }
     );
-    get().showToast(`已将边界投射至「${targetName}」`);
-    return true;
+    if (ok) {
+      get().showToast(`已将边界投射至「${targetName}」`);
+    }
+    return ok;
   },
 
   copyIntervalSpanToTier: (srcTierIdx, itemIdx, targetTierIdx, copyText) => {
@@ -2068,7 +2593,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const srcIv = srcTier.intervals[itemIdx];
     if (!srcIv || srcIv.xmax <= srcIv.xmin) return false;
 
-    const targetName = targetTier.name || '未命名';
+    const srcName = formatTierLabel(srcTier.name, srcTierIdx);
+    const targetName = formatTierLabel(targetTier.name, targetTierIdx);
     const t0 = srcIv.xmin;
     const t1 = srcIv.xmax;
     const eps = 1e-12;
@@ -2104,25 +2630,40 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           st.showToast(`目标层「${targetName}」已存在相同起止边界`);
           return false;
         }
-        st.commitTgMutation(
-          (draft) => {
-            draft.tiers[targetTierIdx].intervals[firstIdx].text = srcIv.text;
+        if (tIv.text === srcIv.text) {
+          st.showToast(`目标层「${targetName}」文本已相同`);
+          return false;
+        }
+        const ok = st.commitTgMutation(
+          (_draft, ctx) => {
+            const dTier = ctx.editTier(targetTierIdx);
+            if (!dTier || dTier.kind !== 'intervalTier' || !dTier.intervals[firstIdx]) return false;
+            dTier.intervals[firstIdx].text = srcIv.text;
           },
           { kind: 'interval', tierIndex: targetTierIdx, itemIndex: firstIdx },
-          `复制区间文本至「${targetName}」`
+          {
+            type: 'copy-interval-span',
+            title: '复制区间至层',
+            detail: `${srcName} → ${targetName} · 含文本`,
+            icon: 'projectToTier',
+            tierName: targetName,
+            focusTime: t0
+          }
         );
-        get().showToast(`已复制文本至「${targetName}」`);
-        return true;
+        if (ok) get().showToast(`已复制文本至「${targetName}」`);
+        return ok;
       }
 
       const hasLeft = t0 > tIv.xmin + eps;
       const hasRight = t1 < tIv.xmax - eps;
       const midOffset = hasLeft ? 1 : 0;
 
-      st.commitTgMutation(
-        (draft) => {
-          const dTier = draft.tiers[targetTierIdx];
+      const ok = st.commitTgMutation(
+        (_draft, ctx) => {
+          const dTier = ctx.editTier(targetTierIdx);
+          if (!dTier || dTier.kind !== 'intervalTier') return false;
           const cur = dTier.intervals[firstIdx];
+          if (!cur) return false;
           const replacement: Array<{ xmin: number; xmax: number; text: string }> = [];
           if (hasLeft) {
             replacement.push({ xmin: cur.xmin, xmax: t0, text: cur.text });
@@ -2138,10 +2679,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           dTier.intervals.splice(firstIdx, 1, ...replacement);
         },
         { kind: 'interval', tierIndex: targetTierIdx, itemIndex: firstIdx + midOffset },
-        `复制区间至「${targetName}」`
+        {
+          type: 'copy-interval-span',
+          title: '复制区间至层',
+          detail: `${srcName} → ${targetName} · ${copyText ? '含文本' : '仅边界'}`,
+          icon: 'projectToTier',
+          tierName: targetName,
+          focusTime: t0
+        }
       );
-      get().showToast(`已复制${copyText ? '区间及文本' : '区间边界'}至「${targetName}」`);
-      return true;
+      if (ok) get().showToast(`已复制${copyText ? '区间及文本' : '区间边界'}至「${targetName}」`);
+      return ok;
     }
 
     // Multiple overlapping intervals: only allow cleanly if all are empty & contiguous
@@ -2161,9 +2709,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const hasRight = t1 < lastIv.xmax - eps;
     const midOffset = hasLeft ? 1 : 0;
 
-    st.commitTgMutation(
-      (draft) => {
-        const dTier = draft.tiers[targetTierIdx];
+    const ok = st.commitTgMutation(
+      (_draft, ctx) => {
+        const dTier = ctx.editTier(targetTierIdx);
+        if (!dTier || dTier.kind !== 'intervalTier') return false;
         const replacement: Array<{ xmin: number; xmax: number; text: string }> = [];
         if (hasLeft) replacement.push({ xmin: firstIv.xmin, xmax: t0, text: '' });
         replacement.push({ xmin: t0, xmax: t1, text: copyText ? srcIv.text : '' });
@@ -2171,10 +2720,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         dTier.intervals.splice(firstIdx, lastIdx - firstIdx + 1, ...replacement);
       },
       { kind: 'interval', tierIndex: targetTierIdx, itemIndex: firstIdx + midOffset },
-      `复制区间至「${targetName}」`
+      {
+        type: 'copy-interval-span',
+        title: '复制区间至层',
+        detail: `${srcName} → ${targetName} · ${copyText ? '含文本' : '仅边界'}`,
+        icon: 'projectToTier',
+        tierName: targetName,
+        focusTime: t0
+      }
     );
-    get().showToast(`已复制${copyText ? '区间及文本' : '区间边界'}至「${targetName}」`);
-    return true;
+    if (ok) get().showToast(`已复制${copyText ? '区间及文本' : '区间边界'}至「${targetName}」`);
+    return ok;
   },
 
   splitIntervalEqualN: (tierIndex, itemIndex, n) => {
@@ -2212,24 +2768,37 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       xmax: cuts[k + 1],
       text: k === 0 ? iv.text : ''
     }));
+    const tierName = formatTierLabel(tier.name, tierIndex);
 
-    st.commitTgMutation(
-      (draft) => {
-        draft.tiers[tierIndex].intervals.splice(itemIndex, 1, ...segs);
+    const ok = st.commitTgMutation(
+      (_draft, ctx) => {
+        const dTier = ctx.editTier(tierIndex);
+        if (!dTier || dTier.kind !== 'intervalTier') return false;
+        dTier.intervals.splice(itemIndex, 1, ...segs);
       },
       { kind: 'interval', tierIndex, itemIndex },
-      `等分区间为 ${count} 段`
+      {
+        type: 'split-equal',
+        title: '等分区间',
+        detail: `${tierName} · 等分为 ${count} 段 (${formatTimeSpan(iv.xmin, iv.xmax)})`,
+        icon: 'splitEqual',
+        tierName,
+        focusTime: iv.xmin
+      }
     );
-    get().showToast(`已将区间等分为 ${count} 段`);
-    return true;
+    if (ok) get().showToast(`已将区间等分为 ${count} 段`);
+    return ok;
   },
 
   alignMicroBoundaries: (targetTierIndex, thresholdSec = 0.005) => {
     const st = get();
     const thresh = Math.max(1e-6, thresholdSec - 1e-9);
     const eps = 1e-12;
-    const draft = cloneTg(st.tg);
+    const workingTiers = st.tg.tiers.map((t) => cloneTier(t));
+    const dirtyTierSet = new Set<number>();
     let alignedCount = 0;
+    let skippedPointCollision = 0;
+    let skippedBoundConstraint = 0;
 
     type RefEntry = { t: number; tierIdx: number };
 
@@ -2253,7 +2822,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     };
 
     const collectTierRefs = (ti: number, refs: RefEntry[]) => {
-      const tier = draft.tiers[ti];
+      const tier = workingTiers[ti];
       if (!tier || tier.kind !== 'intervalTier') return;
       const seen = new Set<number>();
       const push = (t: number) => {
@@ -2270,7 +2839,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     };
 
     const alignIntervalTier = (ti: number, refs: RefEntry[]) => {
-      const tier = draft.tiers[ti];
+      const tier = workingTiers[ti];
       if (!tier || tier.kind !== 'intervalTier' || refs.length === 0) return;
       const interiorSet = new Set<number>();
       for (const iv of tier.intervals) {
@@ -2293,37 +2862,49 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             if (Math.abs(iv.xmin - oldT) <= eps) iv.xmin = refT;
           }
           alignedCount++;
+          dirtyTierSet.add(ti);
+        } else {
+          skippedBoundConstraint++;
         }
       }
     };
 
     const alignTextTier = (ti: number, refs: RefEntry[]) => {
-      const tier = draft.tiers[ti];
+      const tier = workingTiers[ti];
       if (!tier || tier.kind !== 'textTier' || refs.length === 0) return;
       let changed = false;
       for (let i = 0; i < tier.points.length; i++) {
         const pt = tier.points[i];
         const refT = findBestRef(pt.number, refs);
         if (refT === null) continue;
-        if (refT < tier.xmin - eps || refT > tier.xmax + eps) continue;
+        if (refT < tier.xmin - eps || refT > tier.xmax + eps) {
+          skippedBoundConstraint++;
+          continue;
+        }
         const collides = tier.points.some(
           (other, idx) => idx !== i && Math.abs(other.number - refT) <= eps
         );
-        if (collides) continue;
+        if (collides) {
+          skippedPointCollision++;
+          continue;
+        }
         pt.number = refT;
         alignedCount++;
         changed = true;
       }
       if (changed) {
         tier.points.sort((a, b) => a.number - b.number);
+        dirtyTierSet.add(ti);
       }
     };
 
     if (targetTierIndex !== undefined) {
-      const targetTier = draft.tiers[targetTierIndex];
-      if (!targetTier) return 0;
+      const targetTier = workingTiers[targetTierIndex];
+      if (!targetTier) {
+        return { aligned: 0, skippedPointCollision: 0, skippedBoundConstraint: 0 };
+      }
       const refs: RefEntry[] = [];
-      for (let ti = 0; ti < draft.tiers.length; ti++) {
+      for (let ti = 0; ti < workingTiers.length; ti++) {
         if (ti === targetTierIndex) continue;
         collectTierRefs(ti, refs);
       }
@@ -2334,32 +2915,42 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
     } else {
       const refs: RefEntry[] = [];
-      for (let ti = 0; ti < draft.tiers.length; ti++) {
-        if (draft.tiers[ti].kind !== 'intervalTier') continue;
+      for (let ti = 0; ti < workingTiers.length; ti++) {
+        if (workingTiers[ti].kind !== 'intervalTier') continue;
         alignIntervalTier(ti, refs);
         collectTierRefs(ti, refs);
       }
-      for (let ti = 0; ti < draft.tiers.length; ti++) {
-        if (draft.tiers[ti].kind !== 'textTier') continue;
+      for (let ti = 0; ti < workingTiers.length; ti++) {
+        if (workingTiers[ti].kind !== 'textTier') continue;
         alignTextTier(ti, refs);
       }
     }
 
-    if (alignedCount === 0) return 0;
+    if (alignedCount === 0) {
+      return { aligned: 0, skippedPointCollision, skippedBoundConstraint };
+    }
 
-    const label =
+    const tierName =
       targetTierIndex !== undefined
-        ? `对齐微偏边界「${st.tg.tiers[targetTierIndex]?.name || '未命名'}」`
-        : '跨层对齐微偏边界';
+        ? formatTierLabel(st.tg.tiers[targetTierIndex]?.name, targetTierIndex)
+        : undefined;
 
     st.commitTgMutation(
       (d) => {
-        d.tiers = draft.tiers;
+        for (const ti of dirtyTierSet) {
+          if (d.tiers[ti]) d.tiers[ti] = workingTiers[ti];
+        }
       },
       undefined,
-      label
+      {
+        type: 'align-micro-boundaries',
+        title: '对齐微偏边界',
+        detail: `${tierName ?? '全文档'} · 对齐 ${alignedCount} 处 (<5ms)`,
+        icon: 'zeroCross',
+        tierName
+      }
     );
-    return alignedCount;
+    return { aligned: alignedCount, skippedPointCollision, skippedBoundConstraint };
   },
 
   updateBlankTabDuration: (audioOffset, audioDuration) => {
@@ -2368,7 +2959,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return false;
     }
     const activeTab = st.tabs.find((t) => t.id === st.activeTabId);
-    if (!activeTab || !activeTab.isBlankPlaceholder || activeTab.isDirty) {
+    if (
+      !activeTab ||
+      !activeTab.isBlankPlaceholder ||
+      activeTab.isDirty ||
+      st.history.entries.length > 0
+    ) {
       return false;
     }
     for (const tier of activeTab.tg.tiers) {
@@ -2382,26 +2978,47 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     const nextMin = audioOffset;
     const nextMax = audioOffset + audioDuration;
-    const nextTg = cloneTg(activeTab.tg);
-    nextTg.xmin = nextMin;
-    nextTg.xmax = nextMax;
-    for (const tier of nextTg.tiers) {
-      tier.xmin = nextMin;
-      tier.xmax = nextMax;
-      if (tier.kind === 'intervalTier' && tier.intervals.length === 1) {
-        tier.intervals[0].xmin = nextMin;
-        tier.intervals[0].xmax = nextMax;
-      }
-    }
+    const nextTg: TextGrid = {
+      ...activeTab.tg,
+      xmin: nextMin,
+      xmax: nextMax,
+      tiers: activeTab.tg.tiers.map((tier) => {
+        const cloned = cloneTier(tier);
+        cloned.xmin = nextMin;
+        cloned.xmax = nextMax;
+        if (cloned.kind === 'intervalTier' && cloned.intervals.length === 1) {
+          cloned.intervals[0].xmin = nextMin;
+          cloned.intervals[0].xmax = nextMax;
+        }
+        return cloned;
+      })
+    };
 
     set((s) => {
       const nextCollection =
         s.collectionTgs.length > 0
           ? s.collectionTgs.map((item, i) => (i === s.collectionActiveIdx ? nextTg : item))
           : s.collectionTgs;
+      const nextHistory: HistoryTimeline = {
+        ...s.history,
+        baseline: {
+          ...s.history.baseline,
+          detail: formatDocBaselineDetail(s.filename, nextTg),
+          snapshot: {
+            ...s.history.baseline.snapshot,
+            tg: nextTg
+          }
+        }
+      };
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
       const patch: Partial<TabRecord> = {
         tg: nextTg,
         collectionTgs: nextCollection,
+        history: nextHistory,
+        collectionHistories: nextCollectionHistories,
         viewDomain: null,
         currentTime: nextMin
       };
@@ -2416,10 +3033,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   normalizeTextGrid: () => {
     const st = get();
     st.commitTgMutation(
-      (draft) => {
+      (draft, ctx) => {
         const gMin = draft.xmin;
         const gMax = draft.xmax;
-        for (const tier of draft.tiers) {
+        for (let ti = 0; ti < draft.tiers.length; ti++) {
+          const tier = ctx.editTier(ti);
+          if (!tier) continue;
           tier.xmin = gMin;
           tier.xmax = gMax;
           if (tier.kind === 'intervalTier') {
@@ -2427,9 +3046,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             const clean = [];
             let cursor = gMin;
             for (const iv of tier.intervals) {
+              if (!Number.isFinite(iv.xmin) || !Number.isFinite(iv.xmax)) continue;
               const a = Math.max(cursor, Math.min(gMax, iv.xmin));
               const b = Math.max(a, Math.min(gMax, iv.xmax));
-              if (a > cursor) clean.push({ xmin: cursor, xmax: a, text: '' });
+              if (a > cursor) {
+                clean.push({ xmin: cursor, xmax: a, text: '' });
+                cursor = a;
+              }
               if (b > a) {
                 clean.push({ xmin: a, xmax: b, text: iv.text });
                 cursor = b;
@@ -2445,14 +3068,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }
       },
       null,
-      '规整各层范围与区间'
+      {
+        type: 'normalize-tg',
+        title: '规整边界与范围',
+        detail: '统一各层起止并补齐连续区间',
+        icon: 'normalize'
+      }
     );
     st.showToast('已对齐各层范围并补齐连续区间');
   },
 
-  moveTierBoundary: (tierIndex, oldT, newT, shared) => {
+  moveTierBoundary: (tierIndex, oldT, newT, shared, opts) => {
     const st = get();
-    if (shared) return st.moveSharedTimestamp(oldT, newT);
+    if (shared) return st.moveSharedTimestamp(oldT, newT, opts);
     const tier = st.tg.tiers[tierIndex];
     if (!tier || tier.kind !== 'intervalTier') return false;
     const { minAllowed, maxAllowed } = getBoundaryBoundsForTier(tier, oldT);
@@ -2460,20 +3088,70 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       st.showToast('边界不能越过相邻区间', true);
       return false;
     }
-    st.commitTgMutation(
-      (draft) => {
-        for (const iv of draft.tiers[tierIndex].intervals) {
-          if (iv.xmax === oldT) iv.xmax = newT;
-          if (iv.xmin === oldT) iv.xmin = newT;
+    const leftIdx = tier.intervals.findIndex((iv) => iv.xmax === oldT);
+    const rightIdx = tier.intervals.findIndex((iv) => iv.xmin === oldT);
+    const bndKey = leftIdx >= 0 ? `L${leftIdx}` : `R${rightIdx}`;
+    const tierName = formatTierLabel(tier.name, tierIndex);
+    const isZeroSnap = opts?.actionMeta?.type === 'snap-zero-crossing';
+
+    const meta: HistoryActionMeta = isZeroSnap
+      ? {
+          type: 'snap-zero-crossing',
+          title: '吸附过零点',
+          detail: `${tierName} · ${formatTimeSec(oldT)} → ${formatTimeSec(newT)} (${formatDeltaTime(newT - oldT)})`,
+          icon: 'zeroCross',
+          tierName,
+          focusTime: newT
+        }
+      : {
+          type: 'move-boundary',
+          title: '移动边界',
+          detail: `${tierName} · ${formatTimeSec(oldT)} → ${formatTimeSec(newT)} (${formatDeltaTime(newT - oldT)})`,
+          icon: 'nudgeBoundary',
+          tierName,
+          focusTime: newT,
+          coalesce:
+            opts?.coalesce === false
+              ? undefined
+              : {
+                  key: `move-bnd:${tierIndex}:${bndKey}`,
+                  originValue: oldT,
+                  latestValue: newT,
+                  chainPrevLatest: oldT,
+                  formatMergedDetail: (orig, latest, count) => {
+                    const o = Number(orig);
+                    const l = Number(latest);
+                    return `${tierName} · ${formatTimeSec(o)} → ${formatTimeSec(l)} (${formatDeltaTime(l - o)}${count > 1 ? ` · ${count}次` : ''})`;
+                  }
+                }
+        };
+
+    return st.commitTgMutation(
+      (_draft, ctx) => {
+        const dTier = ctx.editTier(tierIndex);
+        if (!dTier || dTier.kind !== 'intervalTier') return false;
+        let touched = false;
+        for (const iv of dTier.intervals) {
+          if (iv.xmax === oldT) {
+            iv.xmax = newT;
+            touched = true;
+          }
+          if (iv.xmin === oldT) {
+            iv.xmin = newT;
+            touched = true;
+          }
+        }
+        if (!touched) return false;
+        if (opts?.nextSelection !== undefined) {
+          ctx.setNextSelection(opts.nextSelection);
         }
       },
       undefined,
-      `移动边界「${tier.name || '未命名'}」`
+      meta
     );
-    return true;
   },
 
-  moveSharedTimestamp: (oldT, newT) => {
+  moveSharedTimestamp: (oldT, newT, opts) => {
     const st = get();
     let minAllowed = -Infinity;
     let maxAllowed = Infinity;
@@ -2488,27 +3166,98 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       st.showToast('移动超出相邻边界允许范围', true);
       return false;
     }
-    st.commitTgMutation(
-      (draft) => {
-        if (draft.xmin === oldT && newT <= draft.xmax) draft.xmin = newT;
-        if (draft.xmax === oldT && newT >= draft.xmin) draft.xmax = newT;
-        for (const tier of draft.tiers) {
-          if (tier.xmin === oldT && newT <= tier.xmax) tier.xmin = newT;
-          if (tier.xmax === oldT && newT >= tier.xmin) tier.xmax = newT;
+
+    const isZeroSnap = opts?.actionMeta?.type === 'snap-zero-crossing';
+    const meta: HistoryActionMeta = isZeroSnap
+      ? {
+          type: 'snap-zero-crossing',
+          title: '吸附过零点',
+          detail: `跨层对齐 · ${formatTimeSec(oldT)} → ${formatTimeSec(newT)} (${formatDeltaTime(newT - oldT)})`,
+          icon: 'zeroCross',
+          focusTime: newT
+        }
+      : {
+          type: 'move-shared-boundary',
+          title: '跨层移动边界',
+          detail: `对齐时刻 · ${formatTimeSec(oldT)} → ${formatTimeSec(newT)} (${formatDeltaTime(newT - oldT)})`,
+          icon: 'nudgeShared',
+          focusTime: newT,
+          coalesce:
+            opts?.coalesce === false
+              ? undefined
+              : {
+                  key: 'move-shared',
+                  originValue: oldT,
+                  latestValue: newT,
+                  chainPrevLatest: oldT,
+                  formatMergedDetail: (orig, latest, count) => {
+                    const o = Number(orig);
+                    const l = Number(latest);
+                    return `对齐时刻 · ${formatTimeSec(o)} → ${formatTimeSec(l)} (${formatDeltaTime(l - o)}${count > 1 ? ` · ${count}次` : ''})`;
+                  }
+                }
+        };
+
+    return st.commitTgMutation(
+      (draft, ctx) => {
+        let changed = false;
+        if (draft.xmin === oldT && newT <= draft.xmax) {
+          draft.xmin = newT;
+          changed = true;
+        }
+        if (draft.xmax === oldT && newT >= draft.xmin) {
+          draft.xmax = newT;
+          changed = true;
+        }
+        for (let ti = 0; ti < draft.tiers.length; ti++) {
+          const origTier = draft.tiers[ti];
+          const hitsBound =
+            (origTier.xmin === oldT && newT <= origTier.xmax) ||
+            (origTier.xmax === oldT && newT >= origTier.xmin);
+          const hitsItem =
+            origTier.kind === 'intervalTier'
+              ? origTier.intervals.some((iv) => iv.xmax === oldT || iv.xmin === oldT)
+              : origTier.points.some((pt) => pt.number === oldT);
+          if (!hitsBound && !hitsItem) continue;
+
+          const tier = ctx.editTier(ti);
+          if (!tier) continue;
+          if (tier.xmin === oldT && newT <= tier.xmax) {
+            tier.xmin = newT;
+            changed = true;
+          }
+          if (tier.xmax === oldT && newT >= tier.xmin) {
+            tier.xmax = newT;
+            changed = true;
+          }
           if (tier.kind === 'intervalTier') {
             for (const iv of tier.intervals) {
-              if (iv.xmax === oldT) iv.xmax = newT;
-              if (iv.xmin === oldT) iv.xmin = newT;
+              if (iv.xmax === oldT) {
+                iv.xmax = newT;
+                changed = true;
+              }
+              if (iv.xmin === oldT) {
+                iv.xmin = newT;
+                changed = true;
+              }
             }
           } else {
-            for (const pt of tier.points) if (pt.number === oldT) pt.number = newT;
+            for (const pt of tier.points) {
+              if (pt.number === oldT) {
+                pt.number = newT;
+                changed = true;
+              }
+            }
             tier.points.sort((a, b) => a.number - b.number);
           }
         }
+        if (!changed) return false;
+        if (opts?.nextSelection !== undefined) {
+          ctx.setNextSelection(opts.nextSelection);
+        }
       },
       undefined,
-      '跨层移动共享边界'
+      meta
     );
-    return true;
   }
 }));

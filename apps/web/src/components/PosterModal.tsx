@@ -25,6 +25,7 @@ import {
   type PosterTemplateId
 } from '../render/poster/types';
 import { useEditorStore } from '../store/useEditorStore';
+import { resolveF0RangeOverride } from '../utils/f0Range';
 import { getElementRectScale } from '../utils/uiScale';
 import { ChevronIcon, CloseIcon, UiIcon } from './Icons';
 import '../styles/posterModal.css';
@@ -134,6 +135,8 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
   const audioSampleRate = useEditorStore((s) => s.audioSampleRate);
   const analysis = useEditorStore((s) => s.analysis);
   const maxFreq = useEditorStore((s) => s.maxFreq);
+  const f0RangeMode = useEditorStore((s) => s.f0RangeMode);
+  const f0RangeCustom = useEditorStore((s) => s.f0RangeCustom);
   const showToast = useEditorStore((s) => s.showToast);
 
   const [prefs, setPrefs] = useState<PosterPrefs>(() => loadPosterPrefs());
@@ -154,6 +157,27 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
   const [previewRes, setPreviewRes] = useState<PosterResult | null>(null);
   const [rendering, setRendering] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [actionReceipt, setActionReceipt] = useState<{ text: string; isError?: boolean } | null>(null);
+  const receiptTimerRef = useRef<number | null>(null);
+
+  const flashReceipt = useCallback((text: string, isError = false) => {
+    setActionReceipt({ text, isError });
+    if (receiptTimerRef.current !== null) {
+      window.clearTimeout(receiptTimerRef.current);
+    }
+    receiptTimerRef.current = window.setTimeout(() => {
+      receiptTimerRef.current = null;
+      setActionReceipt(null);
+    }, isError ? 5000 : 3600);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (receiptTimerRef.current !== null) {
+        window.clearTimeout(receiptTimerRef.current);
+      }
+    };
+  }, []);
 
   // Interactive cursor-anchored wheel-zoom & drag-to-pan preview state
   const [zoom, setZoom] = useState(1);
@@ -299,7 +323,8 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
         audioOffset,
         audioSampleRate: audioSampleRate || analysis?.sampleRate || 0,
         analysis,
-        maxFreq
+        maxFreq,
+        f0RangeOverride: resolveF0RangeOverride(f0RangeMode, f0RangeCustom)
       };
     },
     [
@@ -317,7 +342,9 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
       audioOffset,
       audioSampleRate,
       analysis,
-      maxFreq
+      maxFreq,
+      f0RangeMode,
+      f0RangeCustom
     ]
   );
 
@@ -500,13 +527,19 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
       const res = await exportPosterSvg(buildInput(false));
       if (isTauriRuntime()) {
         if (res.savedPath) {
-          showToast(`已导出矢量海报 (${res.filename})`, false, makeRevealAction(res.savedPath));
+          const msg = `已导出矢量海报 (${res.filename})`;
+          flashReceipt(msg);
+          showToast(msg, false, makeRevealAction(res.savedPath));
         }
       } else {
-        showToast(`已下载矢量海报 (${res.filename})`);
+        const msg = `已下载矢量海报 (${res.filename})`;
+        flashReceipt(msg);
+        showToast(msg);
       }
     } catch (err) {
-      showToast(`导出 SVG 失败：${String(err)}`, true);
+      const msg = `导出 SVG 失败：${String(err)}`;
+      flashReceipt(msg, true);
+      showToast(msg, true);
     } finally {
       setBusyAction(null);
     }
@@ -521,13 +554,17 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
       const msg = `已导出声纹海报 (${res.width}×${res.height}${suffix})`;
       if (isTauriRuntime()) {
         if (res.savedPath) {
+          flashReceipt(msg);
           showToast(msg, false, makeRevealAction(res.savedPath));
         }
       } else {
+        flashReceipt(msg);
         showToast(msg);
       }
     } catch (err) {
-      showToast(`导出 PNG 失败：${String(err)}`, true);
+      const msg = `导出 PNG 失败：${String(err)}`;
+      flashReceipt(msg, true);
+      showToast(msg, true);
     } finally {
       setBusyAction(null);
     }
@@ -538,9 +575,13 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
     setBusyAction('copy');
     try {
       const res = await copyPosterPngToClipboard(buildInput(false));
-      showToast(`已复制海报 PNG (${res.width}×${res.height}) 到剪贴板`);
+      const msg = `已复制海报 PNG (${res.width}×${res.height}) 到剪贴板`;
+      flashReceipt(msg);
+      showToast(msg);
     } catch (err) {
-      showToast(`复制 PNG 失败：${String(err)}`, true);
+      const msg = `复制 PNG 失败：${String(err)}`;
+      flashReceipt(msg, true);
+      showToast(msg, true);
     } finally {
       setBusyAction(null);
     }
@@ -550,9 +591,20 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
     if (busyAction) return;
     setBusyAction('pdf');
     try {
-      await printPosterPdf(buildInput(false));
+      const res = await printPosterPdf(buildInput(false));
+      if (res.printTriggered) {
+        const msg = '已打开系统打印对话框（可选择「另存为 PDF」）';
+        flashReceipt(msg);
+        showToast(msg);
+      } else {
+        const msg = '未检测到打印弹窗，可能被浏览器拦截或当前环境不支持打印，请改用「导出 SVG / PNG」';
+        flashReceipt(msg, true);
+        showToast(msg, true);
+      }
     } catch (err) {
-      showToast(`调用打印失败：${String(err)}`, true);
+      const msg = `调用打印失败：${String(err)}（可改用「导出 SVG / PNG」）`;
+      flashReceipt(msg, true);
+      showToast(msg, true);
     } finally {
       setBusyAction(null);
     }
@@ -1245,12 +1297,23 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
         </div>
 
         <div className="export-modal-foot">
-          <span className="export-foot-note">
-            {busyAction
-              ? '正在渲染高分辨率声纹海报…'
-              : previewRes
-                ? `${previewRes.activeIntervalCount} 层标注${previewRes.activePointCount > 0 ? ` · ${previewRes.activePointCount} 个标点` : ''} · 矢量分组支持 Illustrator / Figma 编辑`
-                : '正在生成声纹海报预览…'}
+          <span
+            className={`export-foot-note ${
+              actionReceipt ? (actionReceipt.isError ? 'is-error' : 'is-success') : ''
+            }`}
+            aria-live="polite"
+          >
+            {busyAction === 'pdf'
+              ? '正在准备矢量海报打印视图…'
+              : busyAction === 'copy'
+                ? '正在光栅化高分辨率 PNG 并写入剪贴板…'
+                : busyAction
+                  ? '正在渲染高分辨率声纹海报…'
+                  : actionReceipt
+                    ? actionReceipt.text
+                    : previewRes
+                      ? `${previewRes.activeIntervalCount} 层标注${previewRes.activePointCount > 0 ? ` · ${previewRes.activePointCount} 个标点` : ''} · 矢量分组支持 Illustrator / Figma 编辑`
+                      : '正在生成声纹海报预览…'}
           </span>
           <div className="poster-foot-controls">
             <div className="poster-foot-scale">

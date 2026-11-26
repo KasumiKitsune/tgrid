@@ -126,20 +126,43 @@ pub fn scan_diagnostics(tg: &TextGrid) -> Vec<TierDiagnostics> {
             let mut micro_segment_count = 0;
 
             if tier.kind == TierKind::IntervalTier {
-                for (i, iv) in tier.intervals.iter().enumerate() {
-                    let dur = iv.xmax - iv.xmin;
-                    if dur.abs() <= 1e-12 {
-                        zero_duration_count += 1;
-                    } else if dur > 0.0 && dur < MICRO_THRESHOLD {
-                        micro_segment_count += 1;
+                if tier.intervals.is_empty() {
+                    if tier.xmin.is_finite()
+                        && tier.xmax.is_finite()
+                        && tier.xmax > tier.xmin + 1e-9
+                    {
+                        gap_count += 1;
                     }
-                    if i > 0 {
-                        let prev = &tier.intervals[i - 1];
-                        let diff = iv.xmin - prev.xmax;
-                        if diff > 1e-9 {
+                } else {
+                    if tier.xmin.is_finite()
+                        && tier.intervals[0].xmin.is_finite()
+                        && tier.intervals[0].xmin > tier.xmin + 1e-9
+                    {
+                        gap_count += 1;
+                    }
+                    for (i, iv) in tier.intervals.iter().enumerate() {
+                        let dur = iv.xmax - iv.xmin;
+                        if dur <= 1e-12 {
+                            zero_duration_count += 1;
+                        } else if dur < MICRO_THRESHOLD {
+                            micro_segment_count += 1;
+                        }
+                        if i > 0 {
+                            let prev = &tier.intervals[i - 1];
+                            let diff = iv.xmin - prev.xmax;
+                            if diff > 1e-9 {
+                                gap_count += 1;
+                            } else if diff < -1e-9 {
+                                overlap_count += 1;
+                            }
+                        }
+                    }
+                    if let Some(last) = tier.intervals.last() {
+                        if last.xmax.is_finite()
+                            && tier.xmax.is_finite()
+                            && last.xmax < tier.xmax - 1e-9
+                        {
                             gap_count += 1;
-                        } else if diff < -1e-9 {
-                            overlap_count += 1;
                         }
                     }
                 }

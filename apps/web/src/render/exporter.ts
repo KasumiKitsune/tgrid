@@ -17,6 +17,7 @@ import {
   type BandSpecRenderResult,
   type EditorSelection
 } from './renderScoreSvg';
+import type { F0RangeBounds } from '../utils/f0Range';
 
 export interface ExportPrefs {
   format: 'svg' | 'png';
@@ -328,6 +329,7 @@ export interface ExportSceneInput {
   cueMode: 'auto' | 'pitch' | 'formant' | 'plain';
   tierOrder: 'raw' | 'spec';
   maxFreq: number;
+  f0RangeOverride?: F0RangeBounds | null;
   forceSpecStrategy?: string;
 }
 
@@ -571,6 +573,7 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
     audioOffset: input.audioOffset,
     analysis: input.analysis,
     maxFreq: input.maxFreq,
+    f0RangeOverride: input.f0RangeOverride ?? null,
     mode: 'read',
     selection: null,
     playRange: null,

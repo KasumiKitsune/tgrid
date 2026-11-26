@@ -239,7 +239,9 @@ export const Topbar: React.FC<TopbarProps> = ({
                   <UiIcon name="waveform" size={11} />
                 </span>
               )}
-              <span className="tab-label">{tab.filename}</span>
+              <span className="tab-label" title={tooltip}>
+                {tab.filename}
+              </span>
               <button
                 type="button"
                 className="tab-close-btn"
@@ -489,6 +491,20 @@ export const Topbar: React.FC<TopbarProps> = ({
                 type="button"
                 onClick={() => {
                   setOpenMenu(null);
+                  setSidebarTab('history');
+                  setSidebarOpen(true);
+                }}
+              >
+                <span className="btn-lead">
+                  <UiIcon name="history" size={13} />
+                  <span>操作历史记录</span>
+                </span>
+                <span className="shortcut">Alt+3</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenMenu(null);
                   setSidebarTab('customize');
                   setSidebarOpen(true);
                 }}
@@ -497,7 +513,7 @@ export const Topbar: React.FC<TopbarProps> = ({
                   <UiIcon name="customize" size={13} />
                   <span>自定义悬浮条与快捷键</span>
                 </span>
-                <span className="shortcut">Alt+4</span>
+                <span className="shortcut">Alt+5</span>
               </button>
               <button
                 type="button"

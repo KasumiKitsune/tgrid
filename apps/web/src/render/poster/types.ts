@@ -1,4 +1,5 @@
 import type { AudioAnalysisSummary, PlatformBridge, TextGrid } from '../../bridge/types';
+import type { F0RangeBounds } from '../../utils/f0Range';
 import type { EditorSelection } from '../renderScoreSvg';
 
 export type PosterTemplateId =
@@ -125,6 +126,7 @@ export interface PosterRenderInput {
   audioSampleRate: number;
   analysis: AudioAnalysisSummary | null;
   maxFreq: number;
+  f0RangeOverride?: F0RangeBounds | null;
   dynRange?: number;
 }
 

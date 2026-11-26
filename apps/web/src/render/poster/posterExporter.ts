@@ -200,7 +200,9 @@ export async function renderPoster(input: PosterRenderInput): Promise<PosterResu
 
   // Voiced F0 pitch runs (shared across all 5 templates)
   const f0Runs =
-    input.hasAudio && config.showPitch ? extractVoicedPitchRuns(input.analysis, tMin, tMax) : [];
+    input.hasAudio && config.showPitch
+      ? extractVoicedPitchRuns(input.analysis, tMin, tMax, input.f0RangeOverride)
+      : [];
 
   // --------------------------------------------------------------------------
   // Branch A: New Hybrid Templates (`braun_strip`, `folding_fan`, `risograph`)
@@ -584,8 +586,9 @@ export async function copyPosterPngToClipboard(
 
 /**
  * Native OS Print / Save-as-PDF via an isolated hidden iframe carrying the pure vector SVG.
+ * Detects `beforeprint` / `afterprint` or synchronous dialog blocking so silent suppression is reported cleanly.
  */
-export async function printPosterPdf(input: PosterRenderInput): Promise<void> {
+export async function printPosterPdf(input: PosterRenderInput): Promise<{ printTriggered: boolean }> {
   const res = await renderPoster({ ...input, previewMode: false });
   const wMm = (res.widthPt * 25.4) / 72;
   const hMm = (res.heightPt * 25.4) / 72;
@@ -594,15 +597,19 @@ export async function printPosterPdf(input: PosterRenderInput): Promise<void> {
   const iframe = document.createElement('iframe');
   iframe.setAttribute('aria-hidden', 'true');
   iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
+  iframe.style.left = '-9999px';
+  iframe.style.top = '0';
+  iframe.style.width = '1px';
+  iframe.style.height = '1px';
   iframe.style.border = '0';
-  iframe.style.visibility = 'hidden';
+  iframe.style.opacity = '0';
+  iframe.style.pointerEvents = 'none';
   document.body.appendChild(iframe);
 
+  let cleaned = false;
   const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
     try {
       if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
     } catch {
@@ -650,10 +657,32 @@ export async function printPosterPdf(input: PosterRenderInput): Promise<void> {
 
     // Wait briefly for embedded data-URI raster images inside SVG to decode
     await new Promise<void>((resolve) => setTimeout(resolve, 160));
-    win.addEventListener('afterprint', cleanup, { once: true });
+
+    let printTriggered = false;
+    const onPrintStart = () => {
+      printTriggered = true;
+    };
+    const onAfterPrint = () => {
+      printTriggered = true;
+      cleanup();
+    };
+    win.addEventListener('beforeprint', onPrintStart, { once: true });
+    win.addEventListener('afterprint', onAfterPrint, { once: true });
+
+    const callStart = performance.now();
     win.focus();
     win.print();
-    setTimeout(cleanup, 60_000);
+    const callElapsed = performance.now() - callStart;
+    if (callElapsed >= 200) {
+      printTriggered = true;
+    }
+
+    if (!printTriggered) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 450));
+    }
+
+    setTimeout(cleanup, printTriggered ? 60_000 : 1_500);
+    return { printTriggered };
   } catch (err) {
     cleanup();
     throw err;

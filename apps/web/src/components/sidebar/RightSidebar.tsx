@@ -1,9 +1,10 @@
 import React, { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import type { TextGrid } from '../../bridge/types';
 import { useEditorStore, type SidebarTab } from '../../store/useEditorStore';
+import { scanTextGridQa } from '../../utils/qaDiagnostics';
 import { getLogicalViewportSize, getViewportZoom } from '../../utils/uiScale';
 import { CloseIcon, InfoIcon, ShortcutsIcon, UiIcon, type IconName } from '../Icons';
 import { CustomizePanel } from './CustomizePanel';
+import { HistoryPanel } from './HistoryPanel';
 import { InspectorPanel, type InspectorPanelHandle } from './InspectorPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { TiersPanel } from './TiersPanel';
@@ -20,69 +21,12 @@ interface RightSidebarProps {
   onBatchConvertIpa: (direction: 'toUnicode' | 'toPraat') => void;
 }
 
-function detectQuickQaIssues(tg: TextGrid): boolean {
-  const EPS = 1e-9;
-  const MICRO_THRESHOLD = 0.005 - 1e-9;
-  const boundaryEntries: Array<{ t: number; ti: number }> = [];
-
-  for (let ti = 0; ti < tg.tiers.length; ti++) {
-    const tier = tg.tiers[ti];
-    if (tier.xmin < tg.xmin - EPS || tier.xmax > tg.xmax + EPS) return true;
-    if (tier.kind === 'intervalTier') {
-      const ivs = tier.intervals;
-      if (ivs.length === 0) {
-        if (tier.xmax > tier.xmin + EPS) return true;
-        continue;
-      }
-      if (ivs[0].xmin > tier.xmin + EPS) return true;
-      for (let i = 0; i < ivs.length; i++) {
-        const iv = ivs[i];
-        const dur = iv.xmax - iv.xmin;
-        if (dur <= EPS) return true; // zero or inverted
-        if (dur < MICRO_THRESHOLD) return true; // micro segment (< 5 ms)
-        if (i > 0) {
-          const prev = ivs[i - 1];
-          if (iv.xmin > prev.xmax + EPS) return true; // gap
-          if (iv.xmin < prev.xmax - EPS) return true; // overlap
-        }
-        if (iv.xmin > tier.xmin + EPS && iv.xmin < tier.xmax - EPS) {
-          boundaryEntries.push({ t: iv.xmin, ti });
-        }
-        if (iv.xmax > tier.xmin + EPS && iv.xmax < tier.xmax - EPS) {
-          boundaryEntries.push({ t: iv.xmax, ti });
-        }
-      }
-      if (ivs[ivs.length - 1].xmax < tier.xmax - EPS) return true;
-    } else {
-      for (const pt of tier.points) {
-        if (pt.number < tier.xmin - EPS || pt.number > tier.xmax + EPS) return true;
-        boundaryEntries.push({ t: pt.number, ti });
-      }
-    }
-  }
-
-  // Cross-tier micro boundary misalignment (< 5 ms)
-  if (boundaryEntries.length > 1) {
-    boundaryEntries.sort((a, b) => a.t - b.t || a.ti - b.ti);
-    for (let i = 0; i < boundaryEntries.length; i++) {
-      const a = boundaryEntries[i];
-      for (let j = i + 1; j < boundaryEntries.length; j++) {
-        const b = boundaryEntries[j];
-        const diff = b.t - a.t;
-        if (diff >= MICRO_THRESHOLD) break;
-        if (diff > EPS && a.ti !== b.ti) return true;
-      }
-    }
-  }
-
-  return false;
-}
-
 const RAIL_ITEMS: Array<{ tab: SidebarTab; title: string; icon: IconName; tooltip: string }> = [
-  { tab: 'inspector', title: '属性', icon: 'inspector', tooltip: '属性检查器 (Ctrl+B)' },
-  { tab: 'tiers', title: '层级', icon: 'layers', tooltip: '层级列表与管理' },
-  { tab: 'settings', title: '设置', icon: 'gear', tooltip: '界面、版面与声学设置' },
-  { tab: 'customize', title: '自定义', icon: 'customize', tooltip: '自定义悬浮工具栏与快捷键 (Alt+4)' }
+  { tab: 'inspector', title: '属性', icon: 'inspector', tooltip: '属性检查器 (Alt+1)' },
+  { tab: 'tiers', title: '层级', icon: 'layers', tooltip: '层级列表与管理 (Alt+2)' },
+  { tab: 'history', title: '历史', icon: 'history', tooltip: '操作历史记录 (Alt+3)' },
+  { tab: 'settings', title: '设置', icon: 'gear', tooltip: '界面、版面与声学设置 (Alt+4)' },
+  { tab: 'customize', title: '自定义', icon: 'customize', tooltip: '自定义悬浮工具栏与快捷键 (Alt+5)' }
 ];
 
 export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
@@ -101,11 +45,13 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
     const tierCount = tg.tiers.length;
     const selection = useEditorStore((s) => s.selection);
     const playRange = useEditorStore((s) => s.playRange);
+    const history = useEditorStore((s) => s.history);
 
-    const hasQaIssues = useMemo(() => detectQuickQaIssues(tg), [tg]);
+    const hasQaIssues = useMemo(() => scanTextGridQa(tg).counts.total > 0, [tg]);
 
     const [resizing, setResizing] = useState(false);
     const inspectorRef = useRef<InspectorPanelHandle>(null);
+    const paneRef = useRef<HTMLDivElement>(null);
 
     useImperativeHandle(
       ref,
@@ -116,6 +62,14 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
         },
         flushDraft: () => {
           inspectorRef.current?.flushDraft();
+          const activeEl = document.activeElement as HTMLElement | null;
+          if (
+            activeEl &&
+            paneRef.current?.contains(activeEl) &&
+            (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')
+          ) {
+            activeEl.blur();
+          }
         }
       }),
       [sidebarOpen, sidebarTab]
@@ -167,6 +121,8 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
     let headBadge = '';
     if (sidebarTab === 'tiers') {
       headBadge = `${tierCount} 层`;
+    } else if (sidebarTab === 'history') {
+      headBadge = `${history.cursor + 1} / ${history.entries.length} 步`;
     } else if (sidebarTab === 'customize') {
       headBadge = '悬浮条 · 快捷键';
     } else if (sidebarTab === 'inspector') {
@@ -184,6 +140,7 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
         className={`right-sidebar ${sidebarOpen ? 'open' : 'collapsed'} ${resizing ? 'is-resizing resizing' : ''}`}
       >
         <div
+          ref={paneRef}
           className={`sidebar-pane ${resizing ? 'is-resizing' : ''}`}
           style={{ '--sidebar-w': `${sidebarWidth}px` } as React.CSSProperties}
           aria-label={`${activeItem.title}侧边面板`}
@@ -217,11 +174,12 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
               </button>
             </div>
 
-            <div className="sidebar-body">
+            <div className={`sidebar-body ${sidebarTab === 'history' ? 'is-full-height' : ''}`}>
               {sidebarTab === 'inspector' && (
                 <InspectorPanel ref={inspectorRef} onStartPlayback={onStartPlayback} />
               )}
               {sidebarTab === 'tiers' && <TiersPanel />}
+              {sidebarTab === 'history' && <HistoryPanel />}
               {sidebarTab === 'settings' && (
                 <SettingsPanel
                   onOpenAudioPicker={onOpenAudioPicker}

@@ -455,8 +455,8 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       },
       {
         id: 'sidebar-tabs',
-        keys: ['Alt+1', 'Alt+2', 'Alt+3', 'Alt+4'],
-        label: '直达右侧 属性 / 层级 / 设置 / 自定义 页',
+        keys: ['Alt+1', 'Alt+2', 'Alt+3', 'Alt+4', 'Alt+5'],
+        label: '直达右侧 属性 / 层级 / 历史 / 设置 / 自定义 页',
         icon: 'inspector',
         scope: 'all',
         rebindable: false

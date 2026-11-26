@@ -195,6 +195,7 @@ export interface ComputeLayoutOptions {
   fontScale?: number;
   hiddenTierIndices?: number[];
   isInteractive?: boolean;
+  floatingBarMode?: boolean;
   allowSingleCompress?: boolean;
   viewportHeight?: number;
   legendConfig?: {
@@ -297,6 +298,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     fontScale = 1,
     hiddenTierIndices,
     isInteractive = false,
+    floatingBarMode = false,
     allowSingleCompress = false,
     viewportHeight = 0,
     legendConfig = null
@@ -325,8 +327,10 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
   const WAVE_H = showSpec ? (isTinyView ? 20 : 24) : hasAudio ? 34 : 0;
   const LINEAR_NECK_H = 8;
   const TIER_GAP = 7;
-  const BAND_GAP =
+  const baseBandGap =
     marginPreset === 'tight' ? 20 : marginPreset === 'wide' ? 40 : isTinyView ? 24 : 32;
+  const BAND_GAP =
+    isInteractive && floatingBarMode ? Math.max(baseBandGap, 54) : baseBandGap;
   const MIN_COL_W = isTinyView ? 17 : 19;
   const SILENCE_THRESHOLD = 0.5;
   const SILENCE_COLLAPSE_W = isTinyView ? 46 : 52;

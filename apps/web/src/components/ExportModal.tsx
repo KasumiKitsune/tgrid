@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getPlatformBridge, isTauriRuntime } from '../bridge/PlatformBridge';
 import { useEditorStore } from '../store/useEditorStore';
+import { resolveF0RangeOverride } from '../utils/f0Range';
 import { getElementRectScale } from '../utils/uiScale';
 import {
   applyPresetToPrefs,
@@ -54,6 +55,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
   const cueMode = useEditorStore((s) => s.cueMode);
   const tierOrder = useEditorStore((s) => s.tierOrder);
   const maxFreq = useEditorStore((s) => s.maxFreq);
+  const f0RangeMode = useEditorStore((s) => s.f0RangeMode);
+  const f0RangeCustom = useEditorStore((s) => s.f0RangeCustom);
   const showToast = useEditorStore((s) => s.showToast);
 
   const [prefs, setPrefs] = useState<ExportPrefs>(() => loadExportPrefs());
@@ -184,7 +187,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
       showSpectrogram,
       cueMode,
       tierOrder,
-      maxFreq
+      maxFreq,
+      f0RangeOverride: resolveF0RangeOverride(f0RangeMode, f0RangeCustom)
     }),
     [
       tg,
@@ -205,7 +209,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
       showSpectrogram,
       cueMode,
       tierOrder,
-      maxFreq
+      maxFreq,
+      f0RangeMode,
+      f0RangeCustom
     ]
   );
 

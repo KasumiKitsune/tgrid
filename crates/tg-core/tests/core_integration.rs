@@ -637,4 +637,47 @@ item []:
         "5.55 - 5.545 must not false-positive as < 5ms micro-segment"
     );
     assert_eq!(diags[1].zero_duration_count, 1);
+    assert_eq!(
+        diags[1].gap_count, 2,
+        "T2 leading gap [1.16, 3.385] and trailing gap [5.55, 9.995] must both be counted"
+    );
+    assert_eq!(diags[1].overlap_count, 1);
+    assert!(diags[1].out_of_domain);
+    assert_eq!(diags[2].gap_count, 1, "empty IntervalTier [0, 10.56] must count as 1 gap");
+}
+
+#[test]
+fn test_scan_diagnostics_leading_trailing_and_empty_gaps() {
+    let tg = TextGrid {
+        name: "gaps".to_string(),
+        xmin: 0.0,
+        xmax: 4.0,
+        tiers: vec![
+            Tier {
+                kind: TierKind::IntervalTier,
+                name: "lead_mid_trail".to_string(),
+                xmin: 0.0,
+                xmax: 4.0,
+                intervals: vec![
+                    Interval { xmin: 0.5, xmax: 1.5, text: "a".into() },
+                    Interval { xmin: 2.0, xmax: 3.2, text: "b".into() },
+                ],
+                points: vec![],
+                display_num: None,
+            },
+            Tier {
+                kind: TierKind::IntervalTier,
+                name: "empty_tier".to_string(),
+                xmin: 0.0,
+                xmax: 4.0,
+                intervals: vec![],
+                points: vec![],
+                display_num: None,
+            },
+        ],
+    };
+
+    let diags = scan_diagnostics(&tg);
+    assert_eq!(diags[0].gap_count, 3, "expected leading + interior + trailing gap");
+    assert_eq!(diags[1].gap_count, 1, "expected 1 gap for uncovered empty IntervalTier");
 }

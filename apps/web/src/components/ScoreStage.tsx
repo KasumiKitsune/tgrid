@@ -51,10 +51,21 @@ import {
   stepCanvasScale
 } from '../utils/uiScale';
 import {
+  formatDeltaTime,
+  formatDurationLabel,
+  formatQuote,
+  formatTierLabel,
+  formatTimeSec,
+  formatTimeSpan
+} from '../store/historyModel';
+import {
   getBoundaryBoundsForTier,
   useEditorStore,
-  type FloatingBarTarget
+  type FloatingBarTarget,
+  type SidebarTab
 } from '../store/useEditorStore';
+import { resolveF0RangeOverride } from '../utils/f0Range';
+import { formatAlignMicroFeedback } from '../utils/qaDiagnostics';
 import type { TextGrid } from '../bridge/types';
 import { SubmenuChevronIcon, UiIcon, type IconName } from './Icons';
 import { ScrubNumberInput } from './ScrubNumberInput';
@@ -463,6 +474,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const cueMode = useEditorStore((s) => s.cueMode);
     const tierOrder = useEditorStore((s) => s.tierOrder);
     const maxFreq = useEditorStore((s) => s.maxFreq);
+    const f0RangeMode = useEditorStore((s) => s.f0RangeMode);
+    const f0RangeCustom = useEditorStore((s) => s.f0RangeCustom);
     const editInspectorMode = useEditorStore((s) => s.editInspectorMode);
     const showMicroLoupe = useEditorStore((s) => s.showMicroLoupe);
     const uiScale = useEditorStore((s) => s.uiScale);
@@ -505,6 +518,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const alignMicroBoundaries = useEditorStore((s) => s.alignMicroBoundaries);
     const moveTierBoundary = useEditorStore((s) => s.moveTierBoundary);
     const moveSharedTimestamp = useEditorStore((s) => s.moveSharedTimestamp);
+    const lastHistoryNav = useEditorStore((s) => s.lastHistoryNav);
     const showToast = useEditorStore((s) => s.showToast);
     const [splitEqualDialog, setSplitEqualDialog] = useState<SplitEqualDialogState | null>(null);
 
@@ -697,11 +711,14 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
     const handleInlineUnhandledKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (isComposingEvent(e)) return;
+      const isEnter = e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter';
       if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopPropagation();
         closeInlineRef.current(false);
       } else if (e.key === 'Tab') {
         e.preventDefault();
+        e.stopPropagation();
         const cur = inlineTargetRef.current;
         closeInlineRef.current(true);
         if (cur && (cur.kind === 'interval' || cur.kind === 'point' || cur.kind === 'tier-name')) {
@@ -717,12 +734,14 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         const shouldJump = e.altKey || e.ctrlKey || (e.key === 'ArrowUp' ? onFirstLine : onLastLine);
         if (shouldJump) {
           e.preventDefault();
+          e.stopPropagation();
           const cur = inlineTargetRef.current;
           closeInlineRef.current(true);
           if (cur) stepSelectionRef.current(e.key === 'ArrowUp' ? -1 : 1, 'y', true, cur);
         }
-      } else if (e.key === 'Enter' && !e.shiftKey) {
+      } else if (isEnter && !e.shiftKey) {
         e.preventDefault();
+        e.stopPropagation();
         closeInlineRef.current(true);
       }
     }, []);
@@ -848,6 +867,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         mode,
         hiddenTierIndices,
         isInteractive: true,
+        floatingBarMode: mode === 'edit' && editInspectorMode === 'floating',
         allowSingleCompress: wrapMode === 'single' && !widthAutoFit,
         viewportHeight: stageH
       });
@@ -869,6 +889,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       tickFixedDecimals,
       viewDomain,
       mode,
+      editInspectorMode,
       hiddenTierIndices
     ]);
 
@@ -1047,6 +1068,11 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       };
     }, [analysis, showSpectrogram, audioName, layout, maxFreq, uiScale, canvasScale]);
 
+    const f0RangeOverride = useMemo(
+      () => resolveF0RangeOverride(f0RangeMode, f0RangeCustom),
+      [f0RangeMode, f0RangeCustom]
+    );
+
     // Render full SVG whenever structural layout or spectrograms change
     useEffect(() => {
       const svg = svgRef.current;
@@ -1059,6 +1085,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         audioOffset,
         analysis,
         maxFreq,
+        f0RangeOverride,
         mode,
         selection,
         playRange,
@@ -1068,7 +1095,18 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         intervalDragPreview,
         screenSpecUrls: specUrls
       });
-    }, [tg, layout, audioName, audioBuffer, audioOffset, analysis, maxFreq, mode, specUrls]);
+    }, [
+      tg,
+      layout,
+      audioName,
+      audioBuffer,
+      audioOffset,
+      analysis,
+      maxFreq,
+      f0RangeOverride,
+      mode,
+      specUrls
+    ]);
 
     // Fast overlay-only updates for playhead, selection, and boundary/interval drag
     useEffect(() => {
@@ -1313,36 +1351,73 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             setTrigraphTick((n) => n + 1)
           );
           if (tgt.kind === 'interval') {
-            const cur = tg.tiers[tgt.tierIndex]?.intervals[tgt.itemIndex];
-            if (cur && cur.text !== finalVal) {
+            const tier = tg.tiers[tgt.tierIndex];
+            const cur = tier?.intervals[tgt.itemIndex];
+            if (tier && cur && cur.text !== finalVal) {
+              const tierName = formatTierLabel(tier.name, tgt.tierIndex);
+              const oldText = cur.text;
+              const focusT = cur.xmin;
               commitTgMutation(
-                (draft) => {
-                  draft.tiers[tgt.tierIndex].intervals[tgt.itemIndex].text = finalVal;
+                (_draft, ctx) => {
+                  const dTier = ctx.editTier(tgt.tierIndex);
+                  const target = dTier?.intervals[tgt.itemIndex];
+                  if (!target || target.text === finalVal) return false;
+                  target.text = finalVal;
                 },
                 undefined,
-                '编辑区间文本'
+                {
+                  type: 'edit-interval-text',
+                  title: '编辑区间文本',
+                  detail: `${tierName} · ${formatQuote(oldText)}→${formatQuote(finalVal)}`,
+                  icon: 'edit',
+                  tierName,
+                  focusTime: focusT
+                }
               );
             }
           } else if (tgt.kind === 'point') {
-            const cur = tg.tiers[tgt.tierIndex]?.points[tgt.itemIndex];
-            if (cur && cur.mark !== finalVal) {
+            const tier = tg.tiers[tgt.tierIndex];
+            const cur = tier?.points[tgt.itemIndex];
+            if (tier && cur && cur.mark !== finalVal) {
+              const tierName = formatTierLabel(tier.name, tgt.tierIndex);
+              const oldMark = cur.mark;
+              const ptTime = cur.number;
               commitTgMutation(
-                (draft) => {
-                  draft.tiers[tgt.tierIndex].points[tgt.itemIndex].mark = finalVal;
+                (_draft, ctx) => {
+                  const dTier = ctx.editTier(tgt.tierIndex);
+                  const target = dTier?.points[tgt.itemIndex];
+                  if (!target || target.mark === finalVal) return false;
+                  target.mark = finalVal;
                 },
                 undefined,
-                '编辑标点文本'
+                {
+                  type: 'edit-point-text',
+                  title: '编辑标点文本',
+                  detail: `${tierName} · ${formatTimeSec(ptTime)} ${formatQuote(oldMark)}→${formatQuote(finalVal)}`,
+                  icon: 'edit',
+                  tierName,
+                  focusTime: ptTime
+                }
               );
             }
           } else if (tgt.kind === 'tier-name') {
             const cur = tg.tiers[tgt.tierIndex];
             if (cur && cur.name !== finalVal) {
+              const prevName = cur.name;
               commitTgMutation(
-                (draft) => {
-                  draft.tiers[tgt.tierIndex].name = finalVal;
+                (_draft, ctx) => {
+                  const dTier = ctx.editTier(tgt.tierIndex);
+                  if (!dTier || dTier.name === finalVal) return false;
+                  dTier.name = finalVal;
                 },
                 undefined,
-                '重命名层级'
+                {
+                  type: 'rename-tier',
+                  title: '重命名层级',
+                  detail: `${formatQuote(prevName)}→${formatQuote(finalVal)}`,
+                  icon: 'edit',
+                  tierName: formatTierLabel(finalVal, tgt.tierIndex)
+                }
               );
             }
           }
@@ -1525,6 +1600,54 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       [layout]
     );
 
+    const scrollTimeIntoStageView = useCallback(
+      (t: number) => {
+        const stageEl = stageRef.current;
+        const sheetEl = sheetRef.current;
+        if (!stageEl || !sheetEl || !Number.isFinite(t) || layout.bands.length === 0) return;
+        const lastIdx = layout.bands.length - 1;
+        const band =
+          layout.bands.find(
+            (b, idx) => t >= b.startT - 1e-9 && (idx === lastIdx ? t <= b.endT + 1e-9 : t < b.endT)
+          ) ?? layout.bands[0];
+        if (!band) return;
+        const clampedT = Math.max(band.startT, Math.min(band.endT, t));
+        const x = elasticXInBand(band, clampedT);
+        const zStage = getElementRectScale(stageEl);
+        const zSheet = getElementRectScale(sheetEl);
+        const sheetRect = sheetEl.getBoundingClientRect();
+        const stageRect = stageEl.getBoundingClientRect();
+        const pxInStage = (sheetRect.left + x * zSheet - stageRect.left) / zStage;
+        const topInStage = (sheetRect.top + band.tiersTopY * zSheet - stageRect.top) / zStage;
+        const botInStage = (sheetRect.top + band.tiersBottomY * zSheet - stageRect.top) / zStage;
+        const padX = 48;
+        const padY = 36;
+        if (pxInStage < padX) {
+          stageEl.scrollLeft += pxInStage - padX;
+        } else if (pxInStage > stageEl.clientWidth - padX) {
+          stageEl.scrollLeft += pxInStage - (stageEl.clientWidth - padX);
+        }
+        if (topInStage < padY) {
+          stageEl.scrollTop += topInStage - padY;
+        } else if (botInStage > stageEl.clientHeight - padY) {
+          stageEl.scrollTop += botInStage - (stageEl.clientHeight - padY);
+        }
+      },
+      [layout]
+    );
+
+    const lastHandledHistorySeqRef = useRef(0);
+    useLayoutEffect(() => {
+      if (!lastHistoryNav || lastHistoryNav.tabId !== activeTabId) return;
+      if (lastHistoryNav.seq === lastHandledHistorySeqRef.current) return;
+      lastHandledHistorySeqRef.current = lastHistoryNav.seq;
+      if (lastHistoryNav.selection && getSelectionAnchorRect(layout, lastHistoryNav.selection)) {
+        scrollSelectionIntoStageView(lastHistoryNav.selection);
+      } else if (lastHistoryNav.focusTime !== undefined && Number.isFinite(lastHistoryNav.focusTime)) {
+        scrollTimeIntoStageView(lastHistoryNav.focusTime);
+      }
+    }, [lastHistoryNav, activeTabId, layout, scrollSelectionIntoStageView, scrollTimeIntoStageView]);
+
     const findBestVisibleItemInTier = useCallback(
       (tierIndex: number, refT: number): EditorSelection => {
         const tier = tg.tiers[tierIndex];
@@ -1595,26 +1718,52 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         if (!snapSel || (snapSel.kind !== 'interval' && snapSel.kind !== 'point')) return;
         const clip = rawClip.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
         const st = useEditorStore.getState();
+        const tier = st.tg.tiers[snapSel.tierIndex];
+        const tierName = formatTierLabel(tier?.name, snapSel.tierIndex);
         if (snapSel.kind === 'interval') {
-          const iv = st.tg.tiers[snapSel.tierIndex]?.intervals[snapSel.itemIndex];
+          const iv = tier?.intervals[snapSel.itemIndex];
           if (!iv) return;
-          commitTgMutation(
-            (d) => {
-              d.tiers[snapSel.tierIndex].intervals[snapSel.itemIndex].text = clip;
-            },
-            snapSel,
-            '粘贴区间文本'
-          );
+          if (iv.text !== clip) {
+            commitTgMutation(
+              (_d, ctx) => {
+                const dTier = ctx.editTier(snapSel.tierIndex);
+                const target = dTier?.intervals[snapSel.itemIndex];
+                if (!target || target.text === clip) return false;
+                target.text = clip;
+              },
+              snapSel,
+              {
+                type: 'paste-text',
+                title: '粘贴标注文本',
+                detail: `${tierName} · →${formatQuote(clip)}`,
+                icon: 'paste',
+                tierName,
+                focusTime: iv.xmin
+              }
+            );
+          }
         } else {
-          const pt = st.tg.tiers[snapSel.tierIndex]?.points[snapSel.itemIndex];
+          const pt = tier?.points[snapSel.itemIndex];
           if (!pt) return;
-          commitTgMutation(
-            (d) => {
-              d.tiers[snapSel.tierIndex].points[snapSel.itemIndex].mark = clip;
-            },
-            snapSel,
-            '粘贴标点文本'
-          );
+          if (pt.mark !== clip) {
+            commitTgMutation(
+              (_d, ctx) => {
+                const dTier = ctx.editTier(snapSel.tierIndex);
+                const target = dTier?.points[snapSel.itemIndex];
+                if (!target || target.mark === clip) return false;
+                target.mark = clip;
+              },
+              snapSel,
+              {
+                type: 'paste-text',
+                title: '粘贴标注文本',
+                detail: `${tierName} · →${formatQuote(clip)}`,
+                icon: 'paste',
+                tierName,
+                focusTime: pt.number
+              }
+            );
+          }
         }
         showToast('已粘贴文本');
       },
@@ -1735,22 +1884,32 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             return;
           }
           if (target.kind === 'boundary') {
-            if (moveTierBoundary(target.tierIndex, target.time, zt, false)) {
-              setSelection({
-                kind: 'boundary',
-                tierIndex: target.tierIndex,
-                time: zt,
-                bandIndex: target.bandIndex
-              });
+            if (
+              moveTierBoundary(target.tierIndex, target.time, zt, false, {
+                coalesce: false,
+                actionMeta: { type: 'snap-zero-crossing' },
+                nextSelection: {
+                  kind: 'boundary',
+                  tierIndex: target.tierIndex,
+                  time: zt,
+                  bandIndex: target.bandIndex
+                }
+              })
+            ) {
               showToast(`已吸附至过零点 (${formatPraatDouble(zt)} s)`);
             }
           } else {
-            if (moveSharedTimestamp(target.time, zt)) {
-              setSelection({
-                kind: 'spine',
-                time: zt,
-                bandIndex: target.bandIndex
-              });
+            if (
+              moveSharedTimestamp(target.time, zt, {
+                coalesce: false,
+                actionMeta: { type: 'snap-zero-crossing' },
+                nextSelection: {
+                  kind: 'spine',
+                  time: zt,
+                  bandIndex: target.bandIndex
+                }
+              })
+            ) {
               showToast(`已跨层吸附至过零点 (${formatPraatDouble(zt)} s)`);
             }
           }
@@ -2088,17 +2247,24 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           bandIndex: resolvedBandIdx
         };
 
+        const tierName = formatTierLabel(tier.name, ti);
         commitTgMutation(
-          (draft) => {
-            const dTier = draft.tiers[ti];
-            if (!dTier || dTier.kind !== 'intervalTier' || !dTier.intervals[ii]) return;
+          (_draft, ctx) => {
+            const dTier = ctx.editTier(ti);
+            if (!dTier || dTier.kind !== 'intervalTier' || !dTier.intervals[ii]) return false;
             dTier.intervals.splice(ii, 1, ...replacements);
+            ctx.setNextPlayRange({ start: t0, end: t1 });
           },
           nextSel,
-          label
+          {
+            type: 'create-interval',
+            title: label,
+            detail: `${tierName} · ${formatTimeSpan(t0, t1)} (${formatDurationLabel(t1 - t0)})`,
+            icon: 'createFromRange',
+            tierName,
+            focusTime: t0
+          }
         );
-
-        setPlayRange({ start: t0, end: t1 });
         if (!useEditorStore.getState().playing) {
           setPlaybackTime(t0, true);
         }
@@ -2280,22 +2446,20 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           const dir: -1 | 1 = e.key === 'ArrowLeft' ? -1 : 1;
           const stepSec = e.altKey ? 0.001 : 0.01;
           const newT = Number((selection.time + dir * stepSec).toFixed(6));
-          if (moveSharedTimestamp(selection.time, newT)) {
-            if (selection.kind === 'boundary') {
-              setSelection({
-                kind: 'boundary',
-                tierIndex: selection.tierIndex,
-                time: newT,
-                bandIndex: selection.bandIndex
-              });
-            } else {
-              setSelection({
-                kind: 'spine',
-                time: newT,
-                bandIndex: selection.bandIndex
-              });
-            }
-          }
+          const nextSel: EditorSelection =
+            selection.kind === 'boundary'
+              ? {
+                  kind: 'boundary',
+                  tierIndex: selection.tierIndex,
+                  time: newT,
+                  bandIndex: selection.bandIndex
+                }
+              : {
+                  kind: 'spine',
+                  time: newT,
+                  bandIndex: selection.bandIndex
+                };
+          moveSharedTimestamp(selection.time, newT, { nextSelection: nextSel });
           return;
         }
 
@@ -2343,32 +2507,58 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
           if (lower === 'x' && !e.shiftKey && mode === 'edit') {
             if (selection.kind === 'interval') {
-              const iv = tg.tiers[selection.tierIndex]?.intervals[selection.itemIndex];
+              const tier = tg.tiers[selection.tierIndex];
+              const tierName = formatTierLabel(tier?.name, selection.tierIndex);
+              const iv = tier?.intervals[selection.itemIndex];
               if (iv) {
                 e.preventDefault();
                 copyText(iv.text, '区间文本（已剪切）');
                 if (iv.text !== '') {
+                  const oldText = iv.text;
                   commitTgMutation(
-                    (d) => {
-                      d.tiers[selection.tierIndex].intervals[selection.itemIndex].text = '';
+                    (_d, ctx) => {
+                      const dTier = ctx.editTier(selection.tierIndex);
+                      const target = dTier?.intervals[selection.itemIndex];
+                      if (!target || target.text === '') return false;
+                      target.text = '';
                     },
                     selection,
-                    '剪切区间文本'
+                    {
+                      type: 'cut-text',
+                      title: '剪切标注文本',
+                      detail: `${tierName} · ${formatQuote(oldText)}`,
+                      icon: 'cut',
+                      tierName,
+                      focusTime: iv.xmin
+                    }
                   );
                 }
               }
             } else if (selection.kind === 'point') {
-              const pt = tg.tiers[selection.tierIndex]?.points[selection.itemIndex];
+              const tier = tg.tiers[selection.tierIndex];
+              const tierName = formatTierLabel(tier?.name, selection.tierIndex);
+              const pt = tier?.points[selection.itemIndex];
               if (pt) {
                 e.preventDefault();
                 copyText(pt.mark, '标点文本（已剪切）');
                 if (pt.mark !== '') {
+                  const oldMark = pt.mark;
                   commitTgMutation(
-                    (d) => {
-                      d.tiers[selection.tierIndex].points[selection.itemIndex].mark = '';
+                    (_d, ctx) => {
+                      const dTier = ctx.editTier(selection.tierIndex);
+                      const target = dTier?.points[selection.itemIndex];
+                      if (!target || target.mark === '') return false;
+                      target.mark = '';
                     },
                     selection,
-                    '剪切标点文本'
+                    {
+                      type: 'cut-text',
+                      title: '剪切标注文本',
+                      detail: `${tierName} · ${formatQuote(oldMark)}`,
+                      icon: 'cut',
+                      tierName,
+                      focusTime: pt.number
+                    }
                   );
                 }
               }
@@ -2745,22 +2935,34 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               return;
             }
             commitTgMutation(
-              (draft) => {
-                for (const t of draft.tiers) {
-                  if (t.kind !== 'intervalTier') continue;
-                  const idx = t.intervals.findIndex(
+              (draft, ctx) => {
+                let applied = 0;
+                for (let ti = 0; ti < draft.tiers.length; ti++) {
+                  const origTier = draft.tiers[ti];
+                  if (origTier.kind !== 'intervalTier') continue;
+                  const idx = origTier.intervals.findIndex(
                     (iv) => iv.xmin < splitT - 1e-6 && iv.xmax > splitT + 1e-6
                   );
                   if (idx !== -1) {
+                    const t = ctx.editTier(ti);
+                    if (!t || t.kind !== 'intervalTier') continue;
                     const iv = t.intervals[idx];
                     const right = { xmin: splitT, xmax: iv.xmax, text: '' };
                     iv.xmax = splitT;
                     t.intervals.splice(idx + 1, 0, right);
+                    applied++;
                   }
                 }
+                if (applied === 0) return false;
               },
               undefined,
-              '全部层播放头落边界'
+              {
+                type: 'split-all-tiers',
+                title: '全层落边界',
+                detail: `${splitCount} 个区间层 · ${formatTimeSec(splitT)}`,
+                icon: 'splitAllTiers',
+                focusTime: splitT
+              }
             );
             showToast(`已在 ${splitCount} 个区间层落边界 (${splitT.toFixed(3)} s)`);
             return;
@@ -2942,23 +3144,26 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         // Stop here for any other Mod+ shortcut (handled in App or browser)
         if (mod) return;
 
-        // Structural Alt+1..4 -> right sidebar tabs (inspector / tiers / settings / customize)
+        // Structural Alt+1..5 -> right sidebar tabs (inspector / tiers / history / settings / customize)
         if (e.altKey && !e.shiftKey) {
           if (
             e.code === 'Digit1' ||
             e.code === 'Digit2' ||
             e.code === 'Digit3' ||
-            e.code === 'Digit4'
+            e.code === 'Digit4' ||
+            e.code === 'Digit5'
           ) {
             e.preventDefault();
-            const tab =
+            const tab: SidebarTab =
               e.code === 'Digit1'
                 ? 'inspector'
                 : e.code === 'Digit2'
                   ? 'tiers'
                   : e.code === 'Digit3'
-                    ? 'settings'
-                    : 'customize';
+                    ? 'history'
+                    : e.code === 'Digit4'
+                      ? 'settings'
+                      : 'customize';
             setSidebarTab(tab);
             setSidebarOpen(true);
             return;
@@ -2979,52 +3184,74 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             const stepSec = e.altKey ? 0.001 : 0.01;
             if (selection.kind === 'boundary') {
               const newT = Number((selection.time + dir * stepSec).toFixed(6));
-              if (moveTierBoundary(selection.tierIndex, selection.time, newT, false)) {
-                setSelection({
+              moveTierBoundary(selection.tierIndex, selection.time, newT, false, {
+                nextSelection: {
                   kind: 'boundary',
                   tierIndex: selection.tierIndex,
                   time: newT,
                   bandIndex: selection.bandIndex
-                });
-              }
+                }
+              });
             } else if (selection.kind === 'spine') {
               const newT = Number((selection.time + dir * stepSec).toFixed(6));
-              if (moveSharedTimestamp(selection.time, newT)) {
-                setSelection({
+              moveSharedTimestamp(selection.time, newT, {
+                nextSelection: {
                   kind: 'spine',
                   time: newT,
                   bandIndex: selection.bandIndex
-                });
-              }
+                }
+              });
             } else {
-              const tier = tg.tiers[selection.tierIndex];
-              const pt = tier?.points[selection.itemIndex];
+              const ti = selection.tierIndex;
+              const pi = selection.itemIndex;
+              const tier = tg.tiers[ti];
+              const pt = tier?.points[pi];
               if (tier && pt) {
+                const oldT = pt.number;
                 const newT = Number(
-                  Math.max(tier.xmin, Math.min(tier.xmax, pt.number + dir * stepSec)).toFixed(6)
+                  Math.max(tier.xmin, Math.min(tier.xmax, oldT + dir * stepSec)).toFixed(6)
                 );
-                if (tier.points.some((p, i) => i !== selection.itemIndex && p.number === newT)) {
+                if (tier.points.some((p, i) => i !== pi && p.number === newT)) {
                   showToast('目标时刻已存在标点', true);
-                } else if (Math.abs(newT - pt.number) > 1e-9) {
-                  let newIdx = selection.itemIndex;
+                } else if (Math.abs(newT - oldT) > 1e-9) {
+                  const tierName = formatTierLabel(tier.name, ti);
                   commitTgMutation(
-                    (draft) => {
-                      const dTier = draft.tiers[selection.tierIndex];
-                      const targetPt = dTier.points[selection.itemIndex];
-                      if (!targetPt) return;
+                    (_draft, ctx) => {
+                      const dTier = ctx.editTier(ti);
+                      if (!dTier || dTier.kind !== 'textTier') return false;
+                      const targetPt = dTier.points[pi];
+                      if (!targetPt) return false;
                       targetPt.number = newT;
                       dTier.points.sort((a, b) => a.number - b.number);
-                      newIdx = dTier.points.indexOf(targetPt);
+                      const newIdx = dTier.points.indexOf(targetPt);
+                      ctx.setNextSelection({
+                        kind: 'point',
+                        tierIndex: ti,
+                        itemIndex: Math.max(0, newIdx),
+                        bandIndex: selection.bandIndex
+                      });
                     },
                     undefined,
-                    '微调标点'
+                    {
+                      type: 'move-point',
+                      title: '移动标注点',
+                      detail: `${tierName} · ${formatTimeSec(oldT)} → ${formatTimeSec(newT)} (${formatDeltaTime(newT - oldT)})`,
+                      icon: 'nudgeFine',
+                      tierName,
+                      focusTime: newT,
+                      coalesce: {
+                        key: `move-point:${ti}`,
+                        originValue: oldT,
+                        latestValue: newT,
+                        chainPrevLatest: oldT,
+                        formatMergedDetail: (orig, latest, count) => {
+                          const o = Number(orig);
+                          const l = Number(latest);
+                          return `${tierName} · ${formatTimeSec(o)} → ${formatTimeSec(l)} (${formatDeltaTime(l - o)}${count > 1 ? ` · ${count}次` : ''})`;
+                        }
+                      }
+                    }
                   );
-                  setSelection({
-                    kind: 'point',
-                    tierIndex: selection.tierIndex,
-                    itemIndex: Math.max(0, newIdx),
-                    bandIndex: selection.bandIndex
-                  });
                 }
               }
             }
@@ -3124,6 +3351,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             const iv = tier?.intervals[ii];
             if (!tier || !iv) return;
 
+            const tierName = formatTierLabel(tier.name, ti);
             // Zero-duration interval
             if (iv.xmax <= iv.xmin) {
               const remLen = tier.intervals.length - 1;
@@ -3138,24 +3366,44 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                   ? { kind: 'interval', tierIndex: ti, itemIndex: nextIdx, bandIndex: selection.bandIndex }
                   : null;
               commitTgMutation(
-                (draft) => {
-                  draft.tiers[ti].intervals.splice(ii, 1);
+                (_draft, ctx) => {
+                  const dTier = ctx.editTier(ti);
+                  if (!dTier || !dTier.intervals[ii]) return false;
+                  dTier.intervals.splice(ii, 1);
                 },
                 nextSel,
-                '删除零时长区间'
+                {
+                  type: 'delete-zero-interval',
+                  title: '删除零时长区间',
+                  detail: `${tierName} · ${formatTimeSec(iv.xmin)}`,
+                  icon: 'trash',
+                  tierName,
+                  focusTime: iv.xmin
+                }
               );
               return;
             }
 
             // Non-empty interval
             if (iv.text !== '') {
+              const oldText = iv.text;
               if (!e.shiftKey) {
                 commitTgMutation(
-                  (draft) => {
-                    draft.tiers[ti].intervals[ii].text = '';
+                  (_draft, ctx) => {
+                    const dTier = ctx.editTier(ti);
+                    const target = dTier?.intervals[ii];
+                    if (!target || target.text === '') return false;
+                    target.text = '';
                   },
                   selection,
-                  '清空区间文本'
+                  {
+                    type: 'clear-interval-text',
+                    title: '清空区间文本',
+                    detail: `${tierName} · 原${formatQuote(oldText)}`,
+                    icon: 'clear',
+                    tierName,
+                    focusTime: iv.xmin
+                  }
                 );
                 showToast(
                   isBackspace
@@ -3168,11 +3416,21 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               if (isBackspace) {
                 if (ii === 0) {
                   commitTgMutation(
-                    (draft) => {
-                      draft.tiers[ti].intervals[ii].text = '';
+                    (_draft, ctx) => {
+                      const dTier = ctx.editTier(ti);
+                      const target = dTier?.intervals[ii];
+                      if (!target || target.text === '') return false;
+                      target.text = '';
                     },
                     selection,
-                    '清空区间文本'
+                    {
+                      type: 'clear-interval-text',
+                      title: '清空区间文本',
+                      detail: `${tierName} · 原${formatQuote(oldText)}`,
+                      icon: 'clear',
+                      tierName,
+                      focusTime: iv.xmin
+                    }
                   );
                   showToast('首格无左边界可移除');
                   return;
@@ -3184,40 +3442,68 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                   bandIndex: selection.bandIndex
                 };
                 commitTgMutation(
-                  (draft) => {
-                    const dTier = draft.tiers[ti];
+                  (_draft, ctx) => {
+                    const dTier = ctx.editTier(ti);
+                    if (!dTier) return false;
                     const prev = dTier.intervals[ii - 1];
                     const cur = dTier.intervals[ii];
+                    if (!prev || !cur) return false;
                     prev.xmax = cur.xmax;
                     dTier.intervals.splice(ii, 1);
                   },
                   nextSel,
-                  '清除并移除左边界'
+                  {
+                    type: 'clear-and-remove-edge',
+                    title: '清除并移除左界',
+                    detail: `${tierName} · 原${formatQuote(oldText)}`,
+                    icon: 'trash',
+                    tierName,
+                    focusTime: iv.xmin
+                  }
                 );
                 return;
               }
               if (ii >= tier.intervals.length - 1) {
                 commitTgMutation(
-                  (draft) => {
-                    draft.tiers[ti].intervals[ii].text = '';
+                  (_draft, ctx) => {
+                    const dTier = ctx.editTier(ti);
+                    const target = dTier?.intervals[ii];
+                    if (!target || target.text === '') return false;
+                    target.text = '';
                   },
                   selection,
-                  '清空区间文本'
+                  {
+                    type: 'clear-interval-text',
+                    title: '清空区间文本',
+                    detail: `${tierName} · 原${formatQuote(oldText)}`,
+                    icon: 'clear',
+                    tierName,
+                    focusTime: iv.xmin
+                  }
                 );
                 showToast('末格无右边界可移除');
                 return;
               }
               commitTgMutation(
-                (draft) => {
-                  const dTier = draft.tiers[ti];
+                (_draft, ctx) => {
+                  const dTier = ctx.editTier(ti);
+                  if (!dTier) return false;
                   const cur = dTier.intervals[ii];
                   const next = dTier.intervals[ii + 1];
+                  if (!cur || !next) return false;
                   cur.xmax = next.xmax;
                   cur.text = next.text;
                   dTier.intervals.splice(ii + 1, 1);
                 },
                 selection,
-                '清除并移除右边界'
+                {
+                  type: 'clear-and-remove-edge',
+                  title: '清除并移除右界',
+                  detail: `${tierName} · 原${formatQuote(oldText)}`,
+                  icon: 'trash',
+                  tierName,
+                  focusTime: iv.xmax
+                }
               );
               return;
             }
@@ -3254,14 +3540,26 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             const tier = tg.tiers[ti];
             const pt = tier?.points[pi];
             if (!tier || !pt) return;
+            const tierName = formatTierLabel(tier.name, ti);
             if (e.shiftKey && isBackspace) {
               if (pt.mark !== '') {
+                const oldMark = pt.mark;
                 commitTgMutation(
-                  (draft) => {
-                    draft.tiers[ti].points[pi].mark = '';
+                  (_draft, ctx) => {
+                    const dTier = ctx.editTier(ti);
+                    const target = dTier?.points[pi];
+                    if (!target || target.mark === '') return false;
+                    target.mark = '';
                   },
                   selection,
-                  '清空标点文本'
+                  {
+                    type: 'clear-point-text',
+                    title: '清空标点文本',
+                    detail: `${tierName} · ${formatTimeSec(pt.number)} 原${formatQuote(oldMark)}`,
+                    icon: 'clear',
+                    tierName,
+                    focusTime: pt.number
+                  }
                 );
               }
               return;
@@ -3273,12 +3571,23 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               nextIdx >= 0
                 ? { kind: 'point', tierIndex: ti, itemIndex: nextIdx, bandIndex: selection.bandIndex }
                 : null;
+            const ptTime = pt.number;
+            const ptMark = pt.mark;
             commitTgMutation(
-              (draft) => {
-                draft.tiers[ti].points.splice(pi, 1);
+              (_draft, ctx) => {
+                const dTier = ctx.editTier(ti);
+                if (!dTier || !dTier.points[pi]) return false;
+                dTier.points.splice(pi, 1);
               },
               nextSel,
-              '删除标点'
+              {
+                type: 'delete-point',
+                title: '删除标注点',
+                detail: `${tierName} · ${formatTimeSec(ptTime)} ${formatQuote(ptMark)}`,
+                icon: 'trash',
+                tierName,
+                focusTime: ptTime
+              }
             );
             return;
           }
@@ -4130,9 +4439,17 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         setLoupeAnchor(null);
         if (commit && Math.abs(latestTime - origTime) > 1e-9) {
           captureDragAnchor(latestBand, latestBandIdx, latestTime);
-          if (moveTierBoundary(ti, origTime, latestTime, shared)) {
-            setSelection({ kind: 'boundary', tierIndex: ti, time: latestTime, bandIndex: latestBandIdx });
-          } else {
+          if (
+            !moveTierBoundary(ti, origTime, latestTime, shared, {
+              coalesce: false,
+              nextSelection: {
+                kind: 'boundary',
+                tierIndex: ti,
+                time: latestTime,
+                bandIndex: latestBandIdx
+              }
+            })
+          ) {
             pendingDragAnchorRef.current = null;
           }
         } else if (commit) {
@@ -4388,25 +4705,34 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               return;
             }
             captureDragAnchor(latestBand, latestBandIdx, latestTime);
-            let nextIdx = pi;
+            const tierName = formatTierLabel(tier.name, ti);
+            const oldT = origPt.number;
             commitTgMutation(
-              (draft) => {
-                const dTier = draft.tiers[ti];
+              (_draft, ctx) => {
+                const dTier = ctx.editTier(ti);
+                if (!dTier || dTier.kind !== 'textTier') return false;
                 const p = dTier.points[pi];
-                if (!p) return;
+                if (!p) return false;
                 p.number = latestTime;
                 dTier.points.sort((a, b) => a.number - b.number);
-                nextIdx = dTier.points.indexOf(p);
+                const nextIdx = dTier.points.indexOf(p);
+                ctx.setNextSelection({
+                  kind: 'point',
+                  tierIndex: ti,
+                  itemIndex: Math.max(0, nextIdx),
+                  bandIndex: latestBandIdx
+                });
               },
               undefined,
-              '移动标点'
+              {
+                type: 'move-point',
+                title: '移动标注点',
+                detail: `${tierName} · ${formatTimeSec(oldT)} → ${formatTimeSec(latestTime)} (${formatDeltaTime(latestTime - oldT)})`,
+                icon: 'nudgeFine',
+                tierName,
+                focusTime: latestTime
+              }
             );
-            setSelection({
-              kind: 'point',
-              tierIndex: ti,
-              itemIndex: Math.max(0, nextIdx),
-              bandIndex: latestBandIdx
-            });
           }
         };
         const onUp = () => cleanup(true);
@@ -5050,12 +5376,14 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               itemIndex: dropPrev ? Math.max(0, ii - 1) : ii,
               bandIndex: latestBandIdx
             };
+            const tierName = formatTierLabel(tier.name, ti);
+            const textHint = iv.text ? formatQuote(iv.text, 8) : '';
             commitTgMutation(
-              (draft) => {
-                const draftTier = draft.tiers[ti];
-                if (!draftTier || draftTier.kind !== 'intervalTier') return;
+              (_draft, ctx) => {
+                const draftTier = ctx.editTier(ti);
+                if (!draftTier || draftTier.kind !== 'intervalTier') return false;
                 const targetIv = draftTier.intervals[ii];
-                if (!targetIv) return;
+                if (!targetIv) return false;
                 targetIv.xmin = finalXmin;
                 targetIv.xmax = finalXmax;
                 if (dropNext) {
@@ -5068,11 +5396,18 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                 } else if (prevIv && draftTier.intervals[ii - 1]) {
                   draftTier.intervals[ii - 1].xmax = finalXmin;
                 }
+                ctx.setNextPlayRange({ start: finalXmin, end: finalXmax });
               },
               nextSel,
-              '平移区间'
+              {
+                type: 'slide-interval',
+                title: '平移区间',
+                detail: `${tierName}${textHint} · ${formatDeltaTime(finalXmin - iv.xmin)}`,
+                icon: 'navHorizontal',
+                tierName,
+                focusTime: finalXmin
+              }
             );
-            setPlayRange({ start: finalXmin, end: finalXmax });
             if (!useEditorStore.getState().playing) {
               setPlaybackTime(finalXmin, true);
             }
@@ -5554,14 +5889,27 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                   icon: 'clear',
                   shortcut: 'Del',
                   disabled: iv.text === '',
-                  action: () =>
+                  action: () => {
+                    const tierName = formatTierLabel(tier.name, ti);
+                    const oldText = iv.text;
                     commitTgMutation(
-                      (d) => {
-                        d.tiers[ti].intervals[ii].text = '';
+                      (_d, ctx) => {
+                        const dTier = ctx.editTier(ti);
+                        const target = dTier?.intervals[ii];
+                        if (!target || target.text === '') return false;
+                        target.text = '';
                       },
                       { kind: 'interval', tierIndex: ti, itemIndex: ii, bandIndex: bandIdx },
-                      '清空区间文本'
-                    )
+                      {
+                        type: 'clear-interval-text',
+                        title: '清空区间文本',
+                        detail: `${tierName} · 原${formatQuote(oldText)}`,
+                        icon: 'clear',
+                        tierName,
+                        focusTime: iv.xmin
+                      }
+                    );
+                  }
                 },
                 { divider: true }
               );
@@ -5639,14 +5987,27 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                   icon: 'trash',
                   shortcut: 'Del',
                   danger: true,
-                  action: () =>
+                  action: () => {
+                    const tierName = formatTierLabel(tg.tiers[ti]?.name, ti);
+                    const ptTime = p.number;
+                    const ptMark = p.mark;
                     commitTgMutation(
-                      (d) => {
-                        d.tiers[ti].points.splice(pi, 1);
+                      (_d, ctx) => {
+                        const dTier = ctx.editTier(ti);
+                        if (!dTier || !dTier.points[pi]) return false;
+                        dTier.points.splice(pi, 1);
                       },
                       null,
-                      '删除标点'
-                    )
+                      {
+                        type: 'delete-point',
+                        title: '删除标注点',
+                        detail: `${tierName} · ${formatTimeSec(ptTime)} ${formatQuote(ptMark)}`,
+                        icon: 'trash',
+                        tierName,
+                        focusTime: ptTime
+                      }
+                    );
+                  }
                 }
               );
             } else {
@@ -5838,8 +6199,9 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                 label: '对齐微偏边界 (< 5 ms)',
                 icon: 'normalize',
                 action: () => {
-                  const n = alignMicroBoundaries(ti, 0.005);
-                  showToast(n > 0 ? `已对齐 ${n} 处微偏边界` : '未发现 < 5 ms 的微偏边界');
+                  const res = alignMicroBoundaries(ti, 0.005);
+                  const fb = formatAlignMicroFeedback(res, tier.name || `第 ${ti + 1} 层`);
+                  showToast(fb.message, fb.isError);
                 }
               },
               { divider: true },
@@ -5967,18 +6329,42 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                           return false;
                         }
                         if (val !== iv.xmin) {
+                          const ti = selection.tierIndex;
+                          const ii = selection.itemIndex;
+                          const tierName = formatTierLabel(tier.name, ti);
+                          const oldVal = iv.xmin;
                           commitTgMutation(
-                            (draft) => {
-                              const dTier = draft.tiers[selection.tierIndex];
-                              const dPrev = dTier.intervals[selection.itemIndex - 1];
-                              const cur = dTier.intervals[selection.itemIndex];
+                            (_draft, ctx) => {
+                              const dTier = ctx.editTier(ti);
+                              if (!dTier || dTier.kind !== 'intervalTier') return false;
+                              const dPrev = dTier.intervals[ii - 1];
+                              const cur = dTier.intervals[ii];
+                              if (!cur) return false;
                               if (dPrev && dPrev.xmax === cur.xmin && val > dPrev.xmin) dPrev.xmax = val;
                               cur.xmin = val;
+                              ctx.setNextPlayRange({ start: val, end: cur.xmax });
                             },
                             undefined,
-                            '修改区间起点'
+                            {
+                              type: 'edit-interval-edge',
+                              title: '调整区间起点',
+                              detail: `${tierName} · 起点 ${formatTimeSec(oldVal)} → ${formatTimeSec(val)} (${formatDeltaTime(val - oldVal)})`,
+                              icon: 'nudgeFine',
+                              tierName,
+                              focusTime: val,
+                              coalesce: {
+                                key: `edge:${ti}:${ii}:start`,
+                                originValue: oldVal,
+                                latestValue: val,
+                                chainPrevLatest: oldVal,
+                                formatMergedDetail: (orig, latest, count) => {
+                                  const o = Number(orig);
+                                  const l = Number(latest);
+                                  return `${tierName} · 起点 ${formatTimeSec(o)} → ${formatTimeSec(l)} (${formatDeltaTime(l - o)}${count > 1 ? ` · ${count}次` : ''})`;
+                                }
+                              }
+                            }
                           );
-                          setPlayRange({ start: val, end: iv.xmax });
                         }
                         return true;
                       }}
@@ -6006,18 +6392,42 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                           return false;
                         }
                         if (val !== iv.xmax) {
+                          const ti = selection.tierIndex;
+                          const ii = selection.itemIndex;
+                          const tierName = formatTierLabel(tier.name, ti);
+                          const oldVal = iv.xmax;
                           commitTgMutation(
-                            (draft) => {
-                              const dTier = draft.tiers[selection.tierIndex];
-                              const dNext = dTier.intervals[selection.itemIndex + 1];
-                              const cur = dTier.intervals[selection.itemIndex];
+                            (_draft, ctx) => {
+                              const dTier = ctx.editTier(ti);
+                              if (!dTier || dTier.kind !== 'intervalTier') return false;
+                              const dNext = dTier.intervals[ii + 1];
+                              const cur = dTier.intervals[ii];
+                              if (!cur) return false;
                               if (dNext && dNext.xmin === cur.xmax && val < dNext.xmax) dNext.xmin = val;
                               cur.xmax = val;
+                              ctx.setNextPlayRange({ start: cur.xmin, end: val });
                             },
                             undefined,
-                            '修改区间终点'
+                            {
+                              type: 'edit-interval-edge',
+                              title: '调整区间终点',
+                              detail: `${tierName} · 终点 ${formatTimeSec(oldVal)} → ${formatTimeSec(val)} (${formatDeltaTime(val - oldVal)})`,
+                              icon: 'nudgeFine',
+                              tierName,
+                              focusTime: val,
+                              coalesce: {
+                                key: `edge:${ti}:${ii}:end`,
+                                originValue: oldVal,
+                                latestValue: val,
+                                chainPrevLatest: oldVal,
+                                formatMergedDetail: (orig, latest, count) => {
+                                  const o = Number(orig);
+                                  const l = Number(latest);
+                                  return `${tierName} · 终点 ${formatTimeSec(o)} → ${formatTimeSec(l)} (${formatDeltaTime(l - o)}${count > 1 ? ` · ${count}次` : ''})`;
+                                }
+                              }
+                            }
                           );
-                          setPlayRange({ start: iv.xmin, end: val });
                         }
                         return true;
                       }}
@@ -6064,15 +6474,29 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                     <button
                       type="button"
                       className="compact"
-                      onClick={() =>
+                      onClick={() => {
+                        const ti = selection.tierIndex;
+                        const ii = selection.itemIndex;
+                        const tierName = formatTierLabel(tier.name, ti);
+                        const oldText = iv.text;
                         commitTgMutation(
-                          (d) => {
-                            d.tiers[selection.tierIndex].intervals[selection.itemIndex].text = '';
+                          (_d, ctx) => {
+                            const dTier = ctx.editTier(ti);
+                            const target = dTier?.intervals[ii];
+                            if (!target || target.text === '') return false;
+                            target.text = '';
                           },
                           selection,
-                          '清空区间文本'
-                        )
-                      }
+                          {
+                            type: 'clear-interval-text',
+                            title: '清空区间文本',
+                            detail: `${tierName} · 原${formatQuote(oldText)}`,
+                            icon: 'clear',
+                            tierName,
+                            focusTime: iv.xmin
+                          }
+                        );
+                      }}
                     >
                       <UiIcon name="clear" size={13} />
                       <span>清空</span>
@@ -6260,25 +6684,47 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                         return false;
                       }
                       if (val !== pt.number) {
-                        let nextIdx = selection.itemIndex;
+                        const ti = selection.tierIndex;
+                        const pi = selection.itemIndex;
+                        const tierName = formatTierLabel(tier.name, ti);
+                        const oldT = pt.number;
                         commitTgMutation(
-                          (draft) => {
-                            const dTier = draft.tiers[selection.tierIndex];
-                            const targetPt = dTier.points[selection.itemIndex];
-                            if (!targetPt) return;
+                          (_draft, ctx) => {
+                            const dTier = ctx.editTier(ti);
+                            if (!dTier || dTier.kind !== 'textTier') return false;
+                            const targetPt = dTier.points[pi];
+                            if (!targetPt) return false;
                             targetPt.number = val;
                             dTier.points.sort((a, b) => a.number - b.number);
-                            nextIdx = dTier.points.indexOf(targetPt);
+                            const nextIdx = dTier.points.indexOf(targetPt);
+                            ctx.setNextSelection({
+                              kind: 'point',
+                              tierIndex: ti,
+                              itemIndex: Math.max(0, nextIdx),
+                              bandIndex: selection.bandIndex
+                            });
                           },
                           undefined,
-                          '修改标点时间'
+                          {
+                            type: 'move-point',
+                            title: '移动标注点',
+                            detail: `${tierName} · ${formatTimeSec(oldT)} → ${formatTimeSec(val)} (${formatDeltaTime(val - oldT)})`,
+                            icon: 'nudgeFine',
+                            tierName,
+                            focusTime: val,
+                            coalesce: {
+                              key: `move-point:${ti}`,
+                              originValue: oldT,
+                              latestValue: val,
+                              chainPrevLatest: oldT,
+                              formatMergedDetail: (orig, latest, count) => {
+                                const o = Number(orig);
+                                const l = Number(latest);
+                                return `${tierName} · ${formatTimeSec(o)} → ${formatTimeSec(l)} (${formatDeltaTime(l - o)}${count > 1 ? ` · ${count}次` : ''})`;
+                              }
+                            }
+                          }
                         );
-                        setSelection({
-                          kind: 'point',
-                          tierIndex: selection.tierIndex,
-                          itemIndex: Math.max(0, nextIdx),
-                          bandIndex: selection.bandIndex
-                        });
                       }
                       return true;
                     }}
@@ -6342,15 +6788,29 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                   <button
                     type="button"
                     className="compact danger"
-                    onClick={() =>
+                    onClick={() => {
+                      const ti = selection.tierIndex;
+                      const pi = selection.itemIndex;
+                      const tierName = formatTierLabel(tier.name, ti);
+                      const ptTime = pt.number;
+                      const ptMark = pt.mark;
                       commitTgMutation(
-                        (draft) => {
-                          draft.tiers[selection.tierIndex].points.splice(selection.itemIndex, 1);
+                        (_draft, ctx) => {
+                          const dTier = ctx.editTier(ti);
+                          if (!dTier || !dTier.points[pi]) return false;
+                          dTier.points.splice(pi, 1);
                         },
                         null,
-                        '删除标点'
-                      )
-                    }
+                        {
+                          type: 'delete-point',
+                          title: '删除标注点',
+                          detail: `${tierName} · ${formatTimeSec(ptTime)} ${formatQuote(ptMark)}`,
+                          icon: 'trash',
+                          tierName,
+                          focusTime: ptTime
+                        }
+                      );
+                    }}
                   >
                     <UiIcon name="trash" size={13} />
                     <span>删除</span>
@@ -6391,18 +6851,16 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                       showScrubPreviewLine(previewT, selection.tierIndex, false)
                     }
                     onScrubEnd={clearScrubPreview}
-                    onCommit={(val) => {
-                      if (moveTierBoundary(selection.tierIndex, selection.time, val, false)) {
-                        setSelection({
+                    onCommit={(val) =>
+                      moveTierBoundary(selection.tierIndex, selection.time, val, false, {
+                        nextSelection: {
                           kind: 'boundary',
                           tierIndex: selection.tierIndex,
                           time: val,
                           bandIndex: selection.bandIndex
-                        });
-                        return true;
-                      }
-                      return false;
-                    }}
+                        }
+                      })
+                    }
                   />
                 )
               });
@@ -6478,13 +6936,15 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               formatValue={formatPraatDouble}
               onScrubPreview={(previewT) => showScrubPreviewLine(previewT, 0, true)}
               onScrubEnd={clearScrubPreview}
-              onCommit={(val) => {
-                if (moveSharedTimestamp(selection.time, val)) {
-                  setSelection({ kind: 'spine', time: val, bandIndex: selection.bandIndex });
-                  return true;
-                }
-                return false;
-              }}
+              onCommit={(val) =>
+                moveSharedTimestamp(selection.time, val, {
+                  nextSelection: {
+                    kind: 'spine',
+                    time: val,
+                    bandIndex: selection.bandIndex
+                  }
+                })
+              }
             />
             {showSpineZero && (
               <>
@@ -6527,12 +6987,23 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                       onKeyDown={blurOnEnter}
                       onBlur={(e) => {
                         if (e.target.value !== tier.name) {
+                          const ti = selection.tierIndex;
+                          const prevName = tier.name;
+                          const nextName = e.target.value;
                           commitTgMutation(
-                            (d) => {
-                              d.tiers[selection.tierIndex].name = e.target.value;
+                            (_d, ctx) => {
+                              const dTier = ctx.editTier(ti);
+                              if (!dTier || dTier.name === nextName) return false;
+                              dTier.name = nextName;
                             },
                             undefined,
-                            '重命名层级'
+                            {
+                              type: 'rename-tier',
+                              title: '重命名层级',
+                              detail: `${formatQuote(prevName)}→${formatQuote(nextName)}`,
+                              icon: 'edit',
+                              tierName: formatTierLabel(nextName, ti)
+                            }
                           );
                         }
                       }}
@@ -6559,12 +7030,24 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                           return false;
                         }
                         if (val !== tier.xmin) {
+                          const ti = selection.tierIndex;
+                          const tierName = formatTierLabel(tier.name, ti);
+                          const oldV = tier.xmin;
                           commitTgMutation(
-                            (d) => {
-                              d.tiers[selection.tierIndex].xmin = val;
+                            (_d, ctx) => {
+                              const dTier = ctx.editTier(ti);
+                              if (!dTier || dTier.xmin === val) return false;
+                              dTier.xmin = val;
                             },
                             undefined,
-                            '修改层起点'
+                            {
+                              type: 'edit-tier-bounds',
+                              title: '修改层起点',
+                              detail: `${formatQuote(tierName)} · ${formatTimeSec(oldV)} → ${formatTimeSec(val)}`,
+                              icon: 'copyTime',
+                              tierName,
+                              focusTime: val
+                            }
                           );
                         }
                         return true;
@@ -6583,12 +7066,24 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                           return false;
                         }
                         if (val !== tier.xmax) {
+                          const ti = selection.tierIndex;
+                          const tierName = formatTierLabel(tier.name, ti);
+                          const oldV = tier.xmax;
                           commitTgMutation(
-                            (d) => {
-                              d.tiers[selection.tierIndex].xmax = val;
+                            (_d, ctx) => {
+                              const dTier = ctx.editTier(ti);
+                              if (!dTier || dTier.xmax === val) return false;
+                              dTier.xmax = val;
                             },
                             undefined,
-                            '修改层终点'
+                            {
+                              type: 'edit-tier-bounds',
+                              title: '修改层终点',
+                              detail: `${formatQuote(tierName)} · ${formatTimeSec(oldV)} → ${formatTimeSec(val)}`,
+                              icon: 'copyTime',
+                              tierName,
+                              focusTime: val
+                            }
                           );
                         }
                         return true;
@@ -6690,11 +7185,33 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         }
         const left = Math.max(minLeft, Math.min(maxLeft, anchorRect.x + anchorRect.w / 2 - barW / 2));
 
-        // Vertical: anchor OUTSIDE the entire owning band so adjacent tiers inside the band are NEVER occluded.
-        const belowTop = anchorBand.tiersBottomY + gap;
-        const aboveTop = anchorBand.linearY - barH - gap;
+        // Vertical: avoid own tiers, own waveform/spectrogram, and adjacent bands' waveform/tier boundaries.
+        const prevBand = anchorBand.bandIndex > 0 ? layout.bands[anchorBand.bandIndex - 1] : null;
+        const nextBand =
+          anchorBand.bandIndex + 1 < layout.bands.length
+            ? layout.bands[anchorBand.bandIndex + 1]
+            : null;
+        const compactGap = 6;
+        const belowTop = anchorBand.tiersBottomY + compactGap;
+        const aboveTop = anchorBand.linearY - barH - compactGap;
 
-        let top = belowTop;
+        const overlapLen = (a0: number, a1: number, b0: number, b1: number) =>
+          Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+
+        const rectsOverlap = (
+          ax0: number,
+          ay0: number,
+          ax1: number,
+          ay1: number,
+          bx0: number,
+          by0: number,
+          bx1: number,
+          by1: number
+        ) => overlapLen(ax0, ax1, bx0, bx1) * overlapLen(ay0, ay1, by0, by1);
+
+        let minVisTop = margin;
+        let maxVisTop = Math.max(margin, layout.height - barH - margin);
+        let visBottomInSheet = layout.height - margin;
         if (stageEl && sheetEl) {
           const z = getElementRectScale(sheetEl);
           const stageRect = stageEl.getBoundingClientRect();
@@ -6702,32 +7219,90 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           const sheetOriginY = sheetRect.top + sheetEl.clientTop * z;
           const visibleTopInSheet = (stageRect.top - sheetOriginY) / z;
           const visibleBottomInSheet = (stageRect.bottom - sheetOriginY) / z;
-          const minVisTop = visibleTopInSheet + margin;
-          const maxVisTop = Math.max(minVisTop, visibleBottomInSheet - barH - margin);
-
-          const fitsBelow =
-            belowTop >= minVisTop && belowTop + barH <= visibleBottomInSheet - margin;
-          const fitsAbove =
-            aboveTop >= minVisTop && aboveTop + barH <= visibleBottomInSheet - margin;
-
-          if (fitsBelow) {
-            top = belowTop;
-          } else if (fitsAbove) {
-            top = aboveTop;
-          } else if (
-            anchorBand.tiersBottomY > visibleTopInSheet &&
-            anchorBand.linearY < visibleBottomInSheet
-          ) {
-            const anchorMidY = anchorRect.y + anchorRect.h / 2;
-            const viewMidY = (visibleTopInSheet + visibleBottomInSheet) / 2;
-            const preferred = anchorMidY > viewMidY ? minVisTop : maxVisTop;
-            top = Math.max(minVisTop, Math.min(maxVisTop, preferred));
-          }
-        } else if (belowTop + barH > layout.height - margin && aboveTop >= margin) {
-          top = aboveTop;
+          minVisTop = visibleTopInSheet + margin;
+          visBottomInSheet = visibleBottomInSheet - margin;
+          maxVisTop = Math.max(minVisTop, visBottomInSheet - barH);
         }
 
-        const next = { left: Math.round(left), top: Math.round(top) };
+        const belowClearOfNext = !nextBand || belowTop + barH <= nextBand.linearY - 4;
+        const aboveClearOfPrev = !prevBand || aboveTop >= prevBand.tiersBottomY + 4;
+        const fitsBelow = belowClearOfNext && belowTop >= minVisTop && belowTop <= maxVisTop;
+        const fitsAbove = aboveClearOfPrev && aboveTop >= minVisTop && aboveTop <= maxVisTop;
+
+        let chosenLeft = left;
+        let chosenTop = belowTop;
+
+        if (fitsBelow) {
+          chosenTop = belowTop;
+        } else if (fitsAbove) {
+          chosenTop = aboveTop;
+        } else {
+          // Score non-occluding fallback slots (below/above selection, beside selection, viewport edges)
+          const acousticTop = anchorBand.linearY;
+          const acousticBot =
+            anchorBand.specH > 0 ? anchorBand.anchorY + anchorBand.anchorH : anchorBand.linearY + anchorBand.linearH;
+
+          const scorePlacement = (candL: number, candT: number): number => {
+            const l = Math.max(minLeft, Math.min(maxLeft, candL));
+            const t = Math.max(minVisTop, Math.min(maxVisTop, candT));
+            const r = l + barW;
+            const b = t + barH;
+            let penalty = 0;
+            // Heavy penalty for overlapping the selected target itself
+            penalty +=
+              rectsOverlap(
+                l,
+                t,
+                r,
+                b,
+                anchorRect.x - 4,
+                anchorRect.y - 4,
+                anchorRect.x + anchorRect.w + 4,
+                anchorRect.y + anchorRect.h + 4
+              ) * 40;
+            // Heavy penalty for overlapping adjacent band waveforms / bands
+            if (nextBand) {
+              penalty += overlapLen(t, b, nextBand.linearY - 2, nextBand.tiersTopY) * 180;
+              penalty += overlapLen(t, b, nextBand.tiersTopY, nextBand.tiersBottomY) * 90;
+            }
+            if (prevBand) {
+              penalty += overlapLen(t, b, prevBand.linearY, prevBand.tiersBottomY + 2) * 140;
+            }
+            // High penalty for overlapping owning band's waveform / spectrogram
+            if (anchorBand.linearH > 0) {
+              penalty += overlapLen(t, b, acousticTop, acousticBot) * 120;
+            }
+            // Mild penalty for overlapping sibling tiers inside owning band
+            penalty += overlapLen(t, b, anchorBand.tiersTopY, anchorBand.tiersBottomY) * 20;
+            // Slight preference for proximity to anchor
+            penalty += Math.abs(t - (anchorRect.y + anchorRect.h / 2)) * 0.05;
+            return penalty;
+          };
+
+          const candidates: Array<{ l: number; t: number }> = [
+            { l: left, t: belowTop },
+            { l: left, t: aboveTop },
+            { l: left, t: anchorRect.y + anchorRect.h + 6 },
+            { l: left, t: anchorRect.y - barH - 6 },
+            { l: anchorRect.x + anchorRect.w + 10, t: anchorRect.y },
+            { l: anchorRect.x - barW - 10, t: anchorRect.y },
+            { l: left, t: minVisTop },
+            { l: left, t: maxVisTop }
+          ];
+          let bestScore = Infinity;
+          for (const c of candidates) {
+            const cl = Math.max(minLeft, Math.min(maxLeft, c.l));
+            const ct = Math.max(minVisTop, Math.min(maxVisTop, c.t));
+            const s = scorePlacement(cl, ct);
+            if (s < bestScore) {
+              bestScore = s;
+              chosenLeft = cl;
+              chosenTop = ct;
+            }
+          }
+        }
+
+        const next = { left: Math.round(chosenLeft), top: Math.round(chosenTop) };
         setFloatingPos((prev) => (prev && prev.left === next.left && prev.top === next.top ? prev : next));
       };
 
@@ -6755,9 +7330,11 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       selection,
       hasFloatingBarContent,
       floatingBarConfig,
+      layout.bands,
       layout.width,
       layout.height,
       stageW,
+      stageH,
       canvasScale
     ]);
 
@@ -6951,6 +7528,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                   onKeyDown={ipaIme.onKeyDown}
                   onKeyUp={ipaIme.onKeyUp}
                   onBlur={(e) => {
+                    ipaIme.onBlur();
                     if (isIpaRelatedElement(e.relatedTarget)) {
                       return;
                     }

@@ -131,6 +131,8 @@ export const IpaDock: React.FC<IpaDockProps> = ({ onInsertSymbol }) => {
   const setIpaDockOpen = useEditorStore((s) => s.setIpaDockOpen);
   const ipaFloating = useEditorStore((s) => s.ipaFloating);
   const setIpaFloating = useEditorStore((s) => s.setIpaFloating);
+  const sidebarOpen = useEditorStore((s) => s.sidebarOpen);
+  const sidebarWidth = useEditorStore((s) => s.sidebarWidth);
 
   const [activeTab, setActiveTab] = useState('consonants');
   const [recentList, setRecentList] = useState<string[]>(() => {
@@ -147,11 +149,15 @@ export const IpaDock: React.FC<IpaDockProps> = ({ onInsertSymbol }) => {
   const [inspected, setInspected] = useState<IpaSymbolInfo | null>(null);
   const [floatPos, setFloatPos] = useState<{ left: number; top: number }>(() => {
     const { width: vw, height: vh } = getLogicalViewportSize();
+    const w = Math.min(840, vw - 64);
     return {
-      left: Math.max(12, Math.round((vw - 680) / 2)),
-      top: Math.max(80, Math.round(vh - 310))
+      left: Math.max(12, Math.round(vw - 46 - w - 12)),
+      top: Math.max(48, Math.round(vh - 36 - 350))
     };
   });
+  const [floatSize, setFloatSize] = useState<{ width: number; height: number } | null>(null);
+  const [dockWidth, setDockWidth] = useState(840);
+  const userPositionedRef = useRef(false);
 
   const dockRef = useRef<HTMLElement>(null);
 
@@ -168,22 +174,61 @@ export const IpaDock: React.FC<IpaDockProps> = ({ onInsertSymbol }) => {
     }
   }, [ipaDockOpen]);
 
-  // Keep floating dock clamped inside viewport on window resize or floating toggle
+  // Measure dock width to gracefully wrap inspector bar on narrow widths (docked or resized floating)
+  useEffect(() => {
+    const el = dockRef.current;
+    if (!el || !ipaDockOpen) return;
+    const syncWidth = () => {
+      if (el.offsetWidth > 0) setDockWidth(el.offsetWidth);
+    };
+    syncWidth();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(syncWidth) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [ipaDockOpen, ipaFloating]);
+
+  // Smart default bottom-right positioning avoiding right sidebar & status bar; preserve manual drags
   useEffect(() => {
     if (!ipaDockOpen || !ipaFloating) return;
-    const clamp = () => {
+    const reposition = () => {
       const { width: vw, height: vh } = getLogicalViewportSize();
-      const w = dockRef.current?.offsetWidth || Math.min(700, vw - 24);
-      const h = dockRef.current?.offsetHeight || 260;
-      setFloatPos((prev) => ({
-        left: Math.max(8, Math.min(Math.max(8, vw - w - 8), prev.left)),
-        top: Math.max(48, Math.min(Math.max(48, vh - h - 8), prev.top))
-      }));
+      const rightReserve = (sidebarOpen ? sidebarWidth + 38 : 38) + 12;
+      const bottomReserve = 36;
+      const defaultW = Math.min(840, Math.max(360, vw - rightReserve - 16));
+      const measuredW = dockRef.current?.offsetWidth || defaultW;
+      const measuredH = dockRef.current?.offsetHeight || Math.min(390, vh - 68);
+      const targetW = floatSize ? Math.min(floatSize.width, vw - 24) : measuredW;
+      const targetH = floatSize ? Math.min(floatSize.height, vh - 68) : measuredH;
+
+      if (!userPositionedRef.current) {
+        const smartRight = Math.max(12 + targetW, vw - rightReserve);
+        const smartLeft = Math.max(12, Math.min(vw - targetW - 12, smartRight - targetW));
+        const smartTop = Math.max(48, Math.min(vh - targetH - bottomReserve, vh - targetH - bottomReserve));
+        setFloatPos({ left: Math.round(smartLeft), top: Math.round(smartTop) });
+      } else {
+        setFloatPos((prev) => ({
+          left: Math.round(Math.max(8, Math.min(Math.max(8, vw - targetW - 8), prev.left))),
+          top: Math.round(Math.max(48, Math.min(Math.max(48, vh - targetH - bottomReserve), prev.top)))
+        }));
+      }
+      if (floatSize) {
+        setFloatSize((prev) =>
+          prev
+            ? {
+                width: Math.max(420, Math.min(vw - 24, prev.width)),
+                height: Math.max(220, Math.min(vh - 68, prev.height))
+              }
+            : null
+        );
+      }
     };
-    requestAnimationFrame(clamp);
-    window.addEventListener('resize', clamp);
-    return () => window.removeEventListener('resize', clamp);
-  }, [ipaDockOpen, ipaFloating]);
+    const raf = requestAnimationFrame(reposition);
+    window.addEventListener('resize', reposition);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', reposition);
+    };
+  }, [ipaDockOpen, ipaFloating, sidebarOpen, sidebarWidth, floatSize?.width, floatSize?.height]);
 
   const recordRecent = (sym: string) => {
     if (!sym || sym.length > 4 || /^[\x00-\x7F]+$/.test(sym)) return;
@@ -214,6 +259,7 @@ export const IpaDock: React.FC<IpaDockProps> = ({ onInsertSymbol }) => {
   const handleHeadDrag = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!ipaFloating || (e.target as HTMLElement).closest('button')) return;
     e.preventDefault();
+    userPositionedRef.current = true;
     const startX = e.clientX;
     const startY = e.clientY;
     const origLeft = floatPos.left;
@@ -221,11 +267,38 @@ export const IpaDock: React.FC<IpaDockProps> = ({ onInsertSymbol }) => {
     const onMove = (ev: PointerEvent) => {
       const z = getViewportZoom();
       const { width: vw, height: vh } = getLogicalViewportSize();
-      const w = dockRef.current?.offsetWidth || 680;
-      const h = dockRef.current?.offsetHeight || 260;
+      const w = dockRef.current?.offsetWidth || 840;
+      const h = dockRef.current?.offsetHeight || 350;
       setFloatPos({
-        left: Math.max(8, Math.min(Math.max(8, vw - w - 8), origLeft + (ev.clientX - startX) / z)),
-        top: Math.max(48, Math.min(Math.max(48, vh - h - 8), origTop + (ev.clientY - startY) / z))
+        left: Math.round(Math.max(8, Math.min(Math.max(8, vw - w - 8), origLeft + (ev.clientX - startX) / z))),
+        top: Math.round(Math.max(48, Math.min(Math.max(48, vh - h - 28), origTop + (ev.clientY - startY) / z)))
+      });
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  const handleResizeCorner = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!ipaFloating) return;
+    e.preventDefault();
+    e.stopPropagation();
+    userPositionedRef.current = true;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const origW = dockRef.current?.offsetWidth || floatSize?.width || 840;
+    const origH = dockRef.current?.offsetHeight || floatSize?.height || 360;
+    const onMove = (ev: PointerEvent) => {
+      const z = getViewportZoom();
+      const { width: vw, height: vh } = getLogicalViewportSize();
+      const maxW = Math.max(420, vw - floatPos.left - 8);
+      const maxH = Math.max(220, vh - floatPos.top - 28);
+      setFloatSize({
+        width: Math.round(Math.max(420, Math.min(maxW, origW + (ev.clientX - startX) / z))),
+        height: Math.round(Math.max(220, Math.min(maxH, origH + (ev.clientY - startY) / z)))
       });
     };
     const onUp = () => {
@@ -237,13 +310,30 @@ export const IpaDock: React.FC<IpaDockProps> = ({ onInsertSymbol }) => {
   };
 
   const groups = TAB_LAYOUTS[activeTab] || TAB_LAYOUTS.consonants;
+  const isNarrowHead = dockWidth < 780;
 
   return (
     <section
       ref={dockRef}
       id="ipa-dock"
-      className={`ipa-dock ${ipaDockOpen ? 'open' : ''} ${ipaFloating ? 'floating' : ''}`}
-      style={ipaFloating ? { left: floatPos.left, top: floatPos.top } : undefined}
+      className={`ipa-dock ${ipaDockOpen ? 'open' : ''} ${ipaFloating ? 'floating' : ''} ${
+        isNarrowHead ? 'is-narrow' : ''
+      }`}
+      style={
+        ipaFloating
+          ? {
+              left: floatPos.left,
+              top: floatPos.top,
+              ...(floatSize
+                ? {
+                    width: floatSize.width,
+                    height: floatSize.height,
+                    maxHeight: floatSize.height
+                  }
+                : {})
+            }
+          : undefined
+      }
       aria-label="国际音标虚拟键盘"
       onMouseDown={(e) => {
         // Keep focus inside active inline / inspector editor when interacting with any part of IPA dock
@@ -268,7 +358,7 @@ export const IpaDock: React.FC<IpaDockProps> = ({ onInsertSymbol }) => {
 
         <div className="ipa-inspector" aria-live="polite">
           <span className="ipa-insp-glyph">{inspected ? inspected.display : 'ə'}</span>
-          <span className="ipa-insp-name">
+          <span className="ipa-insp-name" title={inspected?.name || undefined}>
             {inspected ? inspected.name || '国际音标符号' : '悬停或点击音标查看云龙编码与 Praat 写法'}
           </span>
           <span className="ipa-insp-badges">
@@ -351,6 +441,16 @@ export const IpaDock: React.FC<IpaDockProps> = ({ onInsertSymbol }) => {
           </div>
         ))}
       </div>
+      {ipaFloating && (
+        <div
+          className="ipa-dock-resizer"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="调整音标盘大小"
+          title="拖拽调整音标盘悬浮窗口大小"
+          onPointerDown={handleResizeCorner}
+        />
+      )}
     </section>
   );
 };

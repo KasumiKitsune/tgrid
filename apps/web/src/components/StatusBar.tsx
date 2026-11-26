@@ -1,69 +1,12 @@
 import React, { useMemo } from 'react';
-import type { TextGrid } from '../bridge/types';
 import { getEffectiveShortcutHint } from '../shortcuts/registry';
 import { useEditorStore, type IpaInputMode } from '../store/useEditorStore';
+import { scanTextGridQa } from '../utils/qaDiagnostics';
 import { CANVAS_SCALE_MAX, CANVAS_SCALE_MIN, stepCanvasScale } from '../utils/uiScale';
 import { UiIcon } from './Icons';
 
-interface QuickDiagCounts {
-  gaps: number;
-  overlaps: number;
-  zeros: number;
-  micros: number;
-  total: number;
-}
-
-function scanQuickDiagnostics(tg: TextGrid): QuickDiagCounts {
-  let gaps = 0;
-  let overlaps = 0;
-  let zeros = 0;
-  let micros = 0;
-  const eps = 1e-9;
-  const microThreshold = 0.005 - 1e-9;
-
-  for (const tier of tg.tiers) {
-    if (tier.kind !== 'intervalTier') continue;
-    const ivs = tier.intervals;
-    if (ivs.length === 0) continue;
-
-    if (Number.isFinite(tier.xmin) && ivs[0].xmin > tier.xmin + eps) {
-      gaps++;
-    }
-
-    for (let i = 0; i < ivs.length; i++) {
-      const iv = ivs[i];
-      const dur = iv.xmax - iv.xmin;
-      if (dur <= 1e-12) {
-        zeros++;
-      } else if (dur < microThreshold) {
-        micros++;
-      }
-      if (i > 0) {
-        const prev = ivs[i - 1];
-        if (iv.xmin > prev.xmax + eps) {
-          gaps++;
-        } else if (iv.xmin < prev.xmax - eps) {
-          overlaps++;
-        }
-      }
-    }
-
-    if (Number.isFinite(tier.xmax) && ivs[ivs.length - 1].xmax < tier.xmax - eps) {
-      gaps++;
-    }
-  }
-
-  return {
-    gaps,
-    overlaps,
-    zeros,
-    micros,
-    total: gaps + overlaps + zeros + micros
-  };
-}
-
 const IPA_LABELS: Record<IpaInputMode, string> = {
-  off: '音标：关',
+  off: '音标输入：关',
   yunlong: '云龙 IPA',
   praat: 'Praat 音标'
 };
@@ -85,7 +28,7 @@ export const StatusBar: React.FC = () => {
   const ipaCycleHint = getEffectiveShortcutHint('ipa-cycle', customShortcuts);
   const shortcutsHint = getEffectiveShortcutHint('shortcuts-modal', customShortcuts);
 
-  const diag = useMemo(() => scanQuickDiagnostics(tg), [tg]);
+  const diag = useMemo(() => scanTextGridQa(tg).counts, [tg]);
 
   const selectionSummary = useMemo(() => {
     if (selection?.kind === 'interval') {
@@ -135,7 +78,10 @@ export const StatusBar: React.FC = () => {
     if (diag.gaps > 0) parts.push(`缝隙 ${diag.gaps}`);
     if (diag.overlaps > 0) parts.push(`重叠 ${diag.overlaps}`);
     if (diag.zeros > 0) parts.push(`零时长 ${diag.zeros}`);
-    if (diag.micros > 0) parts.push(`<5ms 微段 ${diag.micros}`);
+    if (diag.microSegments > 0) parts.push(`<5ms 微段 ${diag.microSegments}`);
+    if (diag.crossMicros > 0) parts.push(`跨层微偏 ${diag.crossMicros}`);
+    if (diag.spaces > 0) parts.push(`首尾空格 ${diag.spaces}`);
+    if (diag.outOfDomain > 0) parts.push(`越界层级 ${diag.outOfDomain}`);
     return `${parts.join(' · ')} — 点击打开右侧诊断面板`;
   }, [diag]);
 

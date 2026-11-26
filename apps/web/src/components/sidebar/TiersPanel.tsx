@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { isComposingEvent } from '../../shortcuts/registry';
+import { formatQuote, formatTierLabel } from '../../store/historyModel';
 import { useEditorStore } from '../../store/useEditorStore';
 import { CloseIcon, UiIcon } from '../Icons';
 import { CollapsibleSection } from './CollapsibleSection';
@@ -86,11 +87,19 @@ export const TiersPanel: React.FC = () => {
     if (isReadOnly || !tier || nameDraft === tier.name) return;
     const nextName = nameDraft;
     commitTgMutation(
-      (draft) => {
-        if (draft.tiers[idx]) draft.tiers[idx].name = nextName;
+      (_draft, ctx) => {
+        const dTier = ctx.editTier(idx);
+        if (!dTier) return false;
+        dTier.name = nextName;
       },
       undefined,
-      `重命名层级「${nextName || '未命名'}」`
+      {
+        type: 'rename-tier',
+        title: '重命名层级',
+        detail: `${formatQuote(tier.name)}→${formatQuote(nextName)}`,
+        icon: 'edit',
+        tierName: formatTierLabel(nextName, idx)
+      }
     );
   };
 

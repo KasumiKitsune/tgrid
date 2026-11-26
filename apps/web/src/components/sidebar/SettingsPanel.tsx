@@ -1,7 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { isTauriRuntime } from '../../bridge/PlatformBridge';
+import { isComposingEvent } from '../../shortcuts/registry';
 import { useEditorStore, type EditInspectorMode, type IpaInputMode } from '../../store/useEditorStore';
+import { resolveEffectiveF0Range, type F0RangeMode } from '../../utils/f0Range';
 import { UI_SCALE_PRESETS } from '../../utils/uiScale';
+import { clampHistoryLimit } from '../../store/historyModel';
 import { InfoIcon, TGridIcon, UiIcon } from '../Icons';
 import { CollapsibleSection } from './CollapsibleSection';
 
@@ -34,6 +37,26 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const setUiScale = useEditorStore((s) => s.setUiScale);
   const legendOpen = useEditorStore((s) => s.legendOpen);
   const toggleLegend = useEditorStore((s) => s.toggleLegend);
+  const historyLimit = useEditorStore((s) => s.historyLimit);
+  const setHistoryLimit = useEditorStore((s) => s.setHistoryLimit);
+  const [historyLimitText, setHistoryLimitText] = useState(() => String(historyLimit));
+
+  useEffect(() => {
+    setHistoryLimitText(String(historyLimit));
+  }, [historyLimit]);
+
+  const commitHistoryLimit = () => {
+    const parsed = Number(historyLimitText);
+    if (!Number.isFinite(parsed)) {
+      setHistoryLimitText(String(historyLimit));
+      return;
+    }
+    const clamped = clampHistoryLimit(parsed);
+    setHistoryLimitText(String(clamped));
+    if (clamped !== historyLimit) {
+      setHistoryLimit(clamped);
+    }
+  };
 
   const wrapMode = useEditorStore((s) => s.wrapMode);
   const setWrapMode = useEditorStore((s) => s.setWrapMode);
@@ -55,14 +78,39 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const audioName = useEditorStore((s) => s.audioName);
   const audioDuration = useEditorStore((s) => s.audioDuration);
   const audioSampleRate = useEditorStore((s) => s.audioSampleRate);
+  const analysis = useEditorStore((s) => s.analysis);
   const showSpectrogram = useEditorStore((s) => s.showSpectrogram);
   const setShowSpectrogram = useEditorStore((s) => s.setShowSpectrogram);
   const maxFreq = useEditorStore((s) => s.maxFreq);
   const setMaxFreq = useEditorStore((s) => s.setMaxFreq);
   const cueMode = useEditorStore((s) => s.cueMode);
   const setCueMode = useEditorStore((s) => s.setCueMode);
+  const f0RangeMode = useEditorStore((s) => s.f0RangeMode);
+  const setF0RangeMode = useEditorStore((s) => s.setF0RangeMode);
+  const f0RangeCustom = useEditorStore((s) => s.f0RangeCustom);
+  const setF0RangeCustom = useEditorStore((s) => s.setF0RangeCustom);
   const tierOrder = useEditorStore((s) => s.tierOrder);
   const setTierOrder = useEditorStore((s) => s.setTierOrder);
+
+  const [f0MinText, setF0MinText] = useState(() => String(f0RangeCustom[0]));
+  const [f0MaxText, setF0MaxText] = useState(() => String(f0RangeCustom[1]));
+
+  useEffect(() => {
+    setF0MinText(String(f0RangeCustom[0]));
+    setF0MaxText(String(f0RangeCustom[1]));
+  }, [f0RangeCustom[0], f0RangeCustom[1]]);
+
+  const effF0 = resolveEffectiveF0Range(analysis, f0RangeMode, f0RangeCustom);
+  const commitCustomF0 = (which: 'min' | 'max') => {
+    const minVal = which === 'min' ? parseFloat(f0MinText) : f0RangeCustom[0];
+    const maxVal = which === 'max' ? parseFloat(f0MaxText) : f0RangeCustom[1];
+    if (!Number.isFinite(minVal) || !Number.isFinite(maxVal)) {
+      setF0MinText(String(f0RangeCustom[0]));
+      setF0MaxText(String(f0RangeCustom[1]));
+      return;
+    }
+    setF0RangeCustom(minVal, maxVal);
+  };
 
   const ipaMode = useEditorStore((s) => s.ipaMode);
   const setIpaMode = useEditorStore((s) => s.setIpaMode);
@@ -118,6 +166,66 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <input type="checkbox" checked={legendOpen} onChange={() => toggleLegend()} />
             <span>显示底部交互图例</span>
           </label>
+
+          <div className="sb-setting-block">
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 6
+              }}
+            >
+              <span
+                className="sb-field-lbl"
+                title="设置单文档保留的最大可回退历史步数（10–200 步）"
+              >
+                操作历史上限
+              </span>
+              <div className="sb-hist-limit-custom">
+                <input
+                  type="number"
+                  className="sb-hist-limit-input"
+                  min={10}
+                  max={200}
+                  step={10}
+                  aria-label="自定义操作历史上限步数"
+                  value={historyLimitText}
+                  onChange={(e) => setHistoryLimitText(e.target.value)}
+                  onBlur={commitHistoryLimit}
+                  onKeyDown={(e) => {
+                    if (isComposingEvent(e)) return;
+                    if (e.key === 'Enter' || e.code === 'NumpadEnter') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      (e.target as HTMLInputElement).blur();
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setHistoryLimitText(String(historyLimit));
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
+                />
+                <span className="sb-hist-limit-unit">步</span>
+              </div>
+            </div>
+            <div className="segmented sb-seg-full" role="group" aria-label="操作历史上限预设">
+              {([20, 50, 100, 200] as const).map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  className={`compact ${historyLimit === preset ? 'active' : ''}`}
+                  onClick={() => setHistoryLimit(preset)}
+                >
+                  {preset} 步
+                </button>
+              ))}
+            </div>
+            <div className="sb-hint">
+              默认 50 步（可调 10–200）；800 ms 内连续同目标微调自动合并。调低上限时仅裁剪最早记录，保留当前及后续步与初始快照。
+            </div>
+          </div>
 
           <div className="sb-setting-block">
             <span
@@ -453,6 +561,98 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                       ))}
                     </div>
                   </div>
+
+                  {(cueMode === 'auto' || cueMode === 'pitch') && (
+                    <div className="sb-setting-block">
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 6
+                        }}
+                      >
+                        <span className="sb-field-lbl">音高范围 (F0)</span>
+                        <span className="sb-kv-val mono" style={{ fontSize: 10.5 }}>
+                          {Math.round(effF0.floor)}–{Math.round(effF0.ceil)} Hz
+                        </span>
+                      </div>
+                      <div className="segmented sb-seg-full" role="group" aria-label="音高显示范围预设">
+                        {(
+                          [
+                            ['auto', '自动', '按当前录音 P2–P98 自适应确定音高上下限'],
+                            ['male', '男声', '男声常用基频范围 75–300 Hz'],
+                            ['female', '女声', '女声常用基频范围 100–500 Hz'],
+                            ['custom', '自定义', '手动指定画布与导出的基频显示上下限']
+                          ] as Array<[F0RangeMode, string, string]>
+                        ).map(([val, lbl, tip]) => (
+                          <button
+                            key={val}
+                            type="button"
+                            className={`compact ${f0RangeMode === val ? 'active' : ''}`}
+                            title={tip}
+                            onClick={() => setF0RangeMode(val)}
+                          >
+                            {lbl}
+                          </button>
+                        ))}
+                      </div>
+                      {f0RangeMode === 'custom' && (
+                        <div className="sb-field-grid-2" style={{ marginTop: 4 }}>
+                          <label className="sb-field">
+                            <span className="sb-field-lbl">下限 (Hz)</span>
+                            <input
+                              type="number"
+                              min={40}
+                              max={975}
+                              step={5}
+                              value={f0MinText}
+                              onChange={(e) => setF0MinText(e.target.value)}
+                              onBlur={() => commitCustomF0('min')}
+                              onKeyDown={(e) => {
+                                if (isComposingEvent(e)) return;
+                                if (e.key === 'Enter' || e.code === 'NumpadEnter') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  (e.target as HTMLInputElement).blur();
+                                } else if (e.key === 'Escape') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setF0MinText(String(f0RangeCustom[0]));
+                                  (e.target as HTMLInputElement).blur();
+                                }
+                              }}
+                            />
+                          </label>
+                          <label className="sb-field">
+                            <span className="sb-field-lbl">上限 (Hz)</span>
+                            <input
+                              type="number"
+                              min={65}
+                              max={1000}
+                              step={5}
+                              value={f0MaxText}
+                              onChange={(e) => setF0MaxText(e.target.value)}
+                              onBlur={() => commitCustomF0('max')}
+                              onKeyDown={(e) => {
+                                if (isComposingEvent(e)) return;
+                                if (e.key === 'Enter' || e.code === 'NumpadEnter') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  (e.target as HTMLInputElement).blur();
+                                } else if (e.key === 'Escape') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setF0MaxText(String(f0RangeCustom[1]));
+                                  (e.target as HTMLInputElement).blur();
+                                }
+                              }}
+                            />
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="sb-setting-block">
                     <span className="sb-field-lbl">层级排列顺序</span>

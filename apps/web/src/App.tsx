@@ -22,7 +22,9 @@ import {
   renderOffscreenPngBlob,
   triggerBlobDownload
 } from './render/exporter';
-import { useEditorStore } from './store/useEditorStore';
+import { cloneTier } from './store/historyModel';
+import { registerBeforeHistoryNavigate, useEditorStore } from './store/useEditorStore';
+import { resolveF0RangeOverride } from './utils/f0Range';
 import { isComposingEvent, isEditableTarget, matchesShortcut } from './shortcuts/registry';
 import { applyUiScaleToDom, stepCanvasScale, syncUiScaleViewportAttrs } from './utils/uiScale';
 import { Topbar, type ExportActionKind } from './components/Topbar';
@@ -157,6 +159,11 @@ export function App() {
     stageRef.current?.flushInlineEdit();
     sidebarRef.current?.flushDraft();
   }, []);
+
+  useEffect(() => {
+    registerBeforeHistoryNavigate(flushActiveEdits);
+    return () => registerBeforeHistoryNavigate(null);
+  }, [flushActiveEdits]);
 
   const syncPlayerForTab = useCallback((tabId: string) => {
     const st = useEditorStore.getState();
@@ -519,7 +526,8 @@ export function App() {
             setDocument(tgs[0], file.name, tgs.length > 1 ? tgs : [], 0, {
               filePath: resolvedPath,
               fileFormat,
-              isBlankPlaceholder: false
+              isBlankPlaceholder: false,
+              baselineKind: 'open'
             });
             targetTabId = curActiveTab.id;
             syncPlayerForTab(targetTabId);
@@ -532,7 +540,8 @@ export function App() {
               activeIdx: 0,
               filePath: resolvedPath,
               fileFormat,
-              isBlankPlaceholder: false
+              isBlankPlaceholder: false,
+              baselineKind: 'open'
             });
             syncPlayerForTab(targetTabId);
           }
@@ -857,7 +866,8 @@ export function App() {
         setDocument(sample.tg, sample.tg.name, [], 0, {
           filePath: null,
           fileFormat: 'longText',
-          isBlankPlaceholder: false
+          isBlankPlaceholder: false,
+          baselineKind: 'sample'
         });
         targetTabId = curActiveTab.id;
         syncPlayerForTab(targetTabId);
@@ -868,7 +878,8 @@ export function App() {
           filename: sample.tg.name,
           filePath: null,
           fileFormat: 'longText',
-          isBlankPlaceholder: false
+          isBlankPlaceholder: false,
+          baselineKind: 'sample'
         });
         syncPlayerForTab(targetTabId);
       }
@@ -959,40 +970,50 @@ export function App() {
 
   const handleBatchConvertIpa = useCallback(
     async (direction: 'toUnicode' | 'toPraat') => {
+      flushActiveEdits();
       const bridge = getPlatformBridge();
       const st = useEditorStore.getState();
       if (st.mode === 'read') {
         showToast('请先切换至编辑模式');
         return;
       }
-      const draft: TextGrid = JSON.parse(JSON.stringify(st.tg));
+      const convertedTiers = new Map<number, TextGrid['tiers'][number]>();
       let changedCount = 0;
 
-      for (const tier of draft.tiers) {
-        if (tier.kind === 'intervalTier') {
-          for (const iv of tier.intervals) {
+      for (let ti = 0; ti < st.tg.tiers.length; ti++) {
+        const origTier = st.tg.tiers[ti];
+        let cloned: TextGrid['tiers'][number] | null = null;
+        if (origTier.kind === 'intervalTier') {
+          for (let ii = 0; ii < origTier.intervals.length; ii++) {
+            const iv = origTier.intervals[ii];
             if (!iv.text) continue;
             const res =
               direction === 'toUnicode'
                 ? await bridge.decodePraatTrigraphs(iv.text)
                 : await bridge.encodePraatTrigraphs(iv.text);
             if (res.changed) {
-              iv.text = res.text;
+              if (!cloned) cloned = cloneTier(origTier);
+              cloned.intervals[ii].text = res.text;
               changedCount++;
             }
           }
         } else {
-          for (const pt of tier.points) {
+          for (let pi = 0; pi < origTier.points.length; pi++) {
+            const pt = origTier.points[pi];
             if (!pt.mark) continue;
             const res =
               direction === 'toUnicode'
                 ? await bridge.decodePraatTrigraphs(pt.mark)
                 : await bridge.encodePraatTrigraphs(pt.mark);
             if (res.changed) {
-              pt.mark = res.text;
+              if (!cloned) cloned = cloneTier(origTier);
+              cloned.points[pi].mark = res.text;
               changedCount++;
             }
           }
+        }
+        if (cloned) {
+          convertedTiers.set(ti, cloned);
         }
       }
 
@@ -1000,17 +1021,35 @@ export function App() {
         showToast(direction === 'toUnicode' ? '未发现可转换的 Praat 音标编码' : '未发现可转换的 Unicode 音标');
         return;
       }
-      await prefetchTrigraphCache(draft, bridge);
-      st.commitTgMutation((d) => {
-        d.tiers = draft.tiers;
-      });
+      const previewTg: TextGrid = {
+        ...st.tg,
+        tiers: st.tg.tiers.map((t, i) => convertedTiers.get(i) ?? t)
+      };
+      await prefetchTrigraphCache(previewTg, bridge);
+      useEditorStore.getState().commitTgMutation(
+        (d) => {
+          for (const [ti, nextTier] of convertedTiers) {
+            if (d.tiers[ti]) d.tiers[ti] = nextTier;
+          }
+        },
+        undefined,
+        {
+          type: 'convert-ipa',
+          title: '批量转换音标',
+          detail:
+            direction === 'toUnicode'
+              ? `转为 Unicode IPA · 共 ${changedCount} 处`
+              : `转为 Praat 编码 · 共 ${changedCount} 处`,
+          icon: direction === 'toUnicode' ? 'convertUnicode' : 'convertPraat'
+        }
+      );
       showToast(
         direction === 'toUnicode'
           ? `已转换 ${changedCount} 处为 Unicode IPA`
           : `已转换 ${changedCount} 处为 Praat 编码`
       );
     },
-    [showToast]
+    [flushActiveEdits, showToast]
   );
 
   const quickExportImage = useCallback(
@@ -1046,7 +1085,8 @@ export function App() {
         showSpectrogram: st.showSpectrogram,
         cueMode: st.cueMode,
         tierOrder: st.tierOrder,
-        maxFreq: st.maxFreq
+        maxFreq: st.maxFreq,
+        f0RangeOverride: resolveF0RangeOverride(st.f0RangeMode, st.f0RangeCustom)
       };
 
       try {
@@ -1249,6 +1289,7 @@ export function App() {
             { title: '保存 Collection 集合' }
           );
           if (savedPath) {
+            markSaved({ markAllCollectionItems: true });
             showToast(
               `已保存集合 ${getPathBaseName(savedPath)}（含 ${colItems.length} 个对象）`,
               false,
@@ -1257,6 +1298,7 @@ export function App() {
           }
         } else {
           triggerBlobDownload(new Blob([bytes as BlobPart], { type: 'application/octet-stream' }), fname);
+          markSaved({ markAllCollectionItems: true });
           showToast(`已保存集合 ${fname}（含 ${colItems.length} 个对象）`);
         }
       } catch (err) {
