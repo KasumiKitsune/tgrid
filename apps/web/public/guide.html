@@ -1786,17 +1786,17 @@
           <div>
             <div class="eyebrow" data-reveal>
               <span class="eyebrow-pulse" aria-hidden="true"></span>
-              <span>MIT 免费开源 · Windows / macOS / 浏览器 · v0.1.1</span>
+              <span>T·Grid v0.1.1 · MIT 开源 · Windows / macOS / Web</span>
             </div>
             <h1 class="hero-h1" data-reveal data-reveal-delay="1">
-              把语音标注、看谱听辨与论文出图，<span class="hero-h1-accent">收进一张清爽的纸面工作台</span>
+              Praat TextGrid 标注编辑器：<span class="hero-h1-accent">短音段不挤字，出图直接进论文</span>
             </h1>
             <p class="hero-desc" data-reveal data-reveal-delay="2">
-              <strong>T·Grid</strong> 是面向语言学与语音学研究的 Praat <code>TextGrid</code> / <code>Collection</code> 可视化标注编辑器。无论是从零听辨切音、精校 MFA 强制对齐结果、多行折行审阅长句，还是直接导出论文语谱插图，都在同一张清晰的纸面谱上完成。
+              面向语言学与语音学研究。直接读写 Praat <code>TextGrid</code> 与 <code>Collection</code>，集看谱切音、强制对齐精校、国际音标录入与论文矢量出图于一体。
             </p>
             <div class="hero-actions" data-reveal data-reveal-delay="3">
               <a class="btn primary" href="./">
-                <span>立即在线试用</span>
+                <span>打开在线版</span>
                 <svg class="ico-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
                   <path d="M3 8H13M9 4L13 8L9 12" />
                 </svg>
@@ -1812,16 +1812,16 @@
 
             <div class="hero-facts" data-reveal data-reveal-delay="3">
               <div class="hero-fact">
-                <span class="hero-fact-val">短音段不挤字</span>
-                <span class="hero-fact-lbl">1:1 真实声谱配舒展标注与折行</span>
+                <span class="hero-fact-val">双尺折行排版</span>
+                <span class="hero-fact-lbl">声谱 1:1 真实时间，标注舒展、长静默折叠</span>
               </div>
               <div class="hero-fact">
-                <span class="hero-fact-val">无缝衔接 Praat</span>
-                <span class="hero-fact-lbl">原样读写格式，保存照常跑脚本</span>
+                <span class="hero-fact-val">原生兼容 Praat</span>
+                <span class="hero-fact-lbl">长/短文本、二进制与集合，保存直跑脚本</span>
               </div>
               <div class="hero-fact">
-                <span class="hero-fact-val">论文插图直出</span>
-                <span class="hero-fact-lbl">期刊版幅矢量 SVG 与高清 PNG</span>
+                <span class="hero-fact-val">矢量论文插图</span>
+                <span class="hero-fact-lbl">期刊版幅、纯矢量轮廓与图文分离</span>
               </div>
             </div>
           </div>
@@ -1939,8 +1939,8 @@
               <span class="section-kicker-bar" aria-hidden="true"></span>
               <span>01 / CORE WORKBENCH</span>
             </div>
-            <h2 class="section-title">四项日常最顺手的核心能力</h2>
-            <p class="section-lead">每个模块都可以直接点按或拖动下方小演示，直观感受软件里的真实交互。</p>
+            <h2 class="section-title">核心功能</h2>
+            <p class="section-lead">下方四块交互面板可直接拖动或切换预览。</p>
           </div>
         </div>
 
@@ -1958,15 +1958,15 @@
                 </div>
                 <span class="wb-num">01 / ACOUSTIC ALIGN</span>
               </div>
-              <h3 class="wb-title">看谱听辨与 ±40 ms 声学微距切音</h3>
+              <h3 class="wb-title">声学微距与 ±1 ms 精细切音</h3>
               <p class="wb-desc">
-                载入录音即可对照波形、宽带语谱图、基频（F₀）与共振峰（F₁–F₃）精细切音。拖动边界时随行弹出 ±40 ms 放大镜，方便找准清浊分界与元音第一个基频周期；按住 <kbd>Z</kbd> 自动吸附过零点（切单音段做听觉感知刺激不带咔哒声），也可直接用键盘 ±10 ms / ±1 ms 微调。
+                载入音频即绘制波形、宽带语谱、基频（F₀）与共振峰（F₁–F₃）。拖界时弹出 ±40 ms 微距窗，对准清浊分界与元音首周期；按住 <kbd>Z</kbd> 吸附过零点，切片不含咔哒声，键盘支持 ±10 ms 与 ±1 ms 步进。
               </p>
             </div>
 
             <div class="demo-box">
               <div class="demo-bar">
-                <span class="demo-caption">拖动滑块体验边界微距与过零点吸附</span>
+                <span class="demo-caption">拖动滑块查看微距窗与过零点吸附</span>
                 <button type="button" class="mech-toggle" id="loupeSnapToggle" aria-pressed="true">
                   <span class="mech-toggle-track"><span class="mech-toggle-knob"></span></span>
                   <span>吸附过零点 (Z)</span>
@@ -2054,7 +2054,7 @@
               </div>
               <h3 class="wb-title">国际音标双方案输入与整篇互转</h3>
               <p class="wb-desc">
-                内置「云龙国际音标（含五度调符）」与「Praat 反斜杠编码」两种输入法，配有虚拟音标键盘，标注时不用来回切系统输入法。面对旧语料里导进 Excel / R 容易显示成乱码的 <code>\sh</code>、<code>\ng</code>、<code>\-5</code> 编码，支持整篇一键转成规范 Unicode IPA，回旧脚本也能一键转回。
+                内置云龙音标（含五度调符）、Praat 反斜杠编码与虚拟音标键盘，标注时不切系统输入法。整份文档可在 Praat 编码（<code>\sh</code>、<code>\ng</code>、<code>\-5</code>）与标准 Unicode 之间双向批量转换，兼顾统计表格与旧版绘图脚本。
               </p>
             </div>
 
@@ -2116,9 +2116,9 @@
                 </div>
                 <span class="wb-num">03 / FIGURE &amp; POSTER</span>
               </div>
-              <h3 class="wb-title">论文插图直出与五套声纹海报</h3>
+              <h3 class="wb-title">论文插图与声纹海报导出</h3>
               <p class="wb-desc">
-                告别在 Praat Picture 窗口反复调边距或截屏发糊。可按层与时段截取，内置论文单栏、通栏、幻灯片版幅与纯黑白印刷配色，导出纯矢量等值轮廓 SVG、便于在 Illustrator 中二次微调的图文分离 ZIP 包、高清 PNG 及中英双语图例；另外附带 5 套声纹海报模板，适合课题展板与课堂展示。
+                按层与时段截取，内置期刊单栏、通栏、幻灯片与纯黑白印刷版式。导出纯矢量等值轮廓 SVG、图文分离 ZIP（底图与文字分层，供 Illustrator / Inkscape 精修）、高倍 PNG 及中英双语图例；另附 5 套声纹海报模板。
               </p>
             </div>
 
@@ -2210,9 +2210,9 @@
                 </div>
                 <span class="wb-num">04 / PRAAT COMPAT &amp; QA</span>
               </div>
-              <h3 class="wb-title">完整兼容 Praat 与强制对齐自动体检</h3>
+              <h3 class="wb-title">Praat 全格式读写与边界体检</h3>
               <p class="wb-desc">
-                无需格式转换，直接打开并保存 Praat 常见的全部标注文件。尤其适合精校 MFA 等强制对齐产出的语料——载入后自动标出时间重叠、空隙、零时长、层域不齐与极短误切碎片，支持逐条定位并一键整理，保证后续脚本提取不报错。
+                直接读写 Praat 长文本、短文本、二进制、按时间排序、单层及 Collection 文件。载入即扫描重叠、空隙、零时长、层域越界与极短碎片，支持逐条定位与一键整理，适配 MFA 等强制对齐结果的批量校对。
               </p>
             </div>
 
@@ -2267,8 +2267,8 @@
               <span class="section-kicker-bar" aria-hidden="true"></span>
               <span>02 / QUICK START</span>
             </div>
-            <h2 class="section-title">三步上手，打开就能开始标</h2>
-            <p class="section-lead">不需要注册账号，也不用配置任何依赖环境；如果手边暂时没有文件，页面里已经自带普通话和双人对话带音频示例。</p>
+            <h2 class="section-title">基本流程</h2>
+            <p class="section-lead">无需配置，打开即用；内置普通话与双人对话带音频示例。</p>
           </div>
         </div>
 
@@ -2281,9 +2281,9 @@
                 <path d="M10 3.5V12.5M6.5 9L10 12.5L13.5 9" />
               </svg>
             </div>
-            <h3 class="step-title">拖入标注与配套录音</h3>
+            <h3 class="step-title">载入标注与音频</h3>
             <p class="step-body">
-              直接把 <code>.TextGrid</code>、<code>.Collection</code> 或 <code>.wav</code> / <code>.mp3</code> / <code>.flac</code> 录音拖进窗口。长句子会自动多行折行排布，不用左右反复拉滚动条；桌面端打开标注时还会自动配对同目录同名录音。
+              拖入 <code>.TextGrid</code>、<code>.Collection</code> 或 <code>.wav</code> / <code>.mp3</code> / <code>.flac</code> 文件。长句自动多行折行，免去长距离横向拖动；桌面端自动配对同目录同名录音。
             </p>
           </div>
 
@@ -2294,9 +2294,9 @@
                 <path d="M3 10H6L8 4.5L11.5 15.5L14 10H17" />
               </svg>
             </div>
-            <h3 class="step-title">听辨精校与音标录入</h3>
+            <h3 class="step-title">切音精校与录字</h3>
             <p class="step-body">
-              按 <kbd>Space</kbd> 播放并按 <kbd>B</kbd> 随节奏落界；精校对齐结果时按 <kbd>N</kbd> 跳到下一空白格，拖动边界唤出声学放大镜或用方向键按 ±1 ms 微调。仅需审阅对照时可按 <kbd>E</kbd> 锁成只读模式防误改。
+              按 <kbd>Space</kbd> 播放并按 <kbd>B</kbd> 落界；校对对齐结果时按 <kbd>N</kbd> 跳至下一空白格，拖界弹出微距窗或以方向键 ±1 ms 精调。审阅时按 <kbd>E</kbd> 切换只读模式。
             </p>
           </div>
 
@@ -2308,9 +2308,9 @@
                 <path d="M6.5 13.5L13.5 6.5M8.5 6.5H13.5V11.5" />
               </svg>
             </div>
-            <h3 class="step-title">保存回 Praat 或直接出图</h3>
+            <h3 class="step-title">回写 Praat 或导出插图</h3>
             <p class="step-body">
-              按 <kbd class="mod-key">Ctrl+S</kbd> 保存标准 Praat 文件，随时回到 Praat 继续跑声学提取脚本；或打开导出窗口选好期刊版幅与配色，直接生成高清 PNG、矢量 SVG 或图文分离 ZIP 包。
+              按 <kbd class="mod-key">Ctrl+S</kbd> 保存标准 Praat 格式，直接衔接后续声学提取脚本；或在导出面板选定期刊版幅与配色，输出矢量 SVG、图文分离 ZIP 或高倍 PNG。
             </p>
           </div>
         </div>
@@ -2326,8 +2326,8 @@
               <span class="section-kicker-bar" aria-hidden="true"></span>
               <span>03 / KEYBOARD WORKFLOW</span>
             </div>
-            <h2 class="section-title">常用快捷键速查</h2>
-            <p class="section-lead">覆盖听辨、切分、边界微调与音标切换；在软件里按 <kbd>?</kbd> 或 <kbd>F1</kbd> 随时可以查看并自定义改键。</p>
+            <h2 class="section-title">快捷键速查</h2>
+            <p class="section-lead">覆盖听辨、切分、边界微调与音标切换；应用内按 <kbd>?</kbd> 或 <kbd>F1</kbd> 可检索并重绑按键。</p>
           </div>
         </div>
 
@@ -2352,56 +2352,56 @@
           <div class="sc-item">
             <div class="sc-info">
               <strong>播放 / 暂停</strong>
-              <span>配合 Shift+Space 停止并将播放头归位</span>
+              <span>Shift+Space 停止并归位播放头</span>
             </div>
             <div class="sc-keys"><kbd>Space</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
               <strong>重播当前区间 / 选区</strong>
-              <span>正在输入框打字时按 Alt+P 或 F4 也能边输边听</span>
+              <span>输入框内按 Alt+P 或 F4 同样生效</span>
             </div>
             <div class="sc-keys"><kbd>R</kbd><kbd>Alt+P</kbd><kbd>F4</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
               <strong>带语境重播（前后 ±250 ms）</strong>
-              <span>听辨短促辅音或声母过渡段时尤其好用</span>
+              <span>前后各延展 250 ms，用于辨听短辅音与过渡段</span>
             </div>
             <div class="sc-keys"><kbd>Shift+R</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
-              <strong>开关循环播放与调整倍速</strong>
-              <span>倍速支持 0.5× 到 1.5× 多档调节</span>
+              <strong>循环播放与倍速切换</strong>
+              <span>0.5× / 0.75× / 1.0× / 1.25× / 1.5× 五档</span>
             </div>
             <div class="sc-keys"><kbd>L</kbd><kbd>&lt;</kbd><kbd>&gt;</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
               <strong>播放头步进 ±100 ms</strong>
-              <span>按住 Alt 时变为 ±10 ms 精细步进</span>
+              <span>加 Alt 步进 ±10 ms</span>
             </div>
             <div class="sc-keys"><kbd>,</kbd><kbd>.</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
-              <strong>跳到下一个 / 上一个空白区间</strong>
-              <span>适合逐格补录尚未填字的空段</span>
+              <strong>跳至下一个 / 上一个空白区间</strong>
+              <span>逐格补录未标区间</span>
             </div>
             <div class="sc-keys"><kbd>N</kbd><kbd>Shift+N</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
-              <strong>方向键二维穿梭与 Tab 连续录入</strong>
-              <span>上下键按时间对齐跨层，Tab 自动保存并进下一格</span>
+              <strong>方向键跨层跳转与 Tab 连续录入</strong>
+              <span>上下键按时间对齐跨层，Tab 提交并进入下一格</span>
             </div>
             <div class="sc-keys"><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>Tab</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
-              <strong>快速定位到播放头所在区间</strong>
-              <span>随时把视线和选区拉回当前播放位置</span>
+              <strong>定位播放头所在区间</strong>
+              <span>将视图与选区同步至当前播放时刻</span>
             </div>
             <div class="sc-keys"><kbd>G</kbd></div>
           </div>
@@ -2411,57 +2411,57 @@
         <div class="shortcut-panel" data-panel="edit">
           <div class="sc-item">
             <div class="sc-info">
-              <strong>播放头处打点切分边界</strong>
-              <span>支持边放录音边随节奏敲击落界；加 Shift 切全部区间层</span>
+              <strong>播放头处落边界</strong>
+              <span>播放中直接打点切分；加 Shift 切全部区间层</span>
             </div>
             <div class="sc-keys"><kbd>B</kbd><kbd>Shift+B</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
-              <strong>从当前选中区间正中点切分</strong>
-              <span>快速把过长音段一分为二</span>
+              <strong>区间正中切分</strong>
+              <span>将选中区间一分为二</span>
             </div>
             <div class="sc-keys"><kbd>S</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
-              <strong>在播放头添加标点 / 按选区建区间</strong>
-              <span>点层按 P 打标点；语谱图框选时间段后按 I 落区间</span>
+              <strong>添加标点 / 按选区建区间</strong>
+              <span>点层按 P 落点；语谱框选后按 I 生成区间</span>
             </div>
             <div class="sc-keys"><kbd>P</kbd><kbd>I</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
-              <strong>打开原地文字编辑</strong>
-              <span>只读模式下按 Enter 改为直接播放该区间</span>
+              <strong>原地编辑文本</strong>
+              <span>只读态按 Enter 直接播放选中项</span>
             </div>
             <div class="sc-keys"><kbd>Enter</kbd><kbd>F2</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
-              <strong>温和删除与强力删界</strong>
-              <span>有字时先清空文字；空区间或加 Shift 删除边界结构</span>
+              <strong>两级删除语义</strong>
+              <span>有字先清字；空区间或加 Shift 删除边界</span>
             </div>
             <div class="sc-keys"><kbd>Backspace</kbd><kbd>Delete</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
-              <strong>保留文本向左 / 向右合并区间</strong>
-              <span>自动把相邻两格文字拼在一起不丢字</span>
+              <strong>向右 / 向左合并相邻区间</strong>
+              <span>自动拼接两格文本，不丢字</span>
             </div>
             <div class="sc-keys"><kbd>M</kbd><kbd>Shift+M</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
-              <strong>选中当前区间的左 / 右边界</strong>
-              <span>选定后即可配合方向键微调时间</span>
+              <strong>选中左 / 右边界</strong>
+              <span>选定后可直接用方向键微调时间</span>
             </div>
             <div class="sc-keys"><kbd>[</kbd><kbd>]</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
               <strong>撤销 / 重做与查找替换</strong>
-              <span>每一步操作都有清晰提示，放心大胆修改</span>
+              <span>支持跨层正则查找替换与多步撤销</span>
             </div>
             <div class="sc-keys"><kbd class="mod-key">Ctrl+Z</kbd><kbd class="mod-key">Ctrl+F</kbd></div>
           </div>
@@ -2472,56 +2472,56 @@
           <div class="sc-item">
             <div class="sc-info">
               <strong>边界 / 标点微调 ±10 ms</strong>
-              <span>无需用鼠标反复拖拽，手不离键盘精准对齐</span>
+              <span>键盘直接平移选中边界</span>
             </div>
             <div class="sc-keys"><kbd>Shift+←</kbd><kbd>Shift+→</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
-              <strong>超精细微调 ±1 ms</strong>
-              <span>对准清辅音除阻点或元音起始瞬间</span>
+              <strong>精细微调 ±1 ms</strong>
+              <span>对准除阻瞬间或基频起振周期</span>
             </div>
             <div class="sc-keys"><kbd>Shift+Alt+←</kbd><kbd>Shift+Alt+→</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
               <strong>跨层联动平移共享边界</strong>
-              <span>上下层对齐的边界一起移动，再加 Alt 为 ±1 ms</span>
+              <span>同步移动对齐边界；加 Alt 为 ±1 ms</span>
             </div>
             <div class="sc-keys"><kbd class="mod-key">Ctrl+Shift+←</kbd><kbd class="mod-key">Ctrl+Shift+→</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
-              <strong>吸附到最近波形过零点</strong>
-              <span>拖动边界时按住 Z 即可实时磁吸过零点</span>
+              <strong>吸附最近过零点</strong>
+              <span>拖界时按住 Z 持续启用过零点吸附</span>
             </div>
             <div class="sc-keys"><kbd>Z</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
               <strong>循环切换音标输入模式</strong>
-              <span>在关闭 / 云龙音标 / Praat 编码之间切换，输入框内有效</span>
+              <span>关 / 云龙 / Praat 三态切换，输入框内有效</span>
             </div>
             <div class="sc-keys"><kbd class="mod-key">Ctrl+\</kbd><kbd>Alt+I</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
               <strong>临时切换英文 / 音标输入</strong>
-              <span>避开系统输入法 Shift 冲突，临时敲字母更顺手</span>
+              <span>绕开系统输入法 Shift 冲突</span>
             </div>
             <div class="sc-keys"><kbd>Alt+E</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
-              <strong>显示 / 隐藏虚拟音标键盘</strong>
-              <span>生僻附加符号和声调符号直接鼠标点选插入</span>
+              <strong>开关虚拟音标键盘</strong>
+              <span>直接点选附加符与五度调符</span>
             </div>
             <div class="sc-keys"><kbd>Alt+K</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
-              <strong>复制区间时间戳或声学数据</strong>
-              <span>可直接粘贴进表格做统计分析</span>
+              <strong>复制起止时间与声学 TSV</strong>
+              <span>可直接粘贴进 Excel / R 表格</span>
             </div>
             <div class="sc-keys"><kbd class="mod-key">Ctrl+Shift+C</kbd></div>
           </div>
@@ -2532,42 +2532,42 @@
           <div class="sc-item">
             <div class="sc-info">
               <strong>切换只读 / 编辑模式</strong>
-              <span>审阅或演示语料时锁成只读，彻底避免误删误改</span>
+              <span>审阅或演示时锁定文档，防止误改</span>
             </div>
             <div class="sc-keys"><kbd>E</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
-              <strong>聚焦放大到选中项 / 恢复全长</strong>
-              <span>一键放大看清局部语谱，再按 Shift+F 回到整句</span>
+              <strong>聚焦选区 / 恢复全长</strong>
+              <span>F 放大至选中项，Shift+F 返回全篇</span>
             </div>
             <div class="sc-keys"><kbd>F</kbd><kbd>Shift+F</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
-              <strong>画布放大 / 缩小 / 复位 100%</strong>
-              <span>独立缩放谱面视觉比例，不影响界面文字清晰度</span>
+              <strong>画布缩放 / 复位 100%</strong>
+              <span>独立缩放谱面比例，与界面字号解耦</span>
             </div>
             <div class="sc-keys"><kbd class="mod-key">Ctrl+=</kbd><kbd class="mod-key">Ctrl+-</kbd><kbd class="mod-key">Ctrl+0</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
-              <strong>新建空白页 / 关闭当前标签页</strong>
-              <span>多标签同时对照打开多份语料，支持 Ctrl+1~9 切换</span>
+              <strong>新建 / 关闭标签页</strong>
+              <span>多文件并行对照，Ctrl+1~9 切换</span>
             </div>
             <div class="sc-keys"><kbd class="mod-key">Ctrl+T</kbd><kbd class="mod-key">Ctrl+W</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
-              <strong>打开导出插图窗口 / 切换右侧栏</strong>
-              <span>快速调出论文出图设置或腾出更大横向画布</span>
+              <strong>打开导出面板 / 切换侧边栏</strong>
+              <span>调出插图导出设置或折叠右侧栏</span>
             </div>
             <div class="sc-keys"><kbd class="mod-key">Ctrl+Shift+E</kbd><kbd class="mod-key">Ctrl+B</kbd></div>
           </div>
           <div class="sc-item">
             <div class="sc-info">
-              <strong>在软件内查看全部快捷键</strong>
-              <span>支持搜索按键并按个人习惯重新绑定</span>
+              <strong>完整快捷键列表与改键</strong>
+              <span>支持搜索并自定义快捷键绑定</span>
             </div>
             <div class="sc-keys"><kbd>?</kbd><kbd>F1</kbd></div>
           </div>
@@ -2584,22 +2584,22 @@
               <span class="section-kicker-bar" aria-hidden="true"></span>
               <span>04 / EDITIONS</span>
             </div>
-            <h2 class="section-title">按使用场景选择合适的版本</h2>
-            <p class="section-lead">三个版本核心功能完全一致，按日常批量精标、课堂演示或离线田野场景挑选即可。</p>
+            <h2 class="section-title">版本与下载</h2>
+            <p class="section-lead">三端核心功能一致，按工作环境选择。</p>
           </div>
         </div>
 
         <div class="editions-grid" data-reveal>
           <div class="ed-card is-featured">
             <div>
-              <span class="ed-tag">批量精标 / MFA 校对推荐</span>
+              <span class="ed-tag">批量标注 / 对齐精校</span>
               <h3 class="ed-title">桌面端安装包</h3>
-              <p class="ed-sub">提供 Windows（x64 / ARM64）与 macOS（Apple 芯片 / Intel）原生安装程序。</p>
+              <p class="ed-sub">Windows（x64 / ARM64）与 macOS（Apple 芯片 / Intel）原生安装程序。</p>
               <ul class="ed-list">
-                <li>双击文件夹里的 <code>.TextGrid</code> 直接启动打开</li>
-                <li>自动配对同目录同名录音，校对语料库最省事</li>
-                <li>按 <kbd class="mod-key">Ctrl+S</kbd> 原位覆盖保存，免反复另存</li>
-                <li>支持关闭前未保存提醒与多标签页并行对照</li>
+                <li>双击 <code>.TextGrid</code> 直接启动并打开</li>
+                <li>自动配对同目录同名音频</li>
+                <li>按 <kbd class="mod-key">Ctrl+S</kbd> 原位覆盖保存</li>
+                <li>多标签并行对照与未保存关闭提醒</li>
               </ul>
             </div>
             <div>
@@ -2614,19 +2614,19 @@
 
           <div class="ed-card">
             <div>
-              <span class="ed-tag">课堂演示 / 临时看图</span>
+              <span class="ed-tag">演示与临时审阅</span>
               <h3 class="ed-title">浏览器在线版</h3>
-              <p class="ed-sub">免安装、不挑系统，打开网页即可试用完整声学分析、标注与出图功能。</p>
+              <p class="ed-sub">免安装，打开网页即具备完整声学分析、标注与出图能力。</p>
               <ul class="ed-list">
-                <li>上课投影展示语谱、临时查看他人语料最快</li>
-                <li>内置双人对话带音频与普通话示例，打开可试</li>
-                <li>不挑电脑权限，发给学生或合作者即可打开</li>
-                <li>随时保持最新版本，无需手动下载更新</li>
+                <li>适于课堂投影展示与临时审阅语料</li>
+                <li>内置双人对话带音频与普通话示例</li>
+                <li>不依赖安装权限，跨平台直接打开</li>
+                <li>始终保持最新版本</li>
               </ul>
             </div>
             <div>
               <a class="btn" style="width:100%;" href="./">
-                <span>打开在线编辑器</span>
+                <span>打开在线版</span>
                 <svg class="ico-arrow" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
                   <path d="M3 8H13M9 4L13 8L9 12" />
                 </svg>
@@ -2636,19 +2636,19 @@
 
           <div class="ed-card">
             <div>
-              <span class="ed-tag">田野调查 / 无网机房</span>
+              <span class="ed-tag">离线与受限机房</span>
               <h3 class="ed-title">离线单文件 HTML</h3>
-              <p class="ed-sub">全部程序打包进单个网页文件，拷进 U 盘就能在任意无网电脑上运行。</p>
+              <p class="ed-sub">全部代码打入单个网页文件，拷入 U 盘可在任意无网机器运行。</p>
               <ul class="ed-list">
-                <li>无需管理员安装权限，不往系统写任何文件</li>
-                <li>适合录音棚、田野采风和隔离内网实验室</li>
-                <li>用 Chrome / Edge / Safari 双击即可打开使用</li>
-                <li>完整保留音标输入、声学微距与矢量出图</li>
+                <li>无需管理员权限，不向系统写入文件</li>
+                <li>适于录音棚、田野调查与无网机房</li>
+                <li>Chrome / Edge / Safari 双击直开</li>
+                <li>完整保留音标输入、声学微距与出图</li>
               </ul>
             </div>
             <div>
               <a class="btn" style="width:100%;" href="./tgrid-standalone.html" download="tgrid-standalone.html" rel="nofollow">
-                <span>下载单文件离线版</span>
+                <span>下载离线单文件版</span>
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
                   <path d="M8 2.5V10.5M5 7.5L8 10.5L11 7.5M2.5 13H13.5" />
                 </svg>
@@ -2669,67 +2669,67 @@
               <span>05 / QUESTIONS &amp; REFERENCES</span>
             </div>
             <h2 class="section-title">常见问题与延伸参考</h2>
-            <p class="section-lead">关于 Praat 脚本衔接、双尺时间精度、论文出图与旧语料转换的常见疑问。</p>
+            <p class="section-lead">关于 Praat 脚本衔接、双尺时间精度、论文出图与旧语料转换。</p>
           </div>
         </div>
 
         <div class="faq-list" data-reveal>
           <div class="faq-item is-open">
             <button type="button" class="faq-trigger" aria-expanded="true">
-              <span>在 T·Grid 里改完保存，回到 Praat 跑提 F₀ / 共振峰脚本会不会出问题？</span>
+              <span>回到 Praat 跑 F₀ / 共振峰提取脚本是否完全兼容？</span>
               <span class="faq-plus" aria-hidden="true"></span>
             </button>
             <div class="faq-body">
               <div class="faq-body-inner">
-                <p>不会。T·Grid 的读写模块对照 Praat 源码核验，完整支持标准长文本、短文本、二进制、按时间排序的 TextGrid、独立单层文件以及包含 Sound 对象的 Collection 集合。导出时可自由指定长文本、短文本或二进制格式，并保持原有双精度时间边界，回到 Praat 跑批量提取脚本完全兼容。</p>
+                <p>兼容。读写模块对照 Praat 源码实现，覆盖标准长文本、短文本、二进制、按时间排序 TextGrid、独立单层及含 Sound 的 Collection。保存时保留双精度时间边界，可直接衔接各类 Praat 批处理脚本。</p>
               </div>
             </div>
           </div>
 
           <div class="faq-item">
             <button type="button" class="faq-trigger" aria-expanded="false">
-              <span>什么是「双尺排版」？会不会让语谱图的时间轴变形？</span>
+              <span>双尺排版会改变语谱图的时间轴比例吗？</span>
               <span class="faq-plus" aria-hidden="true"></span>
             </button>
             <div class="faq-body">
               <div class="faq-body-inner">
-                <p>不会让语谱图变形。上方波形、宽带语谱图、基频与共振峰始终严格遵循 1:1 真实物理时间；只有下方的文字标注层会在极短音段处自动借宽舒展，并折叠冗长静默，中间用对齐连线准确对应到真实时刻。你也可以随时一键切回 1:1 线性对齐。</p>
+                <p>不会。上方波形、宽带语谱图、基频与共振峰严格保持 1:1 物理时间；仅下方文字标注层在短音段处借宽舒展并折叠长静默，中间以对齐线对应真实时刻。画布内可随时切换 1:1 线性模式。</p>
               </div>
             </div>
           </div>
 
           <div class="faq-item">
             <button type="button" class="faq-trigger" aria-expanded="false">
-              <span>导出插图放进 Word、LaTeX 或 Illustrator 里怎么选格式最清晰？</span>
+              <span>论文插图在 Word、LaTeX、Illustrator 中应如何选格式？</span>
               <span class="faq-plus" aria-hidden="true"></span>
             </button>
             <div class="faq-body">
               <div class="faq-body-inner">
-                <p>直接插进 Word 或 PPT 可选高倍率高清 PNG（或期刊单栏/通栏预设）；LaTeX 或高清印刷推荐纯矢量等值轮廓 SVG，放大不发糊；如果还想在 Illustrator / Inkscape 里微调字体、增补箭头或修改配色，直接导出「图文分离 ZIP 包」即可把文字层和语谱底图分开编辑。</p>
+                <p>Word 与幻灯片优先选高倍率 PNG 或期刊单栏预设；LaTeX 与高清印刷选纯矢量等值轮廓 SVG；需在 Illustrator / Inkscape 中二次改字体或补标注时，导出图文分离 ZIP（SVG 文字刻度层 + 高分 PNG 语谱底图）。</p>
               </div>
             </div>
           </div>
 
           <div class="faq-item">
             <button type="button" class="faq-trigger" aria-expanded="false">
-              <span>手头已有带 Praat 反斜杠音标（如 \sh、\ng）的旧语料，能批量转换吗？</span>
+              <span>旧语料中的 Praat 反斜杠音标（\sh、\ng）能否批量转换？</span>
               <span class="faq-plus" aria-hidden="true"></span>
             </button>
             <div class="faq-body">
               <div class="faq-body-inner">
-                <p>可以。打开文件后在顶栏「工具」菜单中点击一键转换，就能把整份 TextGrid 里的 Praat 反斜杠编码统一转为规范 Unicode 国际音标（方便导入 Excel、R 或 Python 做统计）；需要交给旧版 Praat 绘图脚本时，也能一键反向转回反斜杠编码。</p>
+                <p>可以。在顶栏「工具」菜单中执行整篇转换，即可将 Praat 反斜杠编码统一转为规范 Unicode IPA（供 Excel / R / Python 统计），也可一键反向编码以配合旧版 Praat 绘图脚本。</p>
               </div>
             </div>
           </div>
 
           <div class="faq-item">
             <button type="button" class="faq-trigger" aria-expanded="false">
-              <span>未公开的方言或临床录音安全吗？断网实验室电脑能用吗？</span>
+              <span>未公开语料会上传吗？无网环境能否运行？</span>
               <span class="faq-plus" aria-hidden="true"></span>
             </button>
             <div class="faq-body">
               <div class="faq-body-inner">
-                <p>安全且支持离线。所有音频解码与标注读写均在你的设备本地完成，不上传至任何服务器；下载桌面安装包或离线单文件 HTML 版后，在无网络的录音棚、田野现场或隔离实验室电脑上同样可以正常使用。</p>
+                <p>不会上传。音频解码、声学计算与标注读写均在设备本地执行；桌面端与离线单文件 HTML 均支持完全断网运行。</p>
               </div>
             </div>
           </div>
