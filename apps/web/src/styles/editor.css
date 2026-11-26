@@ -3904,11 +3904,45 @@ button.active .export-btn-sub {
 }
 
 .about-link-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   gap: 4px;
   height: 22px !important;
   padding: 0 7px !important;
+  font-family: inherit;
   font-size: 11px !important;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--ink);
   background: var(--bg-sheet);
+  border: 1px solid var(--rule);
+  text-decoration: none;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.16s var(--ease), background-color 0.16s var(--ease), color 0.16s var(--ease), transform 0.12s var(--ease);
+}
+
+a.about-link-btn:visited {
+  color: var(--ink);
+}
+
+a.about-link-btn:hover {
+  border-color: var(--ink);
+  background: var(--bg-hover);
+  color: var(--ink);
+  z-index: 2;
+}
+
+a.about-link-btn:active {
+  background: var(--bg-active);
+  transform: translateY(1px);
+}
+
+a.about-link-btn:focus-visible {
+  outline: 1.5px solid var(--accent-blue);
+  outline-offset: -1.5px;
+  z-index: 3;
 }
 
 /* Desktop Manual Update Checker */

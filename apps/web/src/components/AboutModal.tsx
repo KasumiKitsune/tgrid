@@ -299,7 +299,6 @@ export const AboutModal: React.FC = () => {
                     className="compact about-link-btn"
                     target="_blank"
                     rel="noopener noreferrer"
-                    style={{ textDecoration: 'none' }}
                   >
                     <span>使用指南</span>
                     <ExternalLinkIcon size={11} />

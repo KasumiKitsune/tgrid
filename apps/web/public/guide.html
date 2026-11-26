@@ -428,20 +428,23 @@
 
     .mech-toggle-track {
       position: relative;
-      width: 26px;
-      height: 14px;
+      display: inline-flex;
+      align-items: center;
+      width: 28px;
+      height: 16px;
+      padding: 2px;
       border: 1px solid var(--rule-strong);
       background: var(--bg-subtle);
+      flex-shrink: 0;
       transition: background-color 0.2s var(--ease), border-color 0.2s var(--ease);
     }
 
     .mech-toggle-knob {
-      position: absolute;
-      top: 1px;
-      left: 1px;
+      display: block;
       width: 10px;
       height: 10px;
       background: var(--ink-muted);
+      transform: translateX(0);
       transition: transform 0.24s var(--ease), background-color 0.2s var(--ease);
     }
 
@@ -1107,23 +1110,24 @@
     .export-stage {
       border: 1px solid var(--rule-strong);
       background: var(--bg-sheet);
-      padding: 12px;
+      padding: 14px;
       display: grid;
-      grid-template-columns: 124px minmax(0, 1fr);
-      gap: 14px;
+      grid-template-columns: 172px minmax(0, 1fr);
+      gap: 16px;
       align-items: center;
-      min-height: 118px;
+      min-height: 148px;
       transition: background-color 0.3s var(--ease), border-color 0.3s var(--ease);
     }
 
     .export-preview-art {
-      border: 1px solid var(--rule);
+      border: 1px solid var(--ink);
       background: var(--bg-bar);
-      height: 92px;
+      height: 126px;
       display: flex;
       align-items: center;
       justify-content: center;
       overflow: hidden;
+      box-shadow: 3px 3px 0 var(--bg-active);
       transition: background-color 0.32s var(--ease), border-color 0.32s var(--ease);
     }
 
@@ -1131,6 +1135,12 @@
       width: 100%;
       height: 100%;
       display: block;
+      animation: artSwapIn 0.32s var(--ease) both;
+    }
+
+    @keyframes artSwapIn {
+      from { opacity: 0.35; transform: scale(0.97); }
+      to { opacity: 1; transform: scale(1); }
     }
 
     .export-meta-title {
@@ -1834,13 +1844,18 @@
             </div>
 
             <div class="specimen-stage" id="heroSpecimenStage" title="点击谱面任意位置跳转光标">
-              <svg class="specimen-svg" id="heroSvg" viewBox="0 0 580 302" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="春眠不觉晓双尺语音标注谱演示">
+              <svg class="specimen-svg" id="heroSvg" viewBox="0 0 580 344" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="我说 TextGrid 这个词双尺语音标注谱演示">
+                <defs>
+                  <pattern id="silenceHatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                    <line x1="0" y1="0" x2="0" y2="6" stroke="#D7D2C6" stroke-width="1.2" />
+                  </pattern>
+                </defs>
                 <!-- Background Paper Grid -->
-                <rect x="0" y="0" width="580" height="302" fill="#FFFFFF" />
-                <rect x="0" y="0" width="56" height="302" fill="#FAF9F6" />
-                <line x1="56" y1="0" x2="56" y2="302" stroke="#D3CFC5" stroke-width="1" />
+                <rect x="0" y="0" width="580" height="344" fill="#FFFFFF" />
+                <rect x="0" y="0" width="56" height="344" fill="#FAF9F6" />
+                <line x1="56" y1="0" x2="56" y2="344" stroke="#D3CFC5" stroke-width="1" />
 
-                <!-- Time Ruler (0.0s - 1.5s) -->
+                <!-- Time Ruler (0.0s - 1.8s) -->
                 <rect x="56" y="0" width="524" height="24" fill="#FAF9F6" />
                 <line x1="0" y1="24" x2="580" y2="24" stroke="#D3CFC5" stroke-width="1" />
                 <text x="28" y="15.5" text-anchor="middle" font-family="JetBrains Mono, Consolas, monospace" font-size="9.5" fill="#8F8C83">TIME</text>
@@ -1848,8 +1863,8 @@
 
                 <!-- Waveform Track -->
                 <text x="28" y="54" text-anchor="middle" font-family="Inter, Noto Sans SC, sans-serif" font-size="10.5" fill="#5C5951">波形</text>
-                <line x1="56" y1="51" x2="566" y2="51" stroke="#EAE7E0" stroke-width="1" />
-                <path id="heroWavePath" fill="none" stroke="#141413" stroke-width="1.15" />
+                <line x1="56" y1="51" x2="564" y2="51" stroke="#EAE7E0" stroke-width="1" />
+                <path id="heroWavePath" fill="none" stroke="#141413" stroke-width="1.05" />
                 <line x1="0" y1="78" x2="580" y2="78" stroke="#D3CFC5" stroke-width="1" />
 
                 <!-- Spectrogram Track (1:1 Physical Time) -->
@@ -1857,35 +1872,40 @@
                 <text x="28" y="128" text-anchor="middle" font-family="JetBrains Mono, Consolas, monospace" font-size="9" fill="#8F8C83">1:1 真实</text>
                 <g id="heroSpecBars"></g>
                 <g id="heroAcousticsOverlay" style="transition: opacity 0.28s cubic-bezier(0.22,1,0.36,1);">
-                  <!-- Formant tracks F1-F3 -->
-                  <path id="heroF1Path" fill="none" stroke="#B91C1C" stroke-width="1.5" stroke-dasharray="3 2.5" opacity="0.88" />
-                  <path id="heroF2Path" fill="none" stroke="#B45309" stroke-width="1.4" stroke-dasharray="3 2.5" opacity="0.82" />
-                  <!-- Pitch F0 track -->
+                  <path id="heroF1Path" fill="none" stroke="#B91C1C" stroke-width="1.35" stroke-dasharray="2.5 2.5" opacity="0.86" />
+                  <path id="heroF2Path" fill="none" stroke="#B45309" stroke-width="1.35" stroke-dasharray="2.5 2.5" opacity="0.84" />
                   <path id="heroF0Path" fill="none" stroke="#1D4ED8" stroke-width="2" />
                 </g>
                 <line x1="0" y1="158" x2="580" y2="158" stroke="#D3CFC5" stroke-width="1" />
 
                 <!-- Projection Neck (Elastic Alignment Connectors) -->
-                <rect x="56" y="158" width="524" height="44" fill="#FCFBF9" />
-                <text x="28" y="183" text-anchor="middle" font-family="Inter, Noto Sans SC, sans-serif" font-size="9.5" fill="#8F8C83">对齐线</text>
+                <rect x="56" y="158" width="524" height="42" fill="#FCFBF9" />
+                <text x="28" y="182" text-anchor="middle" font-family="Inter, Noto Sans SC, sans-serif" font-size="9.5" fill="#8F8C83">对齐线</text>
                 <g id="heroNeckPaths"></g>
-                <line x1="0" y1="202" x2="580" y2="202" stroke="#D3CFC5" stroke-width="1" />
+                <line x1="0" y1="200" x2="580" y2="200" stroke="#D3CFC5" stroke-width="1" />
 
-                <!-- Tier 1: Word / Character -->
-                <text x="28" y="229" text-anchor="middle" font-family="Inter, Noto Sans SC, sans-serif" font-size="10.5" font-weight="600" fill="#141413">字词层</text>
+                <!-- Tier 1: Word Tier (Parent spans: 我 / 说 / TextGrid / 这个 / 词) -->
+                <text x="28" y="224" text-anchor="middle" font-family="Inter, Noto Sans SC, sans-serif" font-size="10.5" font-weight="600" fill="#141413">词语层</text>
                 <g id="heroTierWord"></g>
-                <line x1="0" y1="248" x2="580" y2="248" stroke="#D3CFC5" stroke-width="1" />
+                <line x1="0" y1="242" x2="580" y2="242" stroke="#D3CFC5" stroke-width="1" />
 
-                <!-- Tier 2: IPA -->
-                <text x="28" y="278" text-anchor="middle" font-family="Inter, Noto Sans SC, sans-serif" font-size="10.5" font-weight="600" fill="#141413">音标层</text>
+                <!-- Tier 2: Phoneme / IPA Tier (Fine sub-word segments) -->
+                <text x="28" y="268" text-anchor="middle" font-family="Inter, Noto Sans SC, sans-serif" font-size="10.5" font-weight="600" fill="#141413">音素层</text>
                 <g id="heroTierIpa"></g>
+                <line x1="0" y1="290" x2="580" y2="290" stroke="#D3CFC5" stroke-width="1" />
+
+                <!-- Tier 3: TextTier Point Events -->
+                <text x="28" y="319" text-anchor="middle" font-family="Inter, Noto Sans SC, sans-serif" font-size="10.5" font-weight="600" fill="#141413">事件点</text>
+                <rect x="56" y="290" width="524" height="54" fill="#FCFBF9" />
+                <line x1="56" y1="317" x2="564" y2="317" stroke="#EAE7E0" stroke-width="1" stroke-dasharray="2 3" />
+                <g id="heroTierPoints"></g>
 
                 <!-- Synchronized Dual Playhead (Upper Physical + Lower Mapped) -->
                 <g id="heroPlayheadGroup">
-                  <line id="heroHeadUpper" x1="70" y1="24" x2="70" y2="158" stroke="#B91C1C" stroke-width="1.5" />
-                  <path id="heroHeadNeck" d="M 70 158 L 70 202" fill="none" stroke="#B91C1C" stroke-width="1.4" stroke-dasharray="3 2" />
-                  <line id="heroHeadLower" x1="70" y1="202" x2="70" y2="302" stroke="#B91C1C" stroke-width="1.5" />
-                  <polygon id="heroHeadCap" points="66,18 74,18 70,24" fill="#B91C1C" />
+                  <line id="heroHeadUpper" x1="64" y1="24" x2="64" y2="158" stroke="#B91C1C" stroke-width="1.5" />
+                  <path id="heroHeadNeck" d="M 64 158 L 64 200" fill="none" stroke="#B91C1C" stroke-width="1.35" stroke-dasharray="3 2" />
+                  <line id="heroHeadLower" x1="64" y1="200" x2="64" y2="344" stroke="#B91C1C" stroke-width="1.5" />
+                  <polygon id="heroHeadCap" points="60,18 68,18 64,24" fill="#B91C1C" />
                 </g>
               </svg>
             </div>
@@ -1893,9 +1913,9 @@
             <div class="specimen-foot">
               <span class="specimen-foot-status">
                 <span class="specimen-dot" aria-hidden="true"></span>
-                <span id="heroModeCaption">上方语谱 1:1 真实时间 · 下方短音段自动舒展不挤字</span>
+                <span id="heroModeCaption">长静默折叠 · 短塞音自动舒展 · 三层与点标同步对齐</span>
               </span>
-              <span>点击切换模式或点击谱面定位</span>
+              <span id="heroLoopHint">播放 2 遍后自动停止</span>
             </div>
           </div>
         </div>
@@ -1944,23 +1964,68 @@
                   <span>吸附过零点 (Z)</span>
                 </button>
               </div>
-              <svg id="loupeSvg" viewBox="0 0 420 94" width="100%" height="94" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="声学微距放大镜与过零点吸附演示">
-                <rect x="0" y="0" width="420" height="94" fill="#FFFFFF" stroke="#D3CFC5" stroke-width="1" />
-                <line x1="0" y1="47" x2="420" y2="47" stroke="#E0DDD4" stroke-width="1" />
-                <path id="loupeWave" fill="none" stroke="#141413" stroke-width="1.35" />
-                <g id="loupeZeroDots"></g>
-                <!-- Moving Loupe Reticle -->
-                <g id="loupeReticle">
-                  <rect x="150" y="4" width="84" height="86" fill="rgba(29,78,216,0.06)" stroke="#1D4ED8" stroke-width="1.2" />
-                  <line x1="192" y1="4" x2="192" y2="90" stroke="#B91C1C" stroke-width="1.6" />
-                  <rect x="152" y="6" width="44" height="14" fill="#1D4ED8" />
-                  <text x="174" y="16" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#FFFFFF">±40ms</text>
-                  <circle id="loupeSnapRing" cx="192" cy="47" r="4.5" fill="none" stroke="#1D4ED8" stroke-width="1.6" />
+              <svg id="loupeSvg" viewBox="0 0 440 174" width="100%" height="174" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="双尺声学微距放大镜与过零点吸附演示">
+                <defs>
+                  <clipPath id="loupeZoomClip">
+                    <rect x="8" y="22" width="424" height="58" />
+                  </clipPath>
+                </defs>
+                <!-- Outer Instrument Frame -->
+                <rect x="0.5" y="0.5" width="439" height="173" fill="#FFFFFF" stroke="#B6B1A4" stroke-width="1" />
+
+                <!-- Upper Panel: Magnified ±40 ms High-Resolution Waveform -->
+                <rect x="8" y="6" width="424" height="74" fill="#FAF9F6" stroke="#1D4ED8" stroke-width="1.15" />
+                <rect x="8" y="6" width="424" height="16" fill="#EEF3FF" />
+                <line x1="8" y1="22" x2="432" y2="22" stroke="#B8CCF8" stroke-width="1" />
+                <text x="14" y="17" font-family="JetBrains Mono, Consolas, monospace" font-size="9.5" font-weight="600" fill="#1D4ED8">MICRO LOUPE · ±40 ms 波形微距</text>
+                <text id="loupeSnapBadge" x="425" y="17" text-anchor="end" font-family="JetBrains Mono, Consolas, monospace" font-size="9" font-weight="600" fill="#1D4ED8">ZERO-CROSS LOCK</text>
+
+                <!-- Micro grid & zero axis inside zoomed window -->
+                <line x1="114" y1="22" x2="114" y2="80" stroke="#E5E1D8" stroke-width="1" stroke-dasharray="2 2" />
+                <line x1="326" y1="22" x2="326" y2="80" stroke="#E5E1D8" stroke-width="1" stroke-dasharray="2 2" />
+                <line x1="8" y1="51" x2="432" y2="51" stroke="#D3CFC5" stroke-width="1" />
+                <text x="13" y="76" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#8F8C83">-40ms</text>
+                <text x="427" y="76" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="8.5" fill="#8F8C83">+40ms</text>
+
+                <!-- Dynamic Zoomed Waveform & Zero-Crossings -->
+                <g clip-path="url(#loupeZoomClip)">
+                  <path id="loupeZoomFill" fill="rgba(20,20,19,0.05)" stroke="none" />
+                  <path id="loupeZoomWave" fill="none" stroke="#141413" stroke-width="1.45" />
+                  <g id="loupeZoomZeros"></g>
                 </g>
+
+                <!-- Fixed Center Precision Reticle in Magnified Loupe -->
+                <line x1="220" y1="22" x2="220" y2="80" stroke="#B91C1C" stroke-width="1.5" />
+                <polygon points="216,22 224,22 220,27" fill="#B91C1C" />
+                <g id="loupeSnapTarget">
+                  <circle cx="220" cy="51" r="5.5" fill="none" stroke="#1D4ED8" stroke-width="1.5" />
+                  <circle cx="220" cy="51" r="2" fill="#1D4ED8" />
+                </g>
+
+                <!-- Middle Dual-Scale Trapezoid Projection Bridge -->
+                <rect x="8" y="80" width="424" height="18" fill="#F5F3EE" />
+                <polygon id="loupeBridgeFill" points="8,80 432,80 264,98 176,98" fill="rgba(29,78,216,0.10)" />
+                <line id="loupeBridgeL" x1="8" y1="80" x2="176" y2="98" stroke="#1D4ED8" stroke-width="1" opacity="0.65" />
+                <line id="loupeBridgeR" x1="432" y1="80" x2="264" y2="98" stroke="#1D4ED8" stroke-width="1" opacity="0.65" />
+
+                <!-- Lower Panel: ±150 ms Context Spectrogram + Overview Wave -->
+                <rect x="8" y="98" width="424" height="56" fill="#FFFFFF" stroke="#D3CFC5" stroke-width="1" />
+                <g id="loupeCtxSpec"></g>
+                <line x1="8" y1="126" x2="432" y2="126" stroke="#E8E4DC" stroke-width="1" />
+                <path id="loupeCtxWave" fill="none" stroke="#141413" stroke-width="1" opacity="0.85" />
+
+                <!-- Sliding Context Window Box + Playhead -->
+                <g id="loupeCtxCursor">
+                  <rect id="loupeCtxBox" x="176" y="98" width="88" height="56" fill="rgba(29,78,216,0.08)" stroke="#1D4ED8" stroke-width="1.15" />
+                  <line id="loupeCtxLine" x1="220" y1="98" x2="220" y2="154" stroke="#B91C1C" stroke-width="1.5" />
+                </g>
+
+                <!-- Bottom Millisecond Ruler -->
+                <g id="loupeCtxRuler"></g>
               </svg>
               <div class="vernier-wrap">
-                <input type="range" class="vernier-range" id="loupeRange" min="60" max="360" value="192" aria-label="调整边界时间位置" />
-                <span class="vernier-readout" id="loupeReadout">0.432 s</span>
+                <input type="range" class="vernier-range" id="loupeRange" min="70" max="370" value="220" aria-label="调整边界时间位置" />
+                <span class="vernier-readout" id="loupeReadout">0.640 s</span>
               </div>
             </div>
           </article>
@@ -2056,27 +2121,65 @@
                   <button type="button" class="seg-btn is-active" data-preset="journal">论文单栏</button>
                   <button type="button" class="seg-btn" data-preset="mono">黑白印刷</button>
                   <button type="button" class="seg-btn" data-preset="vinyl">黑胶海报</button>
+                  <button type="button" class="seg-btn" data-preset="bauhaus">包豪斯</button>
                   <button type="button" class="seg-btn" data-preset="fan">折扇海报</button>
                 </div>
               </div>
 
               <div class="export-stage" id="exportStage">
                 <div class="export-preview-art" id="exportArtBox">
-                  <!-- Dynamic SVG populated via script; static initial journal graphic for non-JS -->
-                  <svg viewBox="0 0 120 88" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                    <rect x="6" y="6" width="108" height="76" fill="#FFFFFF" stroke="#141413" stroke-width="1" />
-                    <rect x="12" y="14" width="96" height="24" fill="#F2F0EA" />
-                    <path d="M14 26 Q28 16 42 25 T70 21 T104 28" fill="none" stroke="#1D4ED8" stroke-width="1.6" />
-                    <line x1="12" y1="45" x2="108" y2="45" stroke="#D3CFC5" stroke-width="1" />
-                    <rect x="12" y="49" width="32" height="16" fill="#EEF3FF" stroke="#1D4ED8" stroke-width="0.9" />
-                    <rect x="44" y="49" width="32" height="16" fill="#FFFFFF" stroke="#141413" stroke-width="0.9" />
-                    <rect x="76" y="49" width="32" height="16" fill="#FFFFFF" stroke="#141413" stroke-width="0.9" />
-                    <line x1="12" y1="73" x2="62" y2="73" stroke="#8F8C83" stroke-width="1.2" />
+                  <!-- Initial richly detailed journal figure specimen (upgraded by script on preset swap) -->
+                  <svg viewBox="0 0 180 132" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <rect x="0" y="0" width="180" height="132" fill="#FAF9F6" />
+                    <rect x="10" y="8" width="160" height="116" fill="#FFFFFF" stroke="#141413" stroke-width="0.9" />
+                    <!-- Top time ruler -->
+                    <line x1="26" y1="19" x2="164" y2="19" stroke="#C5C0B5" stroke-width="0.7" />
+                    <path d="M26 15V19 M60 16V19 M95 15V19 M130 16V19 M164 15V19" stroke="#6A675F" stroke-width="0.7" />
+                    <text x="27" y="14" font-family="JetBrains Mono, monospace" font-size="5.5" fill="#6A675F">0.0s</text>
+                    <text x="95" y="14" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="5.5" fill="#6A675F">0.9s</text>
+                    <text x="163" y="14" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="5.5" fill="#6A675F">1.8s</text>
+                    <!-- Left frequency axis -->
+                    <line x1="26" y1="19" x2="26" y2="108" stroke="#D3CFC5" stroke-width="0.7" />
+                    <text x="23" y="29" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="5" fill="#8F8C83">5k</text>
+                    <text x="23" y="61" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="5" fill="#8F8C83">0</text>
+                    <!-- Vector Contour Spectrogram (Marching Squares aesthetic) -->
+                    <rect x="26" y="20" width="138" height="44" fill="#FCFBF8" />
+                    <path d="M34 56 C44 40,58 38,66 56 Z M76 58 C84 32,102 28,116 44 C122 50,124 58,116 60 Z M130 56 C138 38,150 40,158 56 Z" fill="#E6E3DB" />
+                    <path d="M40 54 C46 44,56 44,62 54 Z M82 54 C90 38,104 36,112 49 Z M135 53 C140 43,148 44,153 53 Z" fill="#C4BFB3" />
+                    <path d="M45 52 C49 47,54 47,57 52 Z M89 50 C94 42,102 42,106 49 Z" fill="#8C877C" />
+                    <!-- F0 + Formants -->
+                    <path d="M36 45 C46 42,56 40,64 44 M80 41 C92 34,104 36,116 43 M132 48 C142 42,150 37,158 35" fill="none" stroke="#1D4ED8" stroke-width="1.35" />
+                    <path d="M36 53 C48 51,58 52,64 54 M80 51 C94 48,106 50,116 53 M132 54 C144 52,152 51,158 52" fill="none" stroke="#B91C1C" stroke-width="0.9" stroke-dasharray="2 1.8" />
+                    <path d="M36 33 C48 30,58 32,64 35 M80 28 C94 25,106 27,116 32 M132 34 C144 30,152 29,158 30" fill="none" stroke="#B45309" stroke-width="0.85" stroke-dasharray="2 1.8" />
+                    <!-- Projection neck -->
+                    <line x1="26" y1="64" x2="164" y2="64" stroke="#D3CFC5" stroke-width="0.7" />
+                    <path d="M64 64 C64 70,58 70,58 76 M78 64 C78 70,84 70,84 76 M118 64 C118 70,126 70,126 76" fill="none" stroke="#B6B1A4" stroke-width="0.7" />
+                    <!-- Two-tier annotation boxes -->
+                    <rect x="26" y="76" width="32" height="15" fill="#FFFFFF" stroke="#141413" stroke-width="0.7" />
+                    <rect x="58" y="76" width="68" height="15" fill="#EEF3FF" stroke="#1D4ED8" stroke-width="0.8" />
+                    <rect x="126" y="76" width="38" height="15" fill="#FFFFFF" stroke="#141413" stroke-width="0.7" />
+                    <text x="42" y="86" text-anchor="middle" font-family="Inter, sans-serif" font-size="6.5" fill="#141413">我说</text>
+                    <text x="92" y="86" text-anchor="middle" font-family="Inter, sans-serif" font-size="6.5" font-weight="700" fill="#1D4ED8">TextGrid</text>
+                    <text x="145" y="86" text-anchor="middle" font-family="Inter, sans-serif" font-size="6.5" fill="#141413">这个词</text>
+                    <rect x="26" y="91" width="32" height="14" fill="#FAF9F6" stroke="#D3CFC5" stroke-width="0.7" />
+                    <rect x="58" y="91" width="22" height="14" fill="#FFFFFF" stroke="#D3CFC5" stroke-width="0.7" />
+                    <rect x="80" y="91" width="20" height="14" fill="#FFFFFF" stroke="#D3CFC5" stroke-width="0.7" />
+                    <rect x="100" y="91" width="26" height="14" fill="#FFFFFF" stroke="#D3CFC5" stroke-width="0.7" />
+                    <rect x="126" y="91" width="38" height="14" fill="#FAF9F6" stroke="#D3CFC5" stroke-width="0.7" />
+                    <text x="69" y="100.5" text-anchor="middle" font-family="Charis SIL, serif" font-size="6" fill="#5C5951">tʰɛks</text>
+                    <text x="90" y="100.5" text-anchor="middle" font-family="Charis SIL, serif" font-size="6" fill="#1D4ED8">t</text>
+                    <text x="113" y="100.5" text-anchor="middle" font-family="Charis SIL, serif" font-size="6" fill="#5C5951">ɡɹɪd</text>
+                    <!-- Bilingual legend footer -->
+                    <line x1="26" y1="115" x2="35" y2="115" stroke="#1D4ED8" stroke-width="1.3" />
+                    <text x="38" y="117" font-family="Inter, sans-serif" font-size="5.2" fill="#5C5951">F0 基频</text>
+                    <line x1="68" y1="115" x2="77" y2="115" stroke="#B91C1C" stroke-width="1" stroke-dasharray="2 1.5" />
+                    <text x="80" y="117" font-family="Inter, sans-serif" font-size="5.2" fill="#5C5951">F1–F2 共振峰</text>
+                    <text x="164" y="117" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="5" fill="#8F8C83">85 mm · SVG</text>
                   </svg>
                 </div>
                 <div>
                   <h4 class="export-meta-title" id="exportMetaTitle">学术论文单栏排版（85 mm）</h4>
-                  <p class="export-meta-text" id="exportMetaText">自动匹配期刊单栏宽度，保留清晰的等值轮廓语谱、基频线条与中英双语图例。</p>
+                  <p class="export-meta-text" id="exportMetaText">自动匹配期刊单栏宽度，保留纯矢量等值轮廓语谱、基频共振峰线条与中英双语图例。</p>
                   <div class="export-tags" id="exportMetaTags">
                     <span class="mono-tag">纯矢量 SVG</span>
                     <span class="mono-tag">图文分离 ZIP</span>
@@ -2791,24 +2894,45 @@
 
       /* ============================================================
          3. HERO INTERACTIVE DUAL-SCALE PHONETIC SCORE SPECIMEN
+            Example: "我说 TextGrid 这个词" (auto-stops after 2 loops)
       ============================================================ */
       (function initHeroSpecimen() {
         var NS = 'http://www.w3.org/2000/svg';
-        var X0 = 66;
-        var X1 = 564;
+        var X0 = 64;
+        var X1 = 556;
         var W = X1 - X0;
-        var TOTAL_T = 1.50;
+        var TOTAL_T = 1.80;
 
-        // Authentic physical timings vs expanded dual-scale visual layout
-        // Notice "不" (0.09s) and "觉" (0.11s) are naturally short and cramped in 1:1 linear!
+        // 10 phoneme intervals: leading/trailing silence folds cleanly; short English stops (tʰ 70ms, t 50ms) expand!
         var segs = [
-          { t0: 0.00, t1: 0.14, word: '',    ipa: '',        dual0: 0.00, dual1: 0.05 },
-          { t0: 0.14, t1: 0.44, word: '春',  ipa: 'tʂʰwən⁵⁵', dual0: 0.05, dual1: 0.23 },
-          { t0: 0.44, t1: 0.72, word: '眠',  ipa: 'mjɛn³⁵',   dual0: 0.23, dual1: 0.40 },
-          { t0: 0.72, t1: 0.81, word: '不',  ipa: 'pu⁵¹',     dual0: 0.40, dual1: 0.56 },
-          { t0: 0.81, t1: 0.92, word: '觉',  ipa: 'tɕyɛ³⁵',   dual0: 0.56, dual1: 0.74 },
-          { t0: 0.92, t1: 1.32, word: '晓',  ipa: 'ɕjɑu²¹⁴',  dual0: 0.74, dual1: 0.94 },
-          { t0: 1.32, t1: 1.50, word: '',    ipa: '',        dual0: 0.94, dual1: 1.00 }
+          { t0: 0.00, t1: 0.24, ipa: '//',       folded: true,  dual0: 0.000, dual1: 0.050 },
+          { t0: 0.24, t1: 0.44, ipa: 'wɔ²¹⁴',    folded: false, dual0: 0.050, dual1: 0.165 },
+          { t0: 0.44, t1: 0.64, ipa: 'ʂwɔ⁵⁵',    folded: false, dual0: 0.165, dual1: 0.285 },
+          { t0: 0.64, t1: 0.71, ipa: 'tʰ',       folded: false, dual0: 0.285, dual1: 0.365 },
+          { t0: 0.71, t1: 0.84, ipa: 'ɛks',      folded: false, dual0: 0.365, dual1: 0.480 },
+          { t0: 0.84, t1: 0.89, ipa: 't',        folded: false, dual0: 0.480, dual1: 0.555 },
+          { t0: 0.89, t1: 1.14, ipa: 'ɡɹɪd',     folded: false, dual0: 0.555, dual1: 0.695 },
+          { t0: 1.14, t1: 1.38, ipa: 'ʈʂɤ⁵¹kə',  folded: false, dual0: 0.695, dual1: 0.835 },
+          { t0: 1.38, t1: 1.62, ipa: 'tsʰɿ³⁵',   folded: false, dual0: 0.835, dual1: 0.955 },
+          { t0: 1.62, t1: 1.80, ipa: '//',       folded: true,  dual0: 0.955, dual1: 1.000 }
+        ];
+
+        // Parent word tier spans across phoneme boundaries ("TextGrid" spans segs 3..6)
+        var words = [
+          { t0: 0.00, t1: 0.24, text: '//',       folded: true,  dual0: 0.000, dual1: 0.050 },
+          { t0: 0.24, t1: 0.44, text: '我',       folded: false, dual0: 0.050, dual1: 0.165 },
+          { t0: 0.44, t1: 0.64, text: '说',       folded: false, dual0: 0.165, dual1: 0.285 },
+          { t0: 0.64, t1: 1.14, text: 'TextGrid', folded: false, dual0: 0.285, dual1: 0.695, accent: true },
+          { t0: 1.14, t1: 1.38, text: '这个',     folded: false, dual0: 0.695, dual1: 0.835 },
+          { t0: 1.38, t1: 1.62, text: '词',       folded: false, dual0: 0.835, dual1: 0.955 },
+          { t0: 1.62, t1: 1.80, text: '//',       folded: true,  dual0: 0.955, dual1: 1.000 }
+        ];
+
+        // Authentic TextTier point events
+        var pointEvents = [
+          { t: 0.64,  label: '语码切换', color: '#1D4ED8' },
+          { t: 0.865, label: 't 爆破',   color: '#B45309' },
+          { t: 1.54,  label: '升调峰 H*', color: '#B91C1C' }
         ];
 
         function svgEl(tag, attrs) {
@@ -2819,9 +2943,9 @@
           return el;
         }
 
-        // Build ruler ticks
+        // Build ruler ticks (0.0s .. 1.8s, cleanly framed so last tick never clips)
         var rulerG = document.getElementById('heroRulerTicks');
-        for (var i = 0; i <= 15; i++) {
+        for (var i = 0; i <= 18; i++) {
           var t = i * 0.1;
           var rx = X0 + (t / TOTAL_T) * W;
           var major = i % 3 === 0;
@@ -2831,8 +2955,11 @@
             stroke: major ? '#6A675F' : '#C5C0B5', 'stroke-width': '1'
           }));
           if (major) {
+            var isLast = i === 18;
             var lbl = svgEl('text', {
-              x: (rx + 2).toFixed(1), y: '10.5',
+              x: (isLast ? rx - 1 : rx + 2).toFixed(1),
+              y: '10.5',
+              'text-anchor': isLast ? 'end' : 'start',
               'font-family': 'JetBrains Mono, Consolas, monospace',
               'font-size': '9', fill: '#6A675F'
             });
@@ -2841,70 +2968,97 @@
           }
         }
 
-        // Deterministic voice envelope for speech segments
-        function speechEnergy(t) {
-          if (t < 0.14 || t > 1.32) return 0.04;
-          var env = 0.08;
-          var peaks = [
-            { c: 0.29, w: 0.13, a: 0.92 },
-            { c: 0.58, w: 0.12, a: 0.84 },
-            { c: 0.765, w: 0.042, a: 0.65 },
-            { c: 0.865, w: 0.052, a: 0.76 },
-            { c: 1.12, w: 0.18, a: 0.95 }
+        // Deterministic acoustic model: voicing + frication + stop bursts
+        function voicedEnergy(t) {
+          var vowels = [
+            { c: 0.34, w: 0.085, a: 0.90 }, // 我
+            { c: 0.56, w: 0.068, a: 0.86 }, // 说 (元音段)
+            { c: 0.75, w: 0.042, a: 0.82 }, // ɛ
+            { c: 1.01, w: 0.095, a: 0.92 }, // ɡɹɪd
+            { c: 1.27, w: 0.088, a: 0.85 }, // 这个
+            { c: 1.52, w: 0.075, a: 0.94 }  // 词 (元音段)
           ];
-          for (var p = 0; p < peaks.length; p++) {
-            var d = (t - peaks[p].c) / peaks[p].w;
-            env = Math.max(env, peaks[p].a * Math.exp(-d * d * 1.4));
+          var e = 0;
+          for (var i = 0; i < vowels.length; i++) {
+            var d = (t - vowels[i].c) / vowels[i].w;
+            e = Math.max(e, vowels[i].a * Math.exp(-d * d * 1.45));
           }
-          return env;
+          return e;
         }
 
-        // Build Waveform
+        function fricativeEnergy(t) {
+          var frics = [
+            { c: 0.475, w: 0.032, a: 0.70 }, // ʂ
+            { c: 0.675, w: 0.024, a: 0.62 }, // tʰ 除阻送气
+            { c: 0.810, w: 0.028, a: 0.78 }, // s
+            { c: 0.868, w: 0.015, a: 0.58 }, // t 爆破
+            { c: 1.168, w: 0.028, a: 0.64 }, // ʈʂ
+            { c: 1.415, w: 0.032, a: 0.74 }  // tsʰ
+          ];
+          var e = 0;
+          for (var i = 0; i < frics.length; i++) {
+            var d = (t - frics[i].c) / frics[i].w;
+            e = Math.max(e, frics[i].a * Math.exp(-d * d * 1.9));
+          }
+          return e;
+        }
+
+        // Build Realistic Multi-Component Speech Waveform
         var wavePts = [];
-        for (var k = 0; k <= 240; k++) {
-          var wt = (k / 240) * TOTAL_T;
+        for (var k = 0; k <= 320; k++) {
+          var wt = (k / 320) * TOTAL_T;
           var wx = X0 + (wt / TOTAL_T) * W;
-          var e = speechEnergy(wt);
-          var osc = Math.sin(k * 1.85) * 0.65 + Math.sin(k * 4.3) * 0.35;
-          var wy = 51 + osc * e * 21;
+          var ve = voicedEnergy(wt);
+          var fe = fricativeEnergy(wt);
+          var voicedOsc = Math.sin(k * 1.65) * 0.62 + Math.sin(k * 3.3 + 0.5) * 0.28 + Math.sin(k * 5.0) * 0.1;
+          var noiseOsc = Math.sin(k * 19.7) * Math.cos(k * 7.3);
+          var amp = ve * voicedOsc * 21 + fe * noiseOsc * 11 + 0.45 * Math.sin(k * 3.7);
+          var wy = 51 + amp;
           wavePts.push((k === 0 ? 'M' : 'L') + wx.toFixed(1) + ' ' + wy.toFixed(1));
         }
         document.getElementById('heroWavePath').setAttribute('d', wavePts.join(' '));
 
-        // Build Broadband Spectrogram Columns (64 crisp vertical bands)
+        // Build High-Density Broadband Spectrogram (92 cols x 9 frequency bands)
         var specG = document.getElementById('heroSpecBars');
         var specRects = [];
-        var cols = 68;
+        var cols = 92;
+        var rows = 9;
         var colW = W / cols;
+        var rowH = 74 / rows;
         for (var c = 0; c < cols; c++) {
           var ct = ((c + 0.5) / cols) * TOTAL_T;
-          var energy = speechEnergy(ct);
-          for (var row = 0; row < 6; row++) {
-            var bandWeight = Math.max(0, 1 - Math.abs(row - (2.3 + Math.sin(c * 0.35))) * 0.34);
-            var alpha = Math.min(0.68, energy * bandWeight * (0.55 + (row < 3 ? 0.3 : 0.1)));
-            if (alpha > 0.04) {
+          var ve = voicedEnergy(ct);
+          var fe = fricativeEnergy(ct);
+          for (var row = 0; row < rows; row++) {
+            var fNorm = 1 - row / (rows - 1); // 1 = high freq (top), 0 = low freq (bottom)
+            var f1Band = Math.exp(-Math.pow((fNorm - 0.18) / 0.14, 2));
+            var f2Band = Math.exp(-Math.pow((fNorm - (0.50 + 0.12 * Math.sin(ct * 6.5))) / 0.15, 2));
+            var f3Band = Math.exp(-Math.pow((fNorm - 0.78) / 0.14, 2)) * 0.45;
+            var hiFricBand = Math.exp(-Math.pow((fNorm - 0.82) / 0.20, 2));
+            var val = ve * (f1Band * 0.72 + f2Band * 0.64 + f3Band * 0.4) + fe * hiFricBand * 0.72;
+            var alpha = Math.min(0.72, val);
+            if (alpha > 0.045) {
               var rect = svgEl('rect', {
                 x: (X0 + c * colW).toFixed(1),
-                y: (82 + row * 12).toFixed(1),
-                width: Math.max(1, colW - 0.8).toFixed(1),
-                height: '11',
+                y: (81 + row * rowH).toFixed(1),
+                width: Math.max(1, colW - 0.4).toFixed(1),
+                height: (rowH - 0.5).toFixed(1),
                 fill: '#141413',
                 opacity: alpha.toFixed(2)
               });
               specG.appendChild(rect);
-              specRects.push({ el: rect, base: alpha, col: c, t: ct });
+              specRects.push({ el: rect, base: alpha, t: ct });
             }
           }
         }
 
-        // Build F0 / F1 / F2 acoustic reference paths
-        function makeContour(fn) {
+        // Build F0 / F1 / F2 contours (naturally break on voiceless stops/fricatives!)
+        function makeVoicedContour(fn) {
           var d = '';
           var active = false;
-          for (var i = 0; i <= 120; i++) {
-            var t = (i / 120) * TOTAL_T;
-            var e = speechEnergy(t);
-            if (e > 0.22) {
+          for (var i = 0; i <= 160; i++) {
+            var t = (i / 160) * TOTAL_T;
+            if (voicedEnergy(t) > 0.28) {
               var x = X0 + (t / TOTAL_T) * W;
               var y = fn(t);
               d += (active ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
@@ -2915,61 +3069,124 @@
           }
           return d;
         }
-        document.getElementById('heroF0Path').setAttribute('d', makeContour(function (t) {
-          return 126 - Math.sin(t * 7.2) * 14 - (t > 0.92 ? (t - 0.92) * 28 : 0);
+
+        // Realistic Mandarin + English F0 tones: 我(214 dip), 说(55 high), TextGrid(stress fall), 这(51 fall), 词(35 rise)
+        document.getElementById('heroF0Path').setAttribute('d', makeVoicedContour(function (t) {
+          if (t < 0.45) return 126 + Math.sin((t - 0.24) / 0.20 * Math.PI) * 14;
+          if (t < 0.65) return 105 + Math.sin(t * 14) * 1.5;
+          if (t < 0.85) return 109 + (t - 0.71) * 45;
+          if (t < 1.15) return 118 + (t - 0.89) * 32;
+          if (t < 1.39) return 108 + (t - 1.14) * 78;
+          return 134 - (t - 1.38) * 105;
         }));
-        document.getElementById('heroF1Path').setAttribute('d', makeContour(function (t) {
-          return 139 + Math.cos(t * 11) * 5;
+        document.getElementById('heroF1Path').setAttribute('d', makeVoicedContour(function (t) {
+          return 141 + Math.cos(t * 10.5) * 4.5;
         }));
-        document.getElementById('heroF2Path').setAttribute('d', makeContour(function (t) {
-          return 103 + Math.sin(t * 9.5 + 0.6) * 10;
+        document.getElementById('heroF2Path').setAttribute('d', makeVoicedContour(function (t) {
+          return 107 + Math.sin(t * 7.8 + 0.4) * 10;
         }));
 
-        // Build Dynamic Neck Paths & Tier Cells
+        // Build Dynamic Neck Paths, Word Tier, Phoneme Tier, and Point Tier
         var neckG = document.getElementById('heroNeckPaths');
         var wordG = document.getElementById('heroTierWord');
         var ipaG = document.getElementById('heroTierIpa');
+        var pointG = document.getElementById('heroTierPoints');
+
+        var wordNodes = words.map(function (w) {
+          var rect = svgEl('rect', {
+            y: '200', height: '42',
+            fill: w.folded ? 'url(#silenceHatch)' : '#FFFFFF',
+            stroke: '#D3CFC5', 'stroke-width': '1'
+          });
+          var text = svgEl('text', {
+            y: '225.5', 'text-anchor': 'middle',
+            'font-family': w.accent ? 'JetBrains Mono, Inter, sans-serif' : 'Inter, Noto Sans SC, sans-serif',
+            'font-size': w.folded ? '10.5' : (w.accent ? '13.5' : '13.5'),
+            'font-weight': w.folded ? '400' : '700',
+            fill: w.folded ? '#9E9B92' : '#141413'
+          });
+          text.textContent = w.text;
+          wordG.appendChild(rect);
+          wordG.appendChild(text);
+          return { word: w, rect: rect, text: text };
+        });
 
         var cellNodes = segs.map(function (s, idx) {
-          var wordRect = svgEl('rect', { y: '202', height: '46', fill: s.word ? '#FFFFFF' : '#F5F3EE', stroke: '#D3CFC5', 'stroke-width': '1' });
-          var wordText = svgEl('text', {
-            y: '231', 'text-anchor': 'middle',
-            'font-family': 'Inter, Noto Sans SC, sans-serif', 'font-size': '14.5', 'font-weight': '600', fill: '#141413'
+          var ipaRect = svgEl('rect', {
+            y: '242', height: '48',
+            fill: s.folded ? 'url(#silenceHatch)' : '#FFFFFF',
+            stroke: '#D3CFC5', 'stroke-width': '1'
           });
-          wordText.textContent = s.word;
-          wordG.appendChild(wordRect);
-          wordG.appendChild(wordText);
-
-          var ipaRect = svgEl('rect', { y: '248', height: '54', fill: s.ipa ? '#FFFFFF' : '#F5F3EE', stroke: '#D3CFC5', 'stroke-width': '1' });
           var ipaText = svgEl('text', {
-            y: '279', 'text-anchor': 'middle',
-            'font-family': 'Charis SIL, Gentium Plus, Segoe UI, sans-serif', 'font-size': '12.5', fill: '#5C5951'
+            y: '270.5', 'text-anchor': 'middle',
+            'font-family': s.folded ? 'JetBrains Mono, monospace' : 'Charis SIL, Gentium Plus, Segoe UI, sans-serif',
+            'font-size': s.folded ? '10' : '12.5',
+            fill: s.folded ? '#9E9B92' : '#5C5951'
           });
           ipaText.textContent = s.ipa;
           ipaG.appendChild(ipaRect);
           ipaG.appendChild(ipaText);
 
-          var neckLine = idx > 0 ? svgEl('path', { fill: 'none', stroke: '#B6B1A4', 'stroke-width': '1' }) : null;
+          var neckLine = idx > 0 ? svgEl('path', { fill: 'none', stroke: '#C5C0B5', 'stroke-width': '1' }) : null;
           if (neckLine) neckG.appendChild(neckLine);
 
-          var bandFill = s.word ? svgEl('path', { fill: '#1D4ED8', opacity: '0' }) : null;
+          var bandFill = !s.folded ? svgEl('path', { fill: '#1D4ED8', opacity: '0' }) : null;
           if (bandFill) neckG.insertBefore(bandFill, neckG.firstChild);
 
-          return { seg: s, wordRect: wordRect, wordText: wordText, ipaRect: ipaRect, ipaText: ipaText, neckLine: neckLine, bandFill: bandFill };
+          return { seg: s, ipaRect: ipaRect, ipaText: ipaText, neckLine: neckLine, bandFill: bandFill };
         });
 
-        var morph = 1;       // 1 = Dual-Scale, 0 = 1:1 Linear
+        var pointNodes = pointEvents.map(function (pt) {
+          var g = svgEl('g');
+          var stem = svgEl('line', { y1: '290', y2: '317', stroke: pt.color, 'stroke-width': '1.25' });
+          var diamond = svgEl('polygon', { fill: pt.color });
+          var box = svgEl('rect', { y: '322', height: '16', fill: '#FFFFFF', stroke: pt.color, 'stroke-width': '1' });
+          var label = svgEl('text', {
+            y: '333', 'text-anchor': 'middle',
+            'font-family': 'Inter, Noto Sans SC, sans-serif', 'font-size': '9.5', 'font-weight': '600',
+            fill: pt.color
+          });
+          label.textContent = pt.label;
+          g.appendChild(stem);
+          g.appendChild(diamond);
+          g.appendChild(box);
+          g.appendChild(label);
+          pointG.appendChild(g);
+          return { pt: pt, stem: stem, diamond: diamond, box: box, label: label };
+        });
+
+        var morph = 1; // 1 = Dual-Scale, 0 = 1:1 Linear
         var targetMorph = 1;
+        var maxLoops = 2;
+        var completedLoops = 0;
         var playing = !prefersReduced;
-        var curTime = 0.24;
+        var curTime = 0.0;
         var lastTs = performance.now();
-        var activeSegIdx = -1;
 
         var clockEl = document.getElementById('heroClock');
+        var loopHintEl = document.getElementById('heroLoopHint');
         var headUpper = document.getElementById('heroHeadUpper');
         var headNeck = document.getElementById('heroHeadNeck');
         var headLower = document.getElementById('heroHeadLower');
         var headCap = document.getElementById('heroHeadCap');
+
+        var playBtn = document.getElementById('heroPlayBtn');
+        var playIcon = document.getElementById('heroPlayIcon');
+        function syncPlayIcon() {
+          playIcon.innerHTML = playing
+            ? '<rect x="2" y="1.5" width="2.8" height="9"/><rect x="7.2" y="1.5" width="2.8" height="9"/>'
+            : '<polygon points="2.5,1.5 10.5,6 2.5,10.5"/>';
+          if (loopHintEl) {
+            if (playing) {
+              loopHintEl.textContent = '演示中（第 ' + (completedLoops + 1) + ' / ' + maxLoops + ' 遍）';
+            } else if (completedLoops >= maxLoops) {
+              loopHintEl.textContent = '已播放 2 遍并停止 · 点击可重播';
+            } else {
+              loopHintEl.textContent = '已暂停 · 点击播放键或谱面定位';
+            }
+          }
+        }
+        syncPlayIcon();
 
         function getLowerX(fracLinear, fracDual) {
           var f = fracLinear + (fracDual - fracLinear) * morph;
@@ -2993,7 +3210,6 @@
           var dt = Math.min(0.05, (now - lastTs) / 1000);
           lastTs = now;
 
-          // Smooth morph toward target mode
           var diff = targetMorph - morph;
           if (Math.abs(diff) > 0.001) {
             morph += diff * Math.min(1, dt * 11);
@@ -3002,14 +3218,41 @@
           }
 
           if (playing) {
-            curTime += dt * 0.42;
-            if (curTime > TOTAL_T) curTime = 0;
+            curTime += dt * 0.48;
+            if (curTime >= TOTAL_T) {
+              completedLoops++;
+              if (completedLoops >= maxLoops) {
+                playing = false;
+                curTime = 0.0;
+                syncPlayIcon();
+              } else {
+                curTime = 0.0;
+                syncPlayIcon();
+              }
+            }
           }
 
           var mapped = mapTimeToLowerX(curTime);
-          activeSegIdx = mapped.idx;
+          var activeSegIdx = mapped.idx;
 
-          // Update cells & elastic projection necks
+          // Update parent word tier
+          for (var wi = 0; wi < wordNodes.length; wi++) {
+            var wn = wordNodes[wi];
+            var w = wn.word;
+            var wx0 = getLowerX(w.t0 / TOTAL_T, w.dual0);
+            var wx1 = getLowerX(w.t1 / TOTAL_T, w.dual1);
+            var ww = Math.max(1, wx1 - wx0);
+            var wHit = !w.folded && (playing || curTime > 0) && curTime >= w.t0 && curTime < w.t1;
+            wn.rect.setAttribute('x', wx0.toFixed(1));
+            wn.rect.setAttribute('width', ww.toFixed(1));
+            wn.rect.setAttribute('fill', wHit ? '#EEF3FF' : (w.folded ? 'url(#silenceHatch)' : '#FFFFFF'));
+            wn.rect.setAttribute('stroke', wHit ? '#1D4ED8' : '#D3CFC5');
+            wn.text.setAttribute('x', (wx0 + ww / 2).toFixed(1));
+            wn.text.setAttribute('fill', wHit ? '#1D4ED8' : (w.folded ? '#9E9B92' : '#141413'));
+            wn.text.setAttribute('opacity', w.folded && morph < 0.25 ? '0.5' : '1');
+          }
+
+          // Update phoneme tier & elastic projection necks
           for (var i = 0; i < cellNodes.length; i++) {
             var n = cellNodes[i];
             var s = n.seg;
@@ -3019,47 +3262,60 @@
             var lx1 = getLowerX(s.t1 / TOTAL_T, s.dual1);
             var cw = Math.max(1, lx1 - lx0);
             var cx = lx0 + cw / 2;
-            var isHit = i === activeSegIdx && Boolean(s.word);
-
-            n.wordRect.setAttribute('x', lx0.toFixed(1));
-            n.wordRect.setAttribute('width', cw.toFixed(1));
-            n.wordRect.setAttribute('fill', isHit ? '#EEF3FF' : (s.word ? '#FFFFFF' : '#F5F3EE'));
-            n.wordText.setAttribute('x', cx.toFixed(1));
-            n.wordText.setAttribute('fill', isHit ? '#1D4ED8' : '#141413');
-            n.wordText.setAttribute('font-size', cw < 32 ? '11.5' : '14.5');
+            var isHit = !s.folded && (playing || curTime > 0) && i === activeSegIdx;
 
             n.ipaRect.setAttribute('x', lx0.toFixed(1));
             n.ipaRect.setAttribute('width', cw.toFixed(1));
-            n.ipaRect.setAttribute('fill', isHit ? '#EEF3FF' : (s.ipa ? '#FFFFFF' : '#F5F3EE'));
+            n.ipaRect.setAttribute('fill', isHit ? '#EEF3FF' : (s.folded ? 'url(#silenceHatch)' : '#FFFFFF'));
+            n.ipaRect.setAttribute('stroke', isHit ? '#1D4ED8' : '#D3CFC5');
             n.ipaText.setAttribute('x', cx.toFixed(1));
-            n.ipaText.setAttribute('fill', isHit ? '#1D4ED8' : '#5C5951');
-            // Demonstrate crowding in 1:1 linear vs clarity in dual-scale
-            var ipaScale = cw < 42 ? Math.max(0.62, cw / 46) : 1;
-            n.ipaText.setAttribute('font-size', (12.5 * ipaScale).toFixed(1));
+            n.ipaText.setAttribute('fill', isHit ? '#1D4ED8' : (s.folded ? '#9E9B92' : '#5C5951'));
+            var ipaScale = cw < 38 ? Math.max(0.6, cw / 40) : 1;
+            n.ipaText.setAttribute('font-size', (12.2 * ipaScale).toFixed(1));
 
             if (n.neckLine) {
               n.neckLine.setAttribute('d',
-                'M ' + ux0.toFixed(1) + ' 158 C ' + ux0.toFixed(1) + ' 180 ' + lx0.toFixed(1) + ' 180 ' + lx0.toFixed(1) + ' 202'
+                'M ' + ux0.toFixed(1) + ' 158 C ' + ux0.toFixed(1) + ' 179 ' + lx0.toFixed(1) + ' 179 ' + lx0.toFixed(1) + ' 200'
               );
-              n.neckLine.setAttribute('stroke', (i === activeSegIdx || i === activeSegIdx + 1) ? '#1D4ED8' : '#C5C0B5');
+              var edgeActive = (playing || curTime > 0) && !segs[activeSegIdx].folded && (i === activeSegIdx || i === activeSegIdx + 1);
+              n.neckLine.setAttribute('stroke', edgeActive ? '#1D4ED8' : '#C5C0B5');
             }
             if (n.bandFill) {
               n.bandFill.setAttribute('d',
                 'M ' + ux0.toFixed(1) + ' 158 L ' + ux1.toFixed(1) + ' 158 ' +
-                'C ' + ux1.toFixed(1) + ' 180 ' + lx1.toFixed(1) + ' 180 ' + lx1.toFixed(1) + ' 202 ' +
-                'L ' + lx0.toFixed(1) + ' 202 ' +
-                'C ' + lx0.toFixed(1) + ' 180 ' + ux0.toFixed(1) + ' 180 ' + ux0.toFixed(1) + ' 158 Z'
+                'C ' + ux1.toFixed(1) + ' 179 ' + lx1.toFixed(1) + ' 179 ' + lx1.toFixed(1) + ' 200 ' +
+                'L ' + lx0.toFixed(1) + ' 200 ' +
+                'C ' + lx0.toFixed(1) + ' 179 ' + ux0.toFixed(1) + ' 179 ' + ux0.toFixed(1) + ' 158 Z'
               );
-              n.bandFill.setAttribute('opacity', isHit ? '0.13' : '0');
+              n.bandFill.setAttribute('opacity', isHit ? '0.14' : '0');
             }
           }
 
-          // Subtle playhead proximity glow on broadband spectrogram bands
+          // Update TextTier Point Markers cleanly mapped along lower scale
+          for (var pi = 0; pi < pointNodes.length; pi++) {
+            var pn = pointNodes[pi];
+            var px = mapTimeToLowerX(pn.pt.t).x;
+            var boxW = pn.pt.label.length * 10 + 10;
+            var bx = Math.min(X1 - boxW, Math.max(X0, px - boxW / 2));
+            var near = Math.abs(curTime - pn.pt.t) < 0.09 && (playing || curTime > 0);
+            pn.stem.setAttribute('x1', px.toFixed(1));
+            pn.stem.setAttribute('x2', px.toFixed(1));
+            pn.diamond.setAttribute('points',
+              px.toFixed(1) + ',312 ' + (px + 4).toFixed(1) + ',317 ' + px.toFixed(1) + ',322 ' + (px - 4).toFixed(1) + ',317'
+            );
+            pn.box.setAttribute('x', bx.toFixed(1));
+            pn.box.setAttribute('width', boxW.toFixed(1));
+            pn.box.setAttribute('fill', near ? pn.pt.color : '#FFFFFF');
+            pn.label.setAttribute('x', (bx + boxW / 2).toFixed(1));
+            pn.label.setAttribute('fill', near ? '#FFFFFF' : pn.pt.color);
+          }
+
+          // Subtle playhead proximity highlight on broadband spectrogram
           for (var r = 0; r < specRects.length; r++) {
             var sr = specRects[r];
             var dist = Math.abs(sr.t - curTime);
-            if (dist < 0.08) {
-              var boost = (1 - dist / 0.08) * 0.28;
+            if ((playing || curTime > 0) && dist < 0.065) {
+              var boost = (1 - dist / 0.065) * 0.28;
               sr.el.setAttribute('fill', '#1D4ED8');
               sr.el.setAttribute('opacity', Math.min(0.92, sr.base + boost).toFixed(2));
             } else if (sr.el.getAttribute('fill') !== '#141413') {
@@ -3073,7 +3329,7 @@
           var lx = mapped.x;
           headUpper.setAttribute('x1', ux.toFixed(1));
           headUpper.setAttribute('x2', ux.toFixed(1));
-          headNeck.setAttribute('d', 'M ' + ux.toFixed(1) + ' 158 C ' + ux.toFixed(1) + ' 180 ' + lx.toFixed(1) + ' 180 ' + lx.toFixed(1) + ' 202');
+          headNeck.setAttribute('d', 'M ' + ux.toFixed(1) + ' 158 C ' + ux.toFixed(1) + ' 179 ' + lx.toFixed(1) + ' 179 ' + lx.toFixed(1) + ' 200');
           headLower.setAttribute('x1', lx.toFixed(1));
           headLower.setAttribute('x2', lx.toFixed(1));
           headCap.setAttribute('points', (ux - 4).toFixed(1) + ',18 ' + (ux + 4).toFixed(1) + ',18 ' + ux.toFixed(1) + ',24');
@@ -3090,20 +3346,16 @@
           var isDual = btn.getAttribute('data-mode') === 'dual';
           targetMorph = isDual ? 1 : 0;
           captionEl.textContent = isDual
-            ? '上方语谱 1:1 真实时间 · 下方短音段自动舒展不挤字'
-            : '1:1 线性模式 · 注意「不」「觉」等短音段明显挤窄';
+            ? '长静默折叠 · 短塞音自动舒展 · 三层与点标同步对齐'
+            : '1:1 线性模式 · 注意「tʰ」「t」极短塞音被挤窄、静默占宽';
         });
 
-        // Play / Pause toggle
-        var playBtn = document.getElementById('heroPlayBtn');
-        var playIcon = document.getElementById('heroPlayIcon');
-        function syncPlayIcon() {
-          playIcon.innerHTML = playing
-            ? '<rect x="2" y="1.5" width="2.8" height="9"/><rect x="7.2" y="1.5" width="2.8" height="9"/>'
-            : '<polygon points="2.5,1.5 10.5,6 2.5,10.5"/>';
-        }
-        syncPlayIcon();
+        // Play / Pause toggle (manual restart resets 2-loop counter)
         playBtn.addEventListener('click', function () {
+          if (!playing && completedLoops >= maxLoops) {
+            completedLoops = 0;
+            curTime = 0;
+          }
           playing = !playing;
           syncPlayIcon();
         });
@@ -3117,7 +3369,7 @@
           acOverlay.style.opacity = next ? '1' : '0';
         });
 
-        // Click specimen stage to jump playhead
+        // Click specimen stage to seek playhead directly
         var stageEl = document.getElementById('heroSpecimenStage');
         var svgNode = document.getElementById('heroSvg');
         stageEl.addEventListener('click', function (e) {
@@ -3125,65 +3377,196 @@
           var relX = ((e.clientX - rect.left) / rect.width) * 580;
           var frac = Math.min(1, Math.max(0, (relX - X0) / W));
           curTime = frac * TOTAL_T;
+          if (!playing && completedLoops >= maxLoops) {
+            completedLoops = 0;
+            playing = true;
+            syncPlayIcon();
+          }
         });
       })();
 
       /* ============================================================
-         4. CARD 01: MICRO-LOUPE & ZERO-CROSSING SNAP DEMO
+         4. CARD 01: DUAL-SCALE ±40ms MICRO-LOUPE & ZERO-CROSS DEMO
       ============================================================ */
       (function initLoupeDemo() {
         var NS = 'http://www.w3.org/2000/svg';
-        var wavePath = document.getElementById('loupeWave');
-        var zeroG = document.getElementById('loupeZeroDots');
-        var reticle = document.getElementById('loupeReticle');
-        var snapRing = document.getElementById('loupeSnapRing');
+        var zoomWave = document.getElementById('loupeZoomWave');
+        var zoomFill = document.getElementById('loupeZoomFill');
+        var zoomZerosG = document.getElementById('loupeZoomZeros');
+        var snapTarget = document.getElementById('loupeSnapTarget');
+        var snapBadge = document.getElementById('loupeSnapBadge');
+        var bridgeFill = document.getElementById('loupeBridgeFill');
+        var bridgeL = document.getElementById('loupeBridgeL');
+        var bridgeR = document.getElementById('loupeBridgeR');
+        var ctxSpecG = document.getElementById('loupeCtxSpec');
+        var ctxWave = document.getElementById('loupeCtxWave');
+        var ctxBox = document.getElementById('loupeCtxBox');
+        var ctxLine = document.getElementById('loupeCtxLine');
+        var ctxRulerG = document.getElementById('loupeCtxRuler');
         var range = document.getElementById('loupeRange');
         var readout = document.getElementById('loupeReadout');
         var snapToggle = document.getElementById('loupeSnapToggle');
-        if (!wavePath || !range) return;
+        if (!zoomWave || !range) return;
 
-        var zeros = [];
-        var pts = [];
-        var prevY = 0;
-        for (var x = 0; x <= 420; x += 2) {
-          var env = 0.25 + 0.75 * Math.exp(-Math.pow((x - 210) / 135, 2));
-          var yVal = Math.sin(x * 0.088) * 28 * env + Math.sin(x * 0.17) * 7 * env;
-          if (x > 20 && x < 400 && ((prevY <= 0 && yVal > 0) || (prevY >= 0 && yVal < 0))) {
-            zeros.push(x - 1);
-            var dot = document.createElementNS(NS, 'circle');
-            dot.setAttribute('cx', String(x - 1));
-            dot.setAttribute('cy', '47');
-            dot.setAttribute('r', '2.5');
-            dot.setAttribute('fill', '#B45309');
-            dot.setAttribute('opacity', '0.55');
-            zeroG.appendChild(dot);
+        var X_MIN = 8;
+        var X_MAX = 432;
+        var X_W = X_MAX - X_MIN; // 424
+        var T_START = 0.490;     // 300ms context window (0.490s .. 0.790s)
+        var T_SPAN = 0.300;
+        var HALF_WIN = 0.040;    // ±40ms magnified loupe
+
+        function svgEl(tag, attrs) {
+          var el = document.createElementNS(NS, tag);
+          if (attrs) {
+            Object.keys(attrs).forEach(function (k) { el.setAttribute(k, attrs[k]); });
           }
-          prevY = yVal;
-          pts.push((x === 0 ? 'M' : 'L') + x + ' ' + (47 - yVal).toFixed(1));
+          return el;
         }
-        wavePath.setAttribute('d', pts.join(' '));
 
-        function updateLoupe(rawX) {
-          var snapOn = snapToggle.getAttribute('aria-pressed') === 'true';
-          var x = Number(rawX);
-          var snapped = false;
-          if (snapOn) {
-            var nearest = x;
-            var best = 999;
-            for (var i = 0; i < zeros.length; i++) {
-              var d = Math.abs(zeros[i] - x);
-              if (d < best) { best = d; nearest = zeros[i]; }
+        // Realistic phonetic transition: quiet stop closure -> burst at 0.62s -> periodic vowel voicing
+        function sampleWave(t) {
+          var dt = t - 0.615;
+          var env = 0.09 + 0.88 / (1 + Math.exp(-dt * 42));
+          env *= (0.85 + 0.15 * Math.cos((t - 0.68) * 26));
+          var f0 = 135 + 18 * Math.sin((t - 0.50) * 14);
+          var ph = (t - 0.49) * f0 * Math.PI * 2;
+          var burst = Math.exp(-Math.pow((t - 0.612) / 0.008, 2)) * 0.45 * Math.sin(t * 2100);
+          var tone = Math.sin(ph) * 0.62 + Math.sin(ph * 2.0 + 0.6) * 0.28 + Math.sin(ph * 3.0 - 0.4) * 0.14;
+          return Math.max(-1, Math.min(1, env * tone + burst));
+        }
+
+        // Precompute accurate zero-crossings across the 300ms window
+        var zeroTimes = [];
+        var stepT = 0.0005;
+        var prevV = sampleWave(T_START);
+        for (var tt = T_START + stepT; tt <= T_START + T_SPAN; tt += stepT) {
+          var curV = sampleWave(tt);
+          if ((prevV <= 0 && curV > 0) || (prevV >= 0 && curV < 0)) {
+            var frac = Math.abs(prevV) / (Math.abs(prevV) + Math.abs(curV) + 1e-9);
+            zeroTimes.push(tt - stepT + frac * stepT);
+          }
+          prevV = curV;
+        }
+
+        // Draw static lower context spectrogram + overview waveform + ruler
+        var specCols = 64;
+        var cw = X_W / specCols;
+        for (var c = 0; c < specCols; c++) {
+          var ct = T_START + ((c + 0.5) / specCols) * T_SPAN;
+          var env = 0.08 + 0.82 / (1 + Math.exp(-(ct - 0.615) * 42));
+          for (var r = 0; r < 5; r++) {
+            var bw = Math.exp(-Math.pow((r - 2.4 - Math.sin(c * 0.25) * 0.6) / 1.4, 2));
+            var op = Math.min(0.32, env * bw * 0.34);
+            if (op > 0.025) {
+              ctxSpecG.appendChild(svgEl('rect', {
+                x: (X_MIN + c * cw).toFixed(1),
+                y: (100 + r * 10.4).toFixed(1),
+                width: Math.max(1, cw - 0.5).toFixed(1),
+                height: '9.8',
+                fill: '#141413',
+                opacity: op.toFixed(2)
+              }));
             }
-            if (best <= 14) {
-              x = nearest;
+          }
+        }
+
+        var ovPts = [];
+        for (var oi = 0; oi <= 260; oi++) {
+          var ot = T_START + (oi / 260) * T_SPAN;
+          var ox = X_MIN + (oi / 260) * X_W;
+          var oy = 126 - sampleWave(ot) * 20;
+          ovPts.push((oi === 0 ? 'M' : 'L') + ox.toFixed(1) + ' ' + oy.toFixed(1));
+        }
+        ctxWave.setAttribute('d', ovPts.join(' '));
+
+        for (var ri = 0; ri <= 6; ri++) {
+          var rt = T_START + ri * 0.05;
+          var rx = X_MIN + (ri / 6) * X_W;
+          ctxRulerG.appendChild(svgEl('line', {
+            x1: rx.toFixed(1), y1: '154', x2: rx.toFixed(1), y2: '159',
+            stroke: '#8F8C83', 'stroke-width': '1'
+          }));
+          var rlbl = svgEl('text', {
+            x: (ri === 0 ? rx + 1 : (ri === 6 ? rx - 1 : rx)).toFixed(1),
+            y: '169',
+            'text-anchor': ri === 0 ? 'start' : (ri === 6 ? 'end' : 'middle'),
+            'font-family': 'JetBrains Mono, Consolas, monospace',
+            'font-size': '8.5', fill: '#6A675F'
+          });
+          rlbl.textContent = rt.toFixed(2) + 's';
+          ctxRulerG.appendChild(rlbl);
+        }
+
+        function updateLoupe(sliderVal) {
+          var snapOn = snapToggle.getAttribute('aria-pressed') === 'true';
+          var rawX = Number(sliderVal);
+          var tCenter = T_START + ((rawX - X_MIN) / X_W) * T_SPAN;
+          var snapped = false;
+
+          if (snapOn) {
+            var nearestT = tCenter;
+            var bestDt = 999;
+            for (var i = 0; i < zeroTimes.length; i++) {
+              var d = Math.abs(zeroTimes[i] - tCenter);
+              if (d < bestDt) { bestDt = d; nearestT = zeroTimes[i]; }
+            }
+            if (bestDt <= 0.0065) {
+              tCenter = nearestT;
               snapped = true;
             }
           }
-          var dx = x - 192;
-          reticle.setAttribute('transform', 'translate(' + dx.toFixed(1) + ', 0)');
-          snapRing.setAttribute('opacity', snapped ? '1' : '0');
-          var sec = 0.360 + (x / 420) * 0.160;
-          readout.textContent = sec.toFixed(3) + ' s';
+
+          // Re-render magnified ±40ms waveform
+          var t0 = tCenter - HALF_WIN;
+          var t1 = tCenter + HALF_WIN;
+          var zPts = [];
+          for (var zi = 0; zi <= 220; zi++) {
+            var zt = t0 + (zi / 220) * (t1 - t0);
+            var zx = X_MIN + (zi / 220) * X_W;
+            var zy = 51 - sampleWave(zt) * 24;
+            zPts.push((zi === 0 ? 'M' : 'L') + zx.toFixed(1) + ' ' + zy.toFixed(1));
+          }
+          var waveD = zPts.join(' ');
+          zoomWave.setAttribute('d', waveD);
+          zoomFill.setAttribute('d', waveD + ' L 432 51 L 8 51 Z');
+
+          // Render visible zero-crossing markers inside ±40ms window
+          while (zoomZerosG.firstChild) zoomZerosG.removeChild(zoomZerosG.firstChild);
+          for (var j = 0; j < zeroTimes.length; j++) {
+            var zct = zeroTimes[j];
+            if (zct >= t0 && zct <= t1) {
+              var zcx = X_MIN + ((zct - t0) / (t1 - t0)) * X_W;
+              var isLockedDot = snapped && Math.abs(zct - tCenter) < 0.0002;
+              zoomZerosG.appendChild(svgEl('circle', {
+                cx: zcx.toFixed(1), cy: '51',
+                r: isLockedDot ? '3.2' : '2.3',
+                fill: isLockedDot ? '#1D4ED8' : '#FFFFFF',
+                stroke: isLockedDot ? '#1D4ED8' : '#B45309',
+                'stroke-width': '1.2'
+              }));
+            }
+          }
+
+          // Update context box & dual-scale trapezoid bridge
+          var cx = X_MIN + ((tCenter - T_START) / T_SPAN) * X_W;
+          var boxW = ((HALF_WIN * 2) / T_SPAN) * X_W;
+          var boxL = Math.max(X_MIN, cx - boxW / 2);
+          var boxR = Math.min(X_MAX, cx + boxW / 2);
+          ctxBox.setAttribute('x', boxL.toFixed(1));
+          ctxBox.setAttribute('width', (boxR - boxL).toFixed(1));
+          ctxLine.setAttribute('x1', cx.toFixed(1));
+          ctxLine.setAttribute('x2', cx.toFixed(1));
+
+          bridgeFill.setAttribute('points',
+            X_MIN + ',80 ' + X_MAX + ',80 ' + boxR.toFixed(1) + ',98 ' + boxL.toFixed(1) + ',98'
+          );
+          bridgeL.setAttribute('x2', boxL.toFixed(1));
+          bridgeR.setAttribute('x2', boxR.toFixed(1));
+
+          snapTarget.setAttribute('opacity', snapped ? '1' : '0');
+          snapBadge.textContent = snapped ? 'ZERO-CROSS LOCKED' : (snapOn ? 'SEARCHING ZERO' : 'FREE POSITION');
+          snapBadge.setAttribute('fill', snapped ? '#1D4ED8' : '#8F8C83');
+          readout.textContent = tCenter.toFixed(3) + ' s';
         }
 
         range.addEventListener('input', function () { updateLoupe(range.value); });
@@ -3251,61 +3634,156 @@
           journal: {
             bg: '#FAF9F6',
             title: '学术论文单栏排版（85 mm）',
-            text: '自动匹配期刊单栏宽度，保留清晰的等值轮廓语谱、基频线条与中英双语图例。',
+            text: '自动匹配期刊单栏宽度，保留纯矢量等值轮廓语谱、基频共振峰线条与中英双语图例。',
             tags: ['纯矢量 SVG', '图文分离 ZIP', '高清 PNG'],
-            svg: '<svg viewBox="0 0 120 88" xmlns="http://www.w3.org/2000/svg">' +
-              '<rect x="6" y="6" width="108" height="76" fill="#FFFFFF" stroke="#141413" stroke-width="1"/>' +
-              '<rect x="12" y="14" width="96" height="24" fill="#F2F0EA"/>' +
-              '<path d="M14 26 Q28 16 42 25 T70 21 T104 28" fill="none" stroke="#1D4ED8" stroke-width="1.6"/>' +
-              '<line x1="12" y1="45" x2="108" y2="45" stroke="#D3CFC5" stroke-width="1"/>' +
-              '<rect x="12" y="49" width="32" height="16" fill="#EEF3FF" stroke="#1D4ED8" stroke-width="0.9"/>' +
-              '<rect x="44" y="49" width="32" height="16" fill="#FFFFFF" stroke="#141413" stroke-width="0.9"/>' +
-              '<rect x="76" y="49" width="32" height="16" fill="#FFFFFF" stroke="#141413" stroke-width="0.9"/>' +
-              '<line x1="12" y1="73" x2="62" y2="73" stroke="#8F8C83" stroke-width="1.2"/></svg>'
+            svg: '<svg viewBox="0 0 180 132" xmlns="http://www.w3.org/2000/svg">' +
+              '<rect x="0" y="0" width="180" height="132" fill="#FAF9F6"/>' +
+              '<rect x="10" y="8" width="160" height="116" fill="#FFFFFF" stroke="#141413" stroke-width="0.9"/>' +
+              '<line x1="26" y1="19" x2="164" y2="19" stroke="#C5C0B5" stroke-width="0.7"/>' +
+              '<path d="M26 15V19 M60 16V19 M95 15V19 M130 16V19 M164 15V19" stroke="#6A675F" stroke-width="0.7"/>' +
+              '<text x="27" y="14" font-family="JetBrains Mono, monospace" font-size="5.5" fill="#6A675F">0.0s</text>' +
+              '<text x="95" y="14" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="5.5" fill="#6A675F">0.9s</text>' +
+              '<text x="163" y="14" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="5.5" fill="#6A675F">1.8s</text>' +
+              '<line x1="26" y1="19" x2="26" y2="108" stroke="#D3CFC5" stroke-width="0.7"/>' +
+              '<text x="23" y="29" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="5" fill="#8F8C83">5k</text>' +
+              '<text x="23" y="61" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="5" fill="#8F8C83">0</text>' +
+              '<rect x="26" y="20" width="138" height="44" fill="#FCFBF8"/>' +
+              '<path d="M34 56 C44 40,58 38,66 56 Z M76 58 C84 32,102 28,116 44 C122 50,124 58,116 60 Z M130 56 C138 38,150 40,158 56 Z" fill="#E6E3DB"/>' +
+              '<path d="M40 54 C46 44,56 44,62 54 Z M82 54 C90 38,104 36,112 49 Z M135 53 C140 43,148 44,153 53 Z" fill="#C4BFB3"/>' +
+              '<path d="M45 52 C49 47,54 47,57 52 Z M89 50 C94 42,102 42,106 49 Z" fill="#8C877C"/>' +
+              '<path d="M36 45 C46 42,56 40,64 44 M80 41 C92 34,104 36,116 43 M132 48 C142 42,150 37,158 35" fill="none" stroke="#1D4ED8" stroke-width="1.35"/>' +
+              '<path d="M36 53 C48 51,58 52,64 54 M80 51 C94 48,106 50,116 53 M132 54 C144 52,152 51,158 52" fill="none" stroke="#B91C1C" stroke-width="0.9" stroke-dasharray="2 1.8"/>' +
+              '<path d="M36 33 C48 30,58 32,64 35 M80 28 C94 25,106 27,116 32 M132 34 C144 30,152 29,158 30" fill="none" stroke="#B45309" stroke-width="0.85" stroke-dasharray="2 1.8"/>' +
+              '<line x1="26" y1="64" x2="164" y2="64" stroke="#D3CFC5" stroke-width="0.7"/>' +
+              '<path d="M64 64 C64 70,58 70,58 76 M78 64 C78 70,84 70,84 76 M118 64 C118 70,126 70,126 76" fill="none" stroke="#B6B1A4" stroke-width="0.7"/>' +
+              '<rect x="26" y="76" width="32" height="15" fill="#FFFFFF" stroke="#141413" stroke-width="0.7"/>' +
+              '<rect x="58" y="76" width="68" height="15" fill="#EEF3FF" stroke="#1D4ED8" stroke-width="0.8"/>' +
+              '<rect x="126" y="76" width="38" height="15" fill="#FFFFFF" stroke="#141413" stroke-width="0.7"/>' +
+              '<text x="42" y="86" text-anchor="middle" font-family="Inter, sans-serif" font-size="6.5" fill="#141413">我说</text>' +
+              '<text x="92" y="86" text-anchor="middle" font-family="Inter, sans-serif" font-size="6.5" font-weight="700" fill="#1D4ED8">TextGrid</text>' +
+              '<text x="145" y="86" text-anchor="middle" font-family="Inter, sans-serif" font-size="6.5" fill="#141413">这个词</text>' +
+              '<rect x="26" y="91" width="32" height="14" fill="#FAF9F6" stroke="#D3CFC5" stroke-width="0.7"/>' +
+              '<rect x="58" y="91" width="22" height="14" fill="#FFFFFF" stroke="#D3CFC5" stroke-width="0.7"/>' +
+              '<rect x="80" y="91" width="20" height="14" fill="#FFFFFF" stroke="#D3CFC5" stroke-width="0.7"/>' +
+              '<rect x="100" y="91" width="26" height="14" fill="#FFFFFF" stroke="#D3CFC5" stroke-width="0.7"/>' +
+              '<rect x="126" y="91" width="38" height="14" fill="#FAF9F6" stroke="#D3CFC5" stroke-width="0.7"/>' +
+              '<text x="69" y="100.5" text-anchor="middle" font-family="Charis SIL, serif" font-size="6" fill="#5C5951">tʰɛks</text>' +
+              '<text x="90" y="100.5" text-anchor="middle" font-family="Charis SIL, serif" font-size="6" fill="#1D4ED8">t</text>' +
+              '<text x="113" y="100.5" text-anchor="middle" font-family="Charis SIL, serif" font-size="6" fill="#5C5951">ɡɹɪd</text>' +
+              '<line x1="26" y1="115" x2="35" y2="115" stroke="#1D4ED8" stroke-width="1.3"/>' +
+              '<text x="38" y="117" font-family="Inter, sans-serif" font-size="5.2" fill="#5C5951">F0 基频</text>' +
+              '<line x1="68" y1="115" x2="77" y2="115" stroke="#B91C1C" stroke-width="1" stroke-dasharray="2 1.5"/>' +
+              '<text x="80" y="117" font-family="Inter, sans-serif" font-size="5.2" fill="#5C5951">F1–F2 共振峰</text>' +
+              '<text x="164" y="117" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="5" fill="#8F8C83">85 mm · SVG</text></svg>'
           },
           mono: {
             bg: '#FFFFFF',
             title: '纯黑白印刷出版配色',
-            text: '去饱和度灰度语谱配实线/虚线区分基频与共振峰，黑白打印或影印依然层次分明。',
+            text: '灰度等值轮廓语谱配实线与点划线区分基频与共振峰，黑白影印与学位论文装订同样层次分明。',
             tags: ['黑白期刊', '高对比刻度', '零彩印衰减'],
-            svg: '<svg viewBox="0 0 120 88" xmlns="http://www.w3.org/2000/svg">' +
-              '<rect x="6" y="6" width="108" height="76" fill="#FFFFFF" stroke="#141413" stroke-width="1.2"/>' +
-              '<rect x="12" y="14" width="96" height="24" fill="#E5E5E5"/>' +
-              '<path d="M14 27 Q32 17 50 26 T88 20 T106 26" fill="none" stroke="#141413" stroke-width="1.7"/>' +
-              '<path d="M14 33 Q40 29 66 34 T106 31" fill="none" stroke="#141413" stroke-width="1.1" stroke-dasharray="3 2"/>' +
-              '<rect x="12" y="47" width="48" height="16" fill="#FFFFFF" stroke="#141413" stroke-width="1"/>' +
-              '<rect x="60" y="47" width="48" height="16" fill="#F3F3F3" stroke="#141413" stroke-width="1"/>' +
-              '<line x1="12" y1="72" x2="108" y2="72" stroke="#141413" stroke-width="0.8"/></svg>'
+            svg: '<svg viewBox="0 0 180 132" xmlns="http://www.w3.org/2000/svg">' +
+              '<rect x="0" y="0" width="180" height="132" fill="#F2F2F2"/>' +
+              '<rect x="10" y="8" width="160" height="116" fill="#FFFFFF" stroke="#111111" stroke-width="1"/>' +
+              '<line x1="24" y1="19" x2="164" y2="19" stroke="#111111" stroke-width="0.7"/>' +
+              '<path d="M24 15V19 M59 16.5V19 M94 15V19 M129 16.5V19 M164 15V19" stroke="#111111" stroke-width="0.7"/>' +
+              '<text x="25" y="14" font-family="JetBrains Mono, monospace" font-size="5.5" fill="#111111">0.00</text>' +
+              '<text x="94" y="14" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="5.5" fill="#111111">0.90</text>' +
+              '<text x="163" y="14" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="5.5" fill="#111111">1.80 s</text>' +
+              '<rect x="24" y="20" width="140" height="44" fill="#FAFAFA" stroke="#D4D4D4" stroke-width="0.5"/>' +
+              '<path d="M32 57 C42 36,60 36,68 57 Z M78 58 C88 28,108 26,120 48 C124 55,122 59,114 59 Z M132 57 C140 36,154 38,160 57 Z" fill="#D9D9D9"/>' +
+              '<path d="M40 54 C46 42,56 42,62 54 Z M86 54 C94 36,108 35,114 50 Z M138 54 C144 42,150 43,155 54 Z" fill="#9A9A9A"/>' +
+              '<path d="M46 51 C49 46,54 46,56 51 Z M92 50 C96 42,104 42,108 49 Z" fill="#4A4A4A"/>' +
+              '<path d="M34 45 C46 41,56 40,66 44 M80 40 C94 33,106 35,118 42 M134 48 C144 41,152 36,160 34" fill="none" stroke="#000000" stroke-width="1.5"/>' +
+              '<path d="M34 54 C46 52,58 53,66 55 M80 52 C94 49,106 51,118 54 M134 55 C144 53,152 52,160 53" fill="none" stroke="#111111" stroke-width="0.9" stroke-dasharray="3 2"/>' +
+              '<path d="M34 32 C46 29,58 31,66 34 M80 27 C94 24,106 26,118 31 M134 33 C144 29,152 28,160 29" fill="none" stroke="#111111" stroke-width="0.8" stroke-dasharray="1.2 1.8"/>' +
+              '<path d="M68 64 L58 75 M82 64 L88 75 M120 64 L128 75" stroke="#555555" stroke-width="0.65"/>' +
+              '<rect x="24" y="75" width="34" height="15" fill="#FFFFFF" stroke="#111111" stroke-width="0.8"/>' +
+              '<rect x="58" y="75" width="70" height="15" fill="#EBEBEB" stroke="#111111" stroke-width="0.8"/>' +
+              '<rect x="128" y="75" width="36" height="15" fill="#FFFFFF" stroke="#111111" stroke-width="0.8"/>' +
+              '<text x="41" y="85" text-anchor="middle" font-family="Inter, sans-serif" font-size="6.5" fill="#111111">我说</text>' +
+              '<text x="93" y="85" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="6.5" font-weight="700" fill="#000000">TextGrid</text>' +
+              '<text x="146" y="85" text-anchor="middle" font-family="Inter, sans-serif" font-size="6.5" fill="#111111">这个词</text>' +
+              '<rect x="24" y="90" width="140" height="13" fill="#FFFFFF" stroke="#111111" stroke-width="0.7"/>' +
+              '<line x1="58" y1="90" x2="58" y2="103" stroke="#111111" stroke-width="0.7"/>' +
+              '<line x1="88" y1="90" x2="88" y2="103" stroke="#111111" stroke-width="0.7"/>' +
+              '<line x1="128" y1="90" x2="128" y2="103" stroke="#111111" stroke-width="0.7"/>' +
+              '<text x="94" y="116.5" text-anchor="middle" font-family="Georgia, serif" font-style="italic" font-size="5.6" fill="#222222">Fig. 1. Dual-scale acoustic profile (grayscale print)</text></svg>'
           },
           vinyl: {
-            bg: '#18181B',
+            bg: '#161618',
             title: '声纹海报 · 黑胶唱片模板',
-            text: '将真实极坐标语谱刻入黑胶纹路，叠加选定句段文字与音标，导出高分辨海报或打印 PDF。',
-            tags: ['黑胶模板', '包豪斯 / 博朗', '高清打印'],
-            svg: '<svg viewBox="0 0 120 88" xmlns="http://www.w3.org/2000/svg">' +
-              '<rect x="0" y="0" width="120" height="88" fill="#18181B"/>' +
-              '<circle cx="60" cy="46" r="30" fill="none" stroke="#52525B" stroke-width="1"/>' +
-              '<circle cx="60" cy="46" r="24" fill="none" stroke="#A1A1AA" stroke-width="1.5" stroke-dasharray="18 5 8 4"/>' +
-              '<circle cx="60" cy="46" r="17" fill="none" stroke="#FAF9F6" stroke-width="1.4" stroke-dasharray="10 3"/>' +
-              '<circle cx="60" cy="46" r="9" fill="#D64028"/>' +
-              '<circle cx="60" cy="46" r="2.2" fill="#FAF9F6"/>' +
-              '<line x1="94" y1="16" x2="77" y2="41" stroke="#E4E4E7" stroke-width="1.5"/>' +
-              '<circle cx="94" cy="16" r="2.6" fill="#FAF9F6"/></svg>'
+            text: '将真实极坐标语谱刻入黑胶纹路，叠加选定句段文字与音标，支持导出高分辨矢量海报与打印 PDF。',
+            tags: ['极坐标声纹', '黑胶纹路', 'SVG / PNG / PDF'],
+            svg: '<svg viewBox="0 0 180 132" xmlns="http://www.w3.org/2000/svg">' +
+              '<rect x="0" y="0" width="180" height="132" fill="#18181B"/>' +
+              '<rect x="8" y="7" width="164" height="118" fill="#1F1F23" stroke="#3F3F46" stroke-width="0.8"/>' +
+              '<text x="16" y="19" font-family="JetBrains Mono, monospace" font-size="6" font-weight="700" letter-spacing="1" fill="#FAF9F6">T·GRID PRESSING</text>' +
+              '<text x="16" y="26" font-family="JetBrains Mono, monospace" font-size="4.8" fill="#A1A1AA">SIDE A · 00:01.80 · 44.1 kHz</text>' +
+              '<circle cx="86" cy="70" r="44" fill="#111113" stroke="#52525B" stroke-width="0.9"/>' +
+              '<circle cx="86" cy="70" r="39" fill="none" stroke="#3F3F46" stroke-width="0.8"/>' +
+              '<circle cx="86" cy="70" r="34" fill="none" stroke="#A1A1AA" stroke-width="2.1" stroke-dasharray="22 4 12 3 34 6" opacity="0.78"/>' +
+              '<circle cx="86" cy="70" r="28" fill="none" stroke="#E4E4E7" stroke-width="1.6" stroke-dasharray="14 3 8 4 20 5" opacity="0.88"/>' +
+              '<circle cx="86" cy="70" r="22" fill="none" stroke="#71717A" stroke-width="2.4" stroke-dasharray="10 3 18 4"/>' +
+              '<circle cx="86" cy="70" r="17" fill="none" stroke="#FAF9F6" stroke-width="1" opacity="0.45"/>' +
+              '<path d="M52 46 A42 42 0 0 1 78 29" fill="none" stroke="#FFFFFF" stroke-width="1.2" opacity="0.18"/>' +
+              '<circle cx="86" cy="70" r="13" fill="#D64028"/>' +
+              '<circle cx="86" cy="70" r="9.5" fill="none" stroke="#FAF9F6" stroke-width="0.5" opacity="0.55"/>' +
+              '<circle cx="86" cy="70" r="2.6" fill="#FAF9F6"/>' +
+              '<circle cx="144" cy="24" r="6" fill="#27272A" stroke="#71717A" stroke-width="1"/>' +
+              '<circle cx="144" cy="24" r="2.2" fill="#E4E4E7"/>' +
+              '<path d="M144 24 L132 62 L117 77" fill="none" stroke="#E4E4E7" stroke-width="1.7"/>' +
+              '<rect x="112" y="75" width="7" height="4" transform="rotate(-42 115 77)" fill="#FAF9F6"/>' +
+              '<text x="16" y="118" font-family="Charis SIL, serif" font-size="6" fill="#D4D4D8">[wɔ²¹⁴ ʂwɔ⁵⁵ tʰɛkst ɡɹɪd]</text></svg>'
+          },
+          bauhaus: {
+            bg: '#F4F1E8',
+            title: '声纹海报 · 包豪斯几何模板',
+            text: '三原色色标、瑞士网格排印与非对称圆弧极坐标声纹组合，适合论文封面、展板与学术海报。',
+            tags: ['包豪斯网格', '三原色构图', '矢量缩放'],
+            svg: '<svg viewBox="0 0 180 132" xmlns="http://www.w3.org/2000/svg">' +
+              '<rect x="0" y="0" width="180" height="132" fill="#F4F1E8"/>' +
+              '<rect x="10" y="7" width="160" height="118" fill="#FAF8F2" stroke="#141413" stroke-width="0.9"/>' +
+              '<rect x="18" y="14" width="28" height="4.5" fill="#D93829"/>' +
+              '<rect x="49" y="14" width="16" height="4.5" fill="#EAB308"/>' +
+              '<rect x="68" y="14" width="10" height="4.5" fill="#1B4F9C"/>' +
+              '<text x="18" y="30" font-family="Inter, sans-serif" font-size="8.5" font-weight="800" letter-spacing="0.6" fill="#141413">PHONETIC FORM</text>' +
+              '<line x1="18" y1="35" x2="88" y2="35" stroke="#141413" stroke-width="1"/>' +
+              '<path d="M62 102 A40 40 0 1 1 138 96" fill="none" stroke="#141413" stroke-width="2.4"/>' +
+              '<path d="M72 97 A30 30 0 1 1 129 92" fill="none" stroke="#1B4F9C" stroke-width="3.2" stroke-dasharray="16 5 9 4"/>' +
+              '<path d="M81 92 A21 21 0 1 1 120 88" fill="none" stroke="#D93829" stroke-width="1.8" stroke-dasharray="10 4"/>' +
+              '<path d="M89 87 A13 13 0 1 1 112 85" fill="none" stroke="#141413" stroke-width="1" opacity="0.6"/>' +
+              '<line x1="22" y1="115" x2="108" y2="66" stroke="#141413" stroke-width="1.5"/>' +
+              '<circle cx="101" cy="70" r="6.5" fill="#FAF8F2" stroke="#1B4F9C" stroke-width="1.6"/>' +
+              '<circle cx="101" cy="70" r="2.2" fill="#D93829"/>' +
+              '<text x="18" y="118" font-family="JetBrains Mono, monospace" font-size="5" fill="#5C5951">TEXTGRID · 0.00—1.80s</text></svg>'
           },
           fan: {
-            bg: '#F4EFE4',
-            title: '声纹海报 · 中式折扇与孔版印',
-            text: '除现代几何版式外，还提供青绿折扇与三色套印孔版海报，适合课题展示、纪念留存与课程封面。',
-            tags: ['折扇模板', '孔版套印', 'SVG / PNG'],
-            svg: '<svg viewBox="0 0 120 88" xmlns="http://www.w3.org/2000/svg">' +
-              '<rect x="0" y="0" width="120" height="88" fill="#F4EFE4"/>' +
-              '<path d="M22 48 A46 46 0 0 1 98 62" fill="none" stroke="#2D666B" stroke-width="5" opacity="0.85"/>' +
-              '<path d="M30 54 A36 36 0 0 1 90 65" fill="none" stroke="#141413" stroke-width="1.2" opacity="0.5"/>' +
-              '<path d="M38 60 A26 26 0 0 1 82 67" fill="none" stroke="#2D666B" stroke-width="3.5" opacity="0.55"/>' +
-              '<line x1="56" y1="74" x2="22" y2="48" stroke="#8C7353" stroke-width="1.3"/>' +
-              '<line x1="56" y1="74" x2="98" y2="62" stroke="#8C7353" stroke-width="1.3"/>' +
-              '<line x1="56" y1="74" x2="60" y2="26" stroke="#8C7353" stroke-width="0.9" opacity="0.6"/>' +
-              '<rect x="16" y="14" width="6" height="10" fill="#B63B2A"/></svg>'
+            bg: '#F3EDE0',
+            title: '声纹海报 · 青绿折扇与孔版套印',
+            text: '内置宣纸青绿折扇、博朗条带与三色孔版套印，共 5 套主题，可自由修改文案、配色与印章。',
+            tags: ['青绿折扇', '博朗 / 孔版', '五套模板'],
+            svg: '<svg viewBox="0 0 180 132" xmlns="http://www.w3.org/2000/svg">' +
+              '<rect x="0" y="0" width="180" height="132" fill="#F3EDE0"/>' +
+              '<rect x="10" y="7" width="160" height="118" fill="#F9F5EB" stroke="#B6A88F" stroke-width="0.9"/>' +
+              '<text x="20" y="24" font-family="Noto Sans SC, serif" font-size="8" font-weight="700" fill="#1F2421">声 纹 折 扇</text>' +
+              '<rect x="20" y="30" width="9" height="13" fill="#B63B2A"/>' +
+              '<text x="24.5" y="39" text-anchor="middle" font-family="serif" font-size="6" fill="#F9F5EB">音</text>' +
+              '<path d="M36 68 A68 68 0 0 1 154 88 L128 96 A40 40 0 0 0 60 85 Z" fill="#2D666B" opacity="0.14"/>' +
+              '<path d="M38 70 A66 66 0 0 1 152 88" fill="none" stroke="#2D666B" stroke-width="4.5" stroke-dasharray="14 2 8 2 18 3" opacity="0.88"/>' +
+              '<path d="M47 76 A54 54 0 0 1 142 91" fill="none" stroke="#1F4E52" stroke-width="2.6" stroke-dasharray="9 3 16 2" opacity="0.72"/>' +
+              '<path d="M56 82 A42 42 0 0 1 132 94" fill="none" stroke="#2D666B" stroke-width="2" opacity="0.5"/>' +
+              '<g stroke="#8C7353" stroke-width="0.9" opacity="0.82">' +
+                '<line x1="88" y1="114" x2="36" y2="68"/>' +
+                '<line x1="88" y1="114" x2="58" y2="51"/>' +
+                '<line x1="88" y1="114" x2="84" y2="43"/>' +
+                '<line x1="88" y1="114" x2="112" y2="46"/>' +
+                '<line x1="88" y1="114" x2="136" y2="62"/>' +
+                '<line x1="88" y1="114" x2="154" y2="88"/>' +
+              '</g>' +
+              '<circle cx="88" cy="114" r="3.2" fill="#7B6242"/>' +
+              '<circle cx="88" cy="114" r="1.1" fill="#F9F5EB"/>' +
+              '<circle cx="114" cy="36" r="2.2" fill="#B63B2A"/>' +
+              '<text x="160" y="117" text-anchor="end" font-family="Charis SIL, serif" font-size="5.5" fill="#6A675F">tʰɛkst ɡɹɪd</text></svg>'
           }
         };
 
