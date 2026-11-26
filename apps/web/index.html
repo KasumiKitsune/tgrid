@@ -7,6 +7,7 @@
   <meta name="description" content="免费开源的 Praat TextGrid / Collection 可视化标注编辑器，纯本地运行不上传音频。支持波形语谱图、基频与共振峰显示、云龙与 Praat 音标输入，以及期刊级纯矢量 SVG 与高清 PNG 插图导出。" />
   <meta name="keywords" content="T·Grid, TGrid, Praat, TextGrid, TextGrid编辑器, 语音标注, 语音学, 声学分析, 语谱图, 基频, F0, 共振峰, 国际音标, IPA, SVG出图" />
   <meta name="robots" content="index, follow" />
+  <meta name="application-name" content="T·Grid" />
   <meta name="author" content="KasumiKitsune" />
   <link rel="canonical" href="https://kasumikitsune.github.io/tgrid/" />
   <meta property="og:type" content="website" />
@@ -15,31 +16,47 @@
   <meta property="og:title" content="T·Grid — Praat TextGrid 编辑器与语音标注出图工具" />
   <meta property="og:description" content="免费开源的 Praat TextGrid / Collection 可视化标注编辑器，支持波形语谱图、音高共振峰、国际音标输入与学术期刊级矢量插图导出，纯本地运行保护数据隐私。" />
   <meta property="og:url" content="https://kasumikitsune.github.io/tgrid/" />
+  <meta property="og:image" content="https://kasumikitsune.github.io/tgrid/favicon.png" />
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="T·Grid — Praat TextGrid 编辑器与语音标注出图工具" />
   <meta name="twitter:description" content="免费开源的 Praat TextGrid / Collection 标注编辑与期刊级矢量出图工具，纯本地运行不上传音频。" />
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cpath d='M 256 0 C 48 0 0 48 0 256 C 0 464 48 512 256 512 C 464 512 512 464 512 256 C 512 48 464 0 256 0 Z' fill='%23ECEAE3'/%3E%3Cpath d='M 132 122 H 380 A 18 18 0 0 1 398 140 V 168 A 18 18 0 0 1 380 186 H 288 V 372 A 18 18 0 0 1 270 390 H 242 A 18 18 0 0 1 224 372 V 186 H 132 A 18 18 0 0 1 114 168 V 140 A 18 18 0 0 1 132 122 Z' fill='%2318181B'/%3E%3Crect x='114' y='204' width='92' height='56' rx='14' fill='%232563EB'/%3E%3Crect x='114' y='278' width='92' height='112' rx='14' fill='%23D2CEC2'/%3E%3Crect x='306' y='204' width='92' height='112' rx='14' fill='%23D2CEC2'/%3E%3Crect x='306' y='334' width='92' height='56' rx='14' fill='%237C3AED'/%3E%3C/svg%3E" />
+  <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+  <link rel="icon" type="image/png" sizes="512x512" href="./favicon.png" />
+  <link rel="icon" href="./favicon.ico" sizes="any" />
+  <link rel="apple-touch-icon" href="./favicon.png" />
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "T·Grid - TextGrid Editor",
-    "alternateName": ["T·Grid", "TextGrid Editor"],
-    "applicationCategory": "EducationalApplication",
-    "operatingSystem": "Windows, macOS, Web",
-    "inLanguage": "zh-CN",
-    "isAccessibleForFree": true,
-    "offers": {
-      "@type": "Offer",
-      "price": "0",
-      "priceCurrency": "USD"
-    },
-    "softwareVersion": "0.1.0",
-    "downloadUrl": "https://github.com/KasumiKitsune/tgrid/releases/latest",
-    "license": "https://opensource.org/licenses/MIT",
-    "url": "https://kasumikitsune.github.io/tgrid/",
-    "codeRepository": "https://github.com/KasumiKitsune/tgrid",
-    "description": "开源的 Praat TextGrid 与 Collection 可视化标注编辑器，支持波形、宽带语谱图、基频 F0 与共振峰轨迹显示、国际音标输入及学术期刊级矢量 SVG / 高清 PNG 导出。"
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "name": "T·Grid",
+        "alternateName": ["TGrid", "T·Grid - TextGrid Editor"],
+        "url": "https://kasumikitsune.github.io/tgrid/",
+        "inLanguage": "zh-CN"
+      },
+      {
+        "@type": "SoftwareApplication",
+        "name": "T·Grid - TextGrid Editor",
+        "alternateName": ["T·Grid", "TextGrid Editor"],
+        "applicationCategory": "EducationalApplication",
+        "operatingSystem": "Windows, macOS, Web",
+        "inLanguage": "zh-CN",
+        "isAccessibleForFree": true,
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "softwareVersion": "0.1.0",
+        "downloadUrl": "https://github.com/KasumiKitsune/tgrid/releases/latest",
+        "license": "https://opensource.org/licenses/MIT",
+        "url": "https://kasumikitsune.github.io/tgrid/",
+        "image": "https://kasumikitsune.github.io/tgrid/favicon.png",
+        "codeRepository": "https://github.com/KasumiKitsune/tgrid",
+        "description": "开源的 Praat TextGrid 与 Collection 可视化标注编辑器，支持波形、宽带语谱图、基频 F0 与共振峰轨迹显示、国际音标输入及学术期刊级矢量 SVG / 高清 PNG 导出。"
+      }
+    ]
   }
   </script>
 </head>

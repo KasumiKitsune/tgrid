@@ -139,20 +139,25 @@ export const Topbar: React.FC<TopbarProps> = ({
   }, [isDesktop]);
 
   // Sync window title with active filename + dirty indicator
+  // On Web, preserve the clean SEO title while viewing the unmodified default sample so crawlers
+  // do not index "春眠示例.TextGrid" as the site's main title.
   useEffect(() => {
+    const defaultWebTitle = 'T·Grid — Praat TextGrid 编辑器与语音标注出图工具';
+    const isUnmodifiedDefaultSample =
+      !isDesktop && !isDirty && tabs.length <= 1 && (!filename || filename === '春眠示例.TextGrid');
     const docLabel = filename ? `${isDirty ? '● ' : ''}${filename} — ` : '';
-    const fullTitle = `${docLabel}T·Grid - TextGrid Editor`;
-    document.title = fullTitle;
+    const desktopTitle = `${docLabel}T·Grid - TextGrid Editor`;
+    document.title = isUnmodifiedDefaultSample ? defaultWebTitle : desktopTitle;
     if (!isDesktop) return;
     void (async () => {
       try {
         const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        await getCurrentWindow().setTitle(fullTitle);
+        await getCurrentWindow().setTitle(desktopTitle);
       } catch {
         // ignore
       }
     })();
-  }, [filename, isDirty, isDesktop]);
+  }, [filename, isDirty, isDesktop, tabs.length]);
 
   const handleMinimize = async () => {
     if (!isDesktop) return;
