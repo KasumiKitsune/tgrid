@@ -2,7 +2,7 @@ import type { PlatformBridge, TextGrid } from '../bridge/types';
 import { isValidPraatTrigraphAt } from './praatTrigraphCodes';
 
 export const IPA_FONT_STACK =
-  '"Charis SIL", "Doulos SIL", "Gentium Plus", "Gentium Book Plus", "Segoe UI", "Cambria", "Lucida Sans Unicode", "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+  '"Charis SIL", "Doulos SIL", "Gentium Plus", "Gentium Book Plus", "Segoe UI", "Cambria", "Lucida Sans Unicode", "Noto Sans", "DejaVu Sans", "Liberation Sans", "FreeSans", "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
 export const SERIF_FONT_STACK =
   '"Times New Roman", "Noto Serif SC", "Songti SC", "SimSun", Georgia, serif';
 export const SANS_FONT_STACK =

@@ -1,8 +1,12 @@
 /* Artistic Voiceprint Poster Modal — Archival Swiss Styling */
 .modal-card.poster-modal-card {
   width: min(1040px, calc(var(--vw) - 32px));
-  height: min(760px, calc(var(--vh) - 32px));
-  max-height: calc(var(--vh) - 32px);
+  height: min(820px, calc(var(--vh) - 24px));
+  max-height: calc(var(--vh) - 24px);
+}
+
+.modal-card.poster-modal-card:focus {
+  outline: none;
 }
 
 .poster-split {
@@ -37,15 +41,89 @@
   cursor: grabbing;
 }
 
+.poster-preview-loading {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px;
+  background: var(--bg-bar);
+  border: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-muted);
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+.poster-preview-loading-bar {
+  width: 96px;
+  height: 2px;
+  background: var(--rule);
+  position: relative;
+  overflow: hidden;
+}
+
+.poster-preview-loading-bar::after {
+  content: "";
+  position: absolute;
+  left: -40%;
+  top: 0;
+  width: 40%;
+  height: 100%;
+  background: var(--ink);
+  animation: poster-load-slide 1.05s linear infinite;
+}
+
+@keyframes poster-load-slide {
+  0% { left: -40%; }
+  100% { left: 100%; }
+}
+
 .poster-controls-pane {
   flex: 1 1 51%;
   min-width: 0;
   overflow-y: auto;
-  padding: 12px 14px 16px;
+  padding: 10px 14px 14px;
   display: flex;
   flex-direction: column;
-  gap: 11px;
-  background: var(--bg-bar);
+  gap: 9px;
+  background:
+    linear-gradient(var(--bg-bar) 30%, rgba(250, 249, 246, 0)) center top / 100% 24px no-repeat local,
+    linear-gradient(rgba(250, 249, 246, 0), var(--bg-bar) 70%) center bottom / 100% 24px no-repeat local,
+    linear-gradient(to bottom, rgba(20, 20, 19, 0.10), rgba(20, 20, 19, 0)) center top / 100% 10px no-repeat scroll,
+    linear-gradient(to top, rgba(20, 20, 19, 0.12), rgba(20, 20, 19, 0)) center bottom / 100% 12px no-repeat scroll,
+    var(--bg-bar);
+}
+
+.poster-controls-pane .export-group {
+  gap: 6px;
+  padding-bottom: 8px;
+}
+
+.poster-foot-controls {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 10px;
+  flex-shrink: 0;
+}
+
+.poster-foot-scale {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.poster-foot-scale-label {
+  font-size: 11px;
+  color: var(--ink-muted);
+  white-space: nowrap;
 }
 
 /* Monochrome+accent archival specimen shelf (5 balanced templates) */

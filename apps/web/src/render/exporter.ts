@@ -93,6 +93,12 @@ export function loadExportPrefs(): ExportPrefs {
       if (dr !== 45 && dr !== 52 && dr !== 58) {
         merged.specDynRange = dr === 40 ? 45 : 52;
       }
+      // Never carry single-file custom time bounds across sessions
+      merged.customStart = null;
+      merged.customEnd = null;
+      if (merged.rangeMode === 'custom') {
+        merged.rangeMode = 'all';
+      }
       return merged;
     }
   } catch {
@@ -103,7 +109,13 @@ export function loadExportPrefs(): ExportPrefs {
 
 export function saveExportPrefs(prefs: ExportPrefs): void {
   try {
-    localStorage.setItem(EXPORT_STORAGE_KEY, JSON.stringify(prefs));
+    const toSave: ExportPrefs = {
+      ...prefs,
+      rangeMode: prefs.rangeMode === 'custom' ? 'all' : prefs.rangeMode,
+      customStart: null,
+      customEnd: null
+    };
+    localStorage.setItem(EXPORT_STORAGE_KEY, JSON.stringify(toSave));
   } catch {
     // ignore
   }

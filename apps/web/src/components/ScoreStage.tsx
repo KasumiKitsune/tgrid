@@ -4050,12 +4050,19 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         latestBandIdx = activeBand.bandIndex;
         const x = snapX !== null ? snapX : elasticXInBand(activeBand, latestTime);
         const linX = activeBand.linearXForTime(latestTime);
+        const origInActiveBand =
+          origTime >= activeBand.startT - 1e-9 && origTime <= activeBand.endT + 1e-9;
+        const origX = origInActiveBand ? elasticXInBand(activeBand, origTime) : undefined;
+        const origLinearX = origInActiveBand ? activeBand.linearXForTime(origTime) : undefined;
         const loupeVisible = Boolean(audioBuffer && showMicroLoupe);
 
         setDragPreview({
           bandIndex: activeBand.bandIndex,
           x,
           linearX: linX,
+          origTime,
+          origX,
+          origLinearX,
           y0,
           y1,
           cursorY: fromSpec ? curPt.y : undefined,
@@ -4293,12 +4300,21 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           latestBand = activeBand;
           latestBandIdx = activeBand.bandIndex;
           const x = snapX !== null ? snapX : elasticXInBand(activeBand, latestTime);
+          const origInActiveBand =
+            origPt.number >= activeBand.startT - 1e-9 && origPt.number <= activeBand.endT + 1e-9;
+          const origX = origInActiveBand ? elasticXInBand(activeBand, origPt.number) : undefined;
+          const origLinearX = origInActiveBand
+            ? activeBand.linearXForTime(origPt.number)
+            : undefined;
           const loupeVisible = Boolean(audioBuffer && showMicroLoupe);
 
           setDragPreview({
             bandIndex: activeBand.bandIndex,
             x,
             linearX: activeBand.linearXForTime(latestTime),
+            origTime: origPt.number,
+            origX,
+            origLinearX,
             y0: activeTl.y,
             y1: activeTl.y + activeTl.h,
             cursorY: curPt.y,
@@ -5076,9 +5092,19 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
       if (role === 'tier-header') {
         const ti = parseInt(el.getAttribute('data-tier') || '0', 10);
+        setSelection({ kind: 'tier', tierIndex: ti, bandIndex: bandIdx });
         if (mode === 'edit') {
-          setSelection({ kind: 'tier', tierIndex: ti, bandIndex: bandIdx });
           maybeAutoOpenInspector();
+        } else {
+          const st = useEditorStore.getState();
+          if (st.autoOpenInspectorOnSelect && st.editInspectorMode === 'sidebar') {
+            if (!st.sidebarOpen) {
+              st.setSidebarTab('inspector');
+              st.setSidebarOpen(true);
+            } else if (st.sidebarTab === 'tiers') {
+              st.setSidebarTab('inspector');
+            }
+          }
         }
         return;
       }

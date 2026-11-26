@@ -15,17 +15,26 @@ import {
   type ExportPrefs,
   type ExportRenderOutput
 } from '../render/exporter';
+import { formatPraatDouble } from '../layout/richText';
 import { CloseIcon, UiIcon } from './Icons';
+import { ScrubNumberInput } from './ScrubNumberInput';
 
 interface ExportModalProps {
   audioBuffer: AudioBuffer | null;
 }
+
+const waitNextFrame = () =>
+  new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
 
 export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
   const open = useEditorStore((s) => s.exportOpen);
   const setOpen = useEditorStore((s) => s.setExportOpen);
   const exportPresetRange = useEditorStore((s) => s.exportPresetRange);
   const clearExportPresetRange = useEditorStore((s) => s.clearExportPresetRange);
+  const activeTabId = useEditorStore((s) => s.activeTabId);
+  const collectionActiveIdx = useEditorStore((s) => s.collectionActiveIdx);
   const tg = useEditorStore((s) => s.tg);
   const filename = useEditorStore((s) => s.filename);
   const wrapMode = useEditorStore((s) => s.wrapMode);
@@ -48,12 +57,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
   const showToast = useEditorStore((s) => s.showToast);
 
   const [prefs, setPrefs] = useState<ExportPrefs>(() => loadExportPrefs());
-  const [customStartText, setCustomStartText] = useState('');
-  const [customEndText, setCustomEndText] = useState('');
   const [selectedTiers, setSelectedTiers] = useState<number[]>([]);
   const [advOpen, setAdvOpen] = useState(false);
   const [previewOut, setPreviewOut] = useState<ExportRenderOutput | null>(null);
   const [rendering, setRendering] = useState(false);
+  const [busyAction, setBusyAction] = useState<'copy' | 'download' | null>(null);
 
   // Interactive cursor-anchored wheel-zoom & drag-to-pan preview state
   const [zoom, setZoom] = useState(1);
@@ -63,6 +71,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
   const stageRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
   const backdropPointerDownRef = useRef(false);
+  const lastDocKeyRef = useRef<string>('');
 
   const hasSpec = Boolean(audioName && showSpectrogram && analysis);
   const hasSelectionRange = Boolean(
@@ -72,16 +81,37 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
           (tg.tiers[selection.tierIndex]?.intervals[selection.itemIndex]?.xmin ?? 0))
   );
 
+  const docKey = useMemo(
+    () =>
+      `${activeTabId}|${collectionActiveIdx}|${filename}|${tg.tiers.map((t) => `${t.kind}:${t.name}`).join('|')}|${tg.xmin}|${tg.xmax}`,
+    [activeTabId, collectionActiveIdx, filename, tg.tiers, tg.xmin, tg.xmax]
+  );
+
   // Sync tier selection & range fallback when document changes or modal opens
   useEffect(() => {
-    if (!open) return;
-    setSelectedTiers((prev) => {
-      const valid = prev.filter((i) => i >= 0 && i < tg.tiers.length);
-      return valid.length > 0 ? valid : tg.tiers.map((_, i) => i);
-    });
+    if (!open) {
+      setPreviewOut(null);
+      return;
+    }
+    const docChanged = docKey !== lastDocKeyRef.current;
+    if (docChanged) {
+      lastDocKeyRef.current = docKey;
+      setPreviewOut(null);
+      setSelectedTiers(tg.tiers.map((_, i) => i));
+    } else {
+      setSelectedTiers((prev) => {
+        const valid = prev.filter((i) => i >= 0 && i < tg.tiers.length);
+        return valid.length > 0 ? valid : tg.tiers.map((_, i) => i);
+      });
+    }
+
     if (exportPresetRange) {
       setPrefs((prev) => {
-        const next: ExportPrefs = { ...prev, rangeMode: exportPresetRange };
+        const next: ExportPrefs = {
+          ...prev,
+          rangeMode: exportPresetRange,
+          ...(docChanged ? { customStart: null, customEnd: null } : {})
+        };
         saveExportPrefs(next);
         return next;
       });
@@ -89,19 +119,35 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
     } else {
       setPrefs((prev) => {
         let nextRange = prev.rangeMode;
+        let nextStart = prev.customStart;
+        let nextEnd = prev.customEnd;
+        if (docChanged) {
+          if (nextRange === 'custom') nextRange = 'all';
+          nextStart = null;
+          nextEnd = null;
+        }
         if (nextRange === 'view' && !viewDomain) nextRange = 'all';
         if (nextRange === 'selection' && !hasSelectionRange) nextRange = 'all';
-        if (nextRange === prev.rangeMode) return prev;
-        const next: ExportPrefs = { ...prev, rangeMode: nextRange };
+        if (
+          nextRange === prev.rangeMode &&
+          nextStart === prev.customStart &&
+          nextEnd === prev.customEnd
+        ) {
+          return prev;
+        }
+        const next: ExportPrefs = {
+          ...prev,
+          rangeMode: nextRange,
+          customStart: nextStart,
+          customEnd: nextEnd
+        };
         saveExportPrefs(next);
         return next;
       });
     }
-    setCustomStartText(String(prefs.customStart ?? tg.xmin));
-    setCustomEndText(String(prefs.customEnd ?? tg.xmax));
     setZoom(1);
     setPan({ x: 0, y: 0 });
-  }, [open, tg.tiers.length, tg.xmin, tg.xmax, exportPresetRange, clearExportPresetRange, viewDomain, hasSelectionRange]);
+  }, [open, docKey, tg.tiers, exportPresetRange, clearExportPresetRange, viewDomain, hasSelectionRange]);
 
   const updatePrefs = (patch: Partial<ExportPrefs>, clearPreset = true) => {
     setPrefs((prev) => {
@@ -170,6 +216,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
     setRendering(true);
     const timer = setTimeout(async () => {
       try {
+        await waitNextFrame();
+        if (cancelled) return;
         const res = await renderOffscreenExport(buildInput(true));
         if (cancelled) return;
         setPreviewOut(res);
@@ -191,7 +239,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
       } finally {
         if (!cancelled) setRendering(false);
       }
-    }, 90);
+    }, 160);
     return () => {
       cancelled = true;
       clearTimeout(timer);
@@ -286,6 +334,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
   };
 
   const handleDownload = async () => {
+    if (busyAction) return;
+    setBusyAction('download');
     const isDesktop = isTauriRuntime();
     const bridge = getPlatformBridge();
     const makeReveal = (savedPath: string) => ({
@@ -298,6 +348,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
     });
 
     try {
+      await waitNextFrame();
       const stem = getBaseStem(filename);
       if (prefs.format === 'png') {
         const res = await renderOffscreenPngBlob(buildInput(false));
@@ -361,11 +412,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
       }
     } catch (err) {
       showToast(`导出失败: ${String(err)}`, true);
+    } finally {
+      setBusyAction(null);
     }
   };
 
   const handleCopy = async () => {
+    if (busyAction) return;
+    setBusyAction('copy');
     try {
+      await waitNextFrame();
       if (prefs.format === 'png') {
         const res = await renderOffscreenPngBlob(buildInput(false));
         if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
@@ -385,6 +441,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
       }
     } catch (err) {
       showToast(`复制失败: ${String(err)}`, true);
+    } finally {
+      setBusyAction(null);
     }
   };
 
@@ -562,8 +620,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
                     onClick={() => {
                       const sVal = prefs.customStart ?? tg.xmin;
                       const eVal = prefs.customEnd ?? tg.xmax;
-                      setCustomStartText(String(sVal));
-                      setCustomEndText(String(eVal));
                       updatePrefs(
                         {
                           rangeMode: 'custom',
@@ -581,32 +637,34 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
 
               {prefs.rangeMode === 'custom' && (
                 <div className="export-custom-range">
-                  <label className="field-inline">
-                    起 (秒)
-                    <input
-                      type="number"
-                      step="any"
-                      value={customStartText}
-                      onChange={(e) => {
-                        setCustomStartText(e.target.value);
-                        const v = parseFloat(e.target.value);
-                        if (Number.isFinite(v)) updatePrefs({ customStart: v }, false);
-                      }}
-                    />
-                  </label>
-                  <label className="field-inline">
-                    止 (秒)
-                    <input
-                      type="number"
-                      step="any"
-                      value={customEndText}
-                      onChange={(e) => {
-                        setCustomEndText(e.target.value);
-                        const v = parseFloat(e.target.value);
-                        if (Number.isFinite(v)) updatePrefs({ customEnd: v }, false);
-                      }}
-                    />
-                  </label>
+                  <ScrubNumberInput
+                    variant="sidebar"
+                    label="起 (秒)"
+                    value={prefs.customStart ?? tg.xmin}
+                    min={tg.xmin}
+                    max={Math.max(tg.xmin, prefs.customEnd ?? tg.xmax)}
+                    strictMax={(prefs.customEnd ?? tg.xmax) > tg.xmin + 1e-4}
+                    stepSec={0.01}
+                    fineStepSec={0.001}
+                    coarseStepSec={0.1}
+                    decimals={6}
+                    formatValue={formatPraatDouble}
+                    onCommit={(val) => updatePrefs({ customStart: val }, false)}
+                  />
+                  <ScrubNumberInput
+                    variant="sidebar"
+                    label="止 (秒)"
+                    value={prefs.customEnd ?? tg.xmax}
+                    min={Math.min(tg.xmax, prefs.customStart ?? tg.xmin)}
+                    max={tg.xmax}
+                    strictMin={tg.xmax > (prefs.customStart ?? tg.xmin) + 1e-4}
+                    stepSec={0.01}
+                    fineStepSec={0.001}
+                    coarseStepSec={0.1}
+                    decimals={6}
+                    formatValue={formatPraatDouble}
+                    onCommit={(val) => updatePrefs({ customEnd: val }, false)}
+                  />
                 </div>
               )}
 
@@ -1068,27 +1126,44 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
 
         <div className="export-modal-foot">
           <span className="export-foot-note">
-            所有设置自动记住，不影响当前编辑画布。
+            {busyAction === 'download'
+              ? '正在渲染导出图像…'
+              : busyAction === 'copy'
+                ? '正在复制图像…'
+                : '所有设置自动记住，不影响当前编辑画布。'}
           </span>
           <div className="export-foot-actions">
-            <button type="button" onClick={handleCopy}>
+            <button type="button" disabled={Boolean(busyAction)} onClick={handleCopy}>
               <UiIcon name="copy" size={13} />
-              <span>{prefs.format === 'png' ? '复制图片' : '复制 SVG'}</span>
+              <span>
+                {busyAction === 'copy'
+                  ? '正在复制…'
+                  : prefs.format === 'png'
+                    ? '复制图片'
+                    : '复制 SVG'}
+              </span>
             </button>
-            <button type="button" className="primary" onClick={handleDownload}>
+            <button
+              type="button"
+              className="primary"
+              disabled={Boolean(busyAction)}
+              onClick={handleDownload}
+            >
               <UiIcon name={prefs.format === 'png' ? 'exportPng' : 'exportSvg'} size={14} />
               <span>
-                {prefs.format === 'png'
-                  ? isTauriRuntime()
-                    ? '导出 PNG…'
-                    : '下载 PNG'
-                  : prefs.specMode === 'external-zip' && hasSpec
+                {busyAction === 'download'
+                  ? '正在渲染导出…'
+                  : prefs.format === 'png'
                     ? isTauriRuntime()
-                      ? '导出分离包 (.zip)…'
-                      : '下载分离包 (.zip)'
-                    : isTauriRuntime()
-                      ? '导出 SVG…'
-                      : '下载 SVG'}
+                      ? '导出 PNG…'
+                      : '下载 PNG'
+                    : prefs.specMode === 'external-zip' && hasSpec
+                      ? isTauriRuntime()
+                        ? '导出分离包 (.zip)…'
+                        : '下载分离包 (.zip)'
+                      : isTauriRuntime()
+                        ? '导出 SVG…'
+                        : '下载 SVG'}
               </span>
             </button>
           </div>

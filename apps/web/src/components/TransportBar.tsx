@@ -36,6 +36,7 @@ export const TransportBar: React.FC<TransportBarProps> = ({
   const setViewDomain = useEditorStore((s) => s.setViewDomain);
   const selection = useEditorStore((s) => s.selection);
   const audioName = useEditorStore((s) => s.audioName);
+  const audioLoading = useEditorStore((s) => s.audioLoading);
   const audioDuration = useEditorStore((s) => s.audioDuration);
   const scaleMode = useEditorStore((s) => s.scaleMode);
   const setScaleMode = useEditorStore((s) => s.setScaleMode);
@@ -244,15 +245,27 @@ export const TransportBar: React.FC<TransportBarProps> = ({
         <div className="sep" />
 
         {!audioName ? (
-          <button
-            type="button"
-            className="transport-audio-empty-btn"
-            title={`点击载入配套录音 (${formatKeyCombo('Mod+Shift+O')})`}
-            onClick={onOpenAudio}
-          >
-            <UiIcon name="waveform" size={13} />
-            <span>未载入录音</span>
-          </button>
+          audioLoading ? (
+            <button
+              type="button"
+              className="transport-audio-empty-btn is-loading"
+              disabled
+              title="正在下载并解析配套录音…"
+            >
+              <UiIcon name="waveform" size={13} />
+              <span>正在载入录音…</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="transport-audio-empty-btn"
+              title={`点击载入配套录音 (${formatKeyCombo('Mod+Shift+O')})`}
+              onClick={onOpenAudio}
+            >
+              <UiIcon name="waveform" size={13} />
+              <span>未载入录音</span>
+            </button>
+          )
         ) : (
           <>
             <div className="audio-file-group">

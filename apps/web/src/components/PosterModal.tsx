@@ -122,6 +122,8 @@ const TEMPLATE_GLYPHS: Record<PosterTemplateId, React.FC> = {
 export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
   const open = useEditorStore((s) => s.posterOpen);
   const setOpen = useEditorStore((s) => s.setPosterOpen);
+  const activeTabId = useEditorStore((s) => s.activeTabId);
+  const collectionActiveIdx = useEditorStore((s) => s.collectionActiveIdx);
   const tg = useEditorStore((s) => s.tg);
   const filename = useEditorStore((s) => s.filename);
   const viewDomain = useEditorStore((s) => s.viewDomain);
@@ -141,6 +143,7 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
   const [pointMenuOpen, setPointMenuOpen] = useState(false);
   const [copyOpen, setCopyOpen] = useState(false);
   const pointMenuRef = useRef<HTMLDivElement>(null);
+  const modalCardRef = useRef<HTMLDivElement>(null);
   const [copyOverrides, setCopyOverrides] = useState<PosterCopyOverrides>({
     title: '',
     subtitle: '',
@@ -160,6 +163,7 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
   const stageRef = useRef<HTMLDivElement>(null);
   const backdropPointerDownRef = useRef(false);
   const lastDocKeyRef = useRef<string>('');
+  const lastPreviewContextKeyRef = useRef<string>('');
 
   const hasAudio = Boolean(audioName && (audioBuffer || analysis));
   const hasSelectionRange = Boolean(
@@ -188,8 +192,16 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
 
   // Re-initialize tier mapping & range fallback when modal opens or active document changes
   useEffect(() => {
-    if (!open) return;
-    const docKey = `${filename}|${tg.tiers.map((t) => `${t.kind}:${t.name}`).join(',')}`;
+    if (!open) {
+      setPreviewRes(null);
+      return;
+    }
+    const docKey = `${activeTabId}|${collectionActiveIdx}|${filename}|${tg.tiers.map((t) => `${t.kind}:${t.name}`).join(',')}|${tg.xmin}|${tg.xmax}`;
+    const previewContextKey = `${docKey}|${audioName}|${analysis?.sessionId ?? ''}|${audioBuffer ? 1 : 0}`;
+    if (previewContextKey !== lastPreviewContextKeyRef.current) {
+      lastPreviewContextKeyRef.current = previewContextKey;
+      setPreviewRes(null);
+    }
     if (docKey !== lastDocKeyRef.current) {
       lastDocKeyRef.current = docKey;
       const defaults = getDefaultPosterTierSelection(tg);
@@ -221,7 +233,29 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
     });
     setZoom(1);
     setPan({ x: 0, y: 0 });
-  }, [open, filename, tg, allIntervalTierIndices, allPointTierIndices, viewDomain, hasSelectionRange]);
+  }, [
+    open,
+    activeTabId,
+    collectionActiveIdx,
+    filename,
+    audioName,
+    analysis?.sessionId,
+    audioBuffer,
+    tg,
+    allIntervalTierIndices,
+    allPointTierIndices,
+    viewDomain,
+    hasSelectionRange
+  ]);
+
+  // Focus modal container on open so keyboard focus stays inside dialog
+  useEffect(() => {
+    if (!open) return;
+    const raf = requestAnimationFrame(() => {
+      modalCardRef.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [open]);
 
   const activeIntervalTierIndices = useMemo(
     () => orderedIntervalTiers.filter((idx) => enabledIntervalTiers.includes(idx)).slice(0, 6),
@@ -299,7 +333,7 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
     });
   }, []);
 
-  // Close point-tier custom dropdown on outside pointerdown or modal close
+  // Close point-tier custom dropdown on outside pointerdown, Escape key, or modal close
   useEffect(() => {
     if (!open) {
       setPointMenuOpen(false);
@@ -311,8 +345,19 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
         setPointMenuOpen(false);
       }
     };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setPointMenuOpen(false);
+      }
+    };
     window.addEventListener('pointerdown', onPointerDown, true);
-    return () => window.removeEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('keydown', onKeyDown, true);
+    };
   }, [open, pointMenuOpen]);
 
   // Re-fit preview when container resizes
@@ -577,7 +622,7 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
         backdropPointerDownRef.current = false;
       }}
     >
-      <div className="modal-card poster-modal-card">
+      <div ref={modalCardRef} tabIndex={-1} className="modal-card poster-modal-card">
         <div className="modal-head">
           <span id="poster-modal-title" className="modal-title">
             <UiIcon name="export" size={14} />
@@ -606,15 +651,22 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
                 setPan({ x: 0, y: 0 });
               }}
             >
-              <div
-                className={`export-preview-paper ${prefs.bgMode === 'transparent' ? 'checkerboard' : ''}`}
-                style={{
-                  width: `${(baseSize.w * zoom).toFixed(2)}px`,
-                  height: `${(baseSize.h * zoom).toFixed(2)}px`,
-                  transform: `translate(calc(-50% + ${pan.x.toFixed(1)}px), calc(-50% + ${pan.y.toFixed(1)}px))`
-                }}
-                dangerouslySetInnerHTML={previewHtml ?? undefined}
-              />
+              {previewHtml ? (
+                <div
+                  className={`export-preview-paper ${prefs.bgMode === 'transparent' ? 'checkerboard' : ''}`}
+                  style={{
+                    width: `${(baseSize.w * zoom).toFixed(2)}px`,
+                    height: `${(baseSize.h * zoom).toFixed(2)}px`,
+                    transform: `translate(calc(-50% + ${pan.x.toFixed(1)}px), calc(-50% + ${pan.y.toFixed(1)}px))`
+                  }}
+                  dangerouslySetInnerHTML={previewHtml}
+                />
+              ) : (
+                <div className="poster-preview-loading" role="status" aria-live="polite">
+                  <span className="poster-preview-loading-bar" aria-hidden="true" />
+                  <span>正在生成声纹海报预览…</span>
+                </div>
+              )}
               <div className="export-preview-zoom-bar" role="group" aria-label="预览缩放">
                 <button type="button" title="缩小" onClick={() => zoomAt(zoom / 1.25)}>
                   −
@@ -645,7 +697,7 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
               </div>
             </div>
             <div className="poster-spec-bar">
-              <span>{rendering ? '正在更新预览…' : specSummary}</span>
+              <span>{!previewRes ? '正在生成声纹海报预览…' : rendering ? '正在更新预览…' : specSummary}</span>
               <strong>{previewRes ? formatByteSize(previewRes.estimatedBytes) : ''}</strong>
             </div>
           </div>
@@ -972,7 +1024,7 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
             </div>
 
             {/* 4. 文案与题注 */}
-            <div className="export-group">
+            <div className="export-group" style={{ borderBottom: 'none', paddingBottom: 0 }}>
               <div className="export-group-head">
                 <span className="export-group-title">文案与题注</span>
                 {!isEmblem && (
@@ -1189,26 +1241,6 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
                 </div>
               )}
             </div>
-
-            {/* 5. 输出规格 */}
-            <div className="export-group" style={{ borderBottom: 'none', paddingBottom: 0 }}>
-              <span className="export-group-title">输出规格</span>
-              <div className="export-sub-row">
-                <span className="setting-label">PNG 倍率</span>
-                <div className="segmented" role="group">
-                  {([2, 3, 4] as PosterPngScale[]).map((sc) => (
-                    <button
-                      key={sc}
-                      type="button"
-                      className={`compact ${prefs.pngScale === sc ? 'active' : ''}`}
-                      onClick={() => updatePrefs({ pngScale: sc })}
-                    >
-                      {sc === 2 ? '2×' : sc === 3 ? '3× 推荐' : '4×'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -1218,29 +1250,48 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
               ? '正在渲染高分辨率声纹海报…'
               : previewRes
                 ? `${previewRes.activeIntervalCount} 层标注${previewRes.activePointCount > 0 ? ` · ${previewRes.activePointCount} 个标点` : ''} · 矢量分组支持 Illustrator / Figma 编辑`
-                : '就绪'}
+                : '正在生成声纹海报预览…'}
           </span>
-          <div className="export-foot-actions">
-            <button type="button" disabled={Boolean(busyAction)} onClick={() => void handleCopyPng()}>
-              <UiIcon name="copy" size={13} />
-              <span>复制 PNG</span>
-            </button>
-            <button type="button" disabled={Boolean(busyAction)} onClick={() => void handlePrintPdf()}>
-              <span>打印 PDF</span>
-            </button>
-            <button type="button" disabled={Boolean(busyAction)} onClick={() => void handleExportSvg()}>
-              <UiIcon name="exportSvg" size={13} />
-              <span>导出 SVG</span>
-            </button>
-            <button
-              type="button"
-              className="primary"
-              disabled={Boolean(busyAction)}
-              onClick={() => void handleExportPng()}
-            >
-              <UiIcon name="exportPng" size={14} />
-              <span>导出 PNG</span>
-            </button>
+          <div className="poster-foot-controls">
+            <div className="poster-foot-scale">
+              <span className="poster-foot-scale-label">PNG 倍率</span>
+              <div className="segmented" role="group" aria-label="输出规格 PNG 倍率">
+                {([2, 3, 4] as PosterPngScale[]).map((sc) => (
+                  <button
+                    key={sc}
+                    type="button"
+                    className={`compact ${prefs.pngScale === sc ? 'active' : ''}`}
+                    disabled={Boolean(busyAction)}
+                    onClick={() => updatePrefs({ pngScale: sc })}
+                  >
+                    {sc === 2 ? '2×' : sc === 3 ? '3× 推荐' : '4×'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="sep" aria-hidden="true" />
+            <div className="export-foot-actions">
+              <button type="button" disabled={Boolean(busyAction)} onClick={() => void handleCopyPng()}>
+                <UiIcon name="copy" size={13} />
+                <span>复制 PNG</span>
+              </button>
+              <button type="button" disabled={Boolean(busyAction)} onClick={() => void handlePrintPdf()}>
+                <span>打印 PDF</span>
+              </button>
+              <button type="button" disabled={Boolean(busyAction)} onClick={() => void handleExportSvg()}>
+                <UiIcon name="exportSvg" size={13} />
+                <span>导出 SVG</span>
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={Boolean(busyAction)}
+                onClick={() => void handleExportPng()}
+              >
+                <UiIcon name="exportPng" size={14} />
+                <span>导出 PNG</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

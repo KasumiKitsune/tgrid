@@ -31,6 +31,9 @@ export interface DragPreviewState {
   bandIndex: number;
   x: number;
   linearX: number;
+  origTime?: number;
+  origX?: number;
+  origLinearX?: number;
   y0: number;
   y1: number;
   cursorY?: number;
@@ -740,11 +743,58 @@ export function renderInteractiveOverlay(
   }
 
   if (input.dragPreview) {
-    const { bandIndex, x, linearX, y0, y1, cursorY, snapX, snapMode, snapLabel, showCompactTag, time } = input.dragPreview;
+    const {
+      bandIndex,
+      x,
+      linearX,
+      origTime,
+      origX,
+      origLinearX,
+      y0,
+      y1,
+      cursorY,
+      snapX,
+      snapMode,
+      snapLabel,
+      showCompactTag,
+      time
+    } = input.dragPreview;
     const isSnapped = snapX !== null || Boolean(snapMode);
     const colStroke = isSnapped ? '#B45309' : '#1D4ED8';
     const band = layout.bands[bandIndex];
     if (band && Number.isFinite(linearX)) {
+      if (
+        origLinearX !== undefined &&
+        Number.isFinite(origLinearX) &&
+        Math.abs(linearX - origLinearX) > 0.5
+      ) {
+        svgEl(
+          'rect',
+          {
+            x: Math.min(origLinearX, linearX),
+            y: band.linearY,
+            width: Math.abs(linearX - origLinearX),
+            height: Math.max(1, band.neckTopY - band.linearY),
+            fill: '#1D4ED8',
+            'fill-opacity': 0.13
+          },
+          layerG
+        );
+        svgEl(
+          'line',
+          {
+            x1: origLinearX,
+            y1: band.linearY,
+            x2: origLinearX,
+            y2: band.neckTopY,
+            stroke: '#1D4ED8',
+            'stroke-width': 1,
+            'stroke-dasharray': '2 2',
+            opacity: 0.45
+          },
+          layerG
+        );
+      }
       if (band.specH > 0) {
         const gapY = Number.isFinite(cursorY)
           ? Math.max(band.specY + 14, Math.min(band.specY + band.specH - 14, cursorY!))
@@ -759,6 +809,36 @@ export function renderInteractiveOverlay(
         svgEl('line', { x1: linearX, y1: band.linearY, x2: linearX, y2: band.neckTopY, stroke: colStroke, 'stroke-width': 1.2, opacity: 0.85 }, layerG);
         svgEl('line', { x1: linearX, y1: band.neckTopY, x2: x, y2: band.neckBotY, stroke: colStroke, 'stroke-width': 1.1, opacity: 0.8 }, layerG);
       }
+    }
+
+    // Translucent displacement band on the active tier(s) from original X to dragged X
+    if (origX !== undefined && Number.isFinite(origX) && Math.abs(x - origX) > 0.5) {
+      svgEl(
+        'rect',
+        {
+          x: Math.min(origX, x),
+          y: y0,
+          width: Math.abs(x - origX),
+          height: Math.max(1, y1 - y0),
+          fill: '#1D4ED8',
+          'fill-opacity': 0.11
+        },
+        layerG
+      );
+      svgEl(
+        'line',
+        {
+          x1: origX,
+          y1: y0,
+          x2: origX,
+          y2: y1,
+          stroke: '#1D4ED8',
+          'stroke-width': 1,
+          'stroke-dasharray': '2 2',
+          opacity: 0.45
+        },
+        layerG
+      );
     }
 
     // Cross-tier magnetic alignment: amber solid guide across ALL tiers (spine-safe around timestamps)
@@ -780,7 +860,13 @@ export function renderInteractiveOverlay(
     // Compact coordinate & snap pill when micro-loupe isn't visible (no audio loaded or loupe toggled off)
     if (showCompactTag !== false) {
       const timeStr = formatPraatDouble(time);
-      const txt = snapLabel ? `${timeStr} s · ${snapLabel}` : `${timeStr} s`;
+      let timePart = `${timeStr} s`;
+      if (origTime !== undefined && Number.isFinite(origTime)) {
+        const deltaMs = Math.round((time - origTime) * 1000);
+        const deltaStr = deltaMs === 0 ? 'Δ 0 ms' : deltaMs > 0 ? `Δ +${deltaMs} ms` : `Δ ${deltaMs} ms`;
+        timePart = `${timeStr} s (${deltaStr})`;
+      }
+      const txt = snapLabel ? `${timePart} · ${snapLabel}` : timePart;
       const tw = measurePx(txt, `10.5px ${MONO_FONT_STACK}`) + 12;
       const fx = Math.max(4, Math.min(layout.width - tw - 4, x - tw / 2));
       const fy = Math.max(4, (snapX !== null && band ? Math.min(y0, band.tiersTopY) : y0) - 22);
@@ -1809,6 +1895,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
       const hdrG = svgEl('g', isExp ? {} : { 'data-role': 'tier-header', 'data-tier': ti, 'data-band': band.bandIndex }, tG);
       if (!isExp) {
         svgEl('title', {}, hdrG).textContent = `${displayNum}. ${tier.name || '(空层名)'} [${tier.kind === 'intervalTier' ? 'IntervalTier' : 'TextTier'}]`;
+        svgEl('rect', { class: 'hdr-hit', x: 0, y: tl.y, width: band.originX, height: tl.h, fill: 'transparent', 'data-ui-only': '1' }, hdrG);
         svgEl('rect', { class: 'hdr-bg', x: hb.x, y: hb.y, width: hb.w, height: hb.h, fill: 'transparent' }, hdrG);
         svgEl('rect', { class: 'hdr-accent', x: hb.x, y: hb.y, width: 2.5, height: hb.h, fill: accent, 'data-ui-only': '1' }, hdrG);
       }

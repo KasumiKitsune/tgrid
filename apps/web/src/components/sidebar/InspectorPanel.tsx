@@ -645,6 +645,7 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
 
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
           e.preventDefault();
+          e.stopPropagation();
           flushPendingRef.current();
           (e.target as HTMLTextAreaElement).blur();
         } else if (e.key === 'Escape') {

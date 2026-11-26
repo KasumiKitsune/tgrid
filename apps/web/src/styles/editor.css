@@ -554,6 +554,7 @@ button.active:not(.sidebar-rail-btn):not(.export-tier-chip),
 
 .segmented button {
   margin-left: -1px;
+  transition: none;
 }
 
 .segmented button:first-child {
@@ -611,10 +612,7 @@ button.active:not(.sidebar-rail-btn):not(.export-tier-chip),
   visibility: hidden;
   pointer-events: none;
   transform: translateY(-5px);
-  transition:
-    opacity 160ms var(--ease),
-    transform 160ms var(--ease),
-    visibility 0s linear 160ms;
+  transition: none;
 }
 
 .dropdown.left {
@@ -1046,10 +1044,10 @@ button.active:not(.sidebar-rail-btn):not(.export-tier-chip),
   stroke-width: 2.8;
 }
 
-#score-svg.mode-edit [data-role="tier-header"] {
+#score-svg [data-role="tier-header"] {
   cursor: pointer;
 }
-#score-svg.mode-edit [data-role="tier-header"] .hdr-bg {
+#score-svg [data-role="tier-header"] .hdr-bg {
   fill: transparent;
   transition: fill 150ms var(--ease);
 }
@@ -1057,13 +1055,13 @@ button.active:not(.sidebar-rail-btn):not(.export-tier-chip),
   opacity: 0;
   transition: opacity 150ms var(--ease);
 }
-#score-svg.mode-edit [data-role="tier-header"]:hover .hdr-bg {
+#score-svg [data-role="tier-header"]:hover .hdr-bg {
   fill: #F3F1EC;
 }
-#score-svg.mode-edit [data-role="tier-header"]:hover .hdr-accent {
+#score-svg [data-role="tier-header"]:hover .hdr-accent {
   opacity: 1;
 }
-#score-svg.mode-edit [data-role="tier-header"]:active .hdr-bg {
+#score-svg [data-role="tier-header"]:active .hdr-bg {
   fill: #E6E3DA;
 }
 
@@ -2597,9 +2595,9 @@ button.active .export-btn-sub {
 }
 
 .export-custom-range {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 8px;
   padding: 6px 8px;
   background: var(--bg-sheet);
@@ -3678,8 +3676,8 @@ button.active .export-btn-sub {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  opacity: 0;
-  pointer-events: none;
+  opacity: 0.45;
+  pointer-events: auto;
   flex-shrink: 0;
   transition: opacity 110ms var(--ease);
 }
@@ -4165,6 +4163,14 @@ a.about-link-btn:focus-visible {
   border-color: var(--accent-blue);
   color: #1E3A8A;
   transform: none;
+}
+
+.transport-audio-empty-btn.is-loading {
+  opacity: 0.88;
+  border-style: solid;
+  border-color: var(--rule);
+  color: var(--ink-muted);
+  cursor: progress;
 }
 
 /* Blank Tab Quickstart Hint Strip */

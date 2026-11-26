@@ -257,6 +257,7 @@ export const IpaDock: React.FC<IpaDockProps> = ({ onInsertSymbol }) => {
               key={t.id}
               type="button"
               role="tab"
+              tabIndex={-1}
               className={`compact ${activeTab === t.id ? 'active' : ''}`}
               onClick={() => setActiveTab(t.id)}
             >
@@ -284,6 +285,7 @@ export const IpaDock: React.FC<IpaDockProps> = ({ onInsertSymbol }) => {
         <div className="ipa-dock-actions">
           <button
             type="button"
+            tabIndex={-1}
             className="compact"
             title="切换底部停靠 / 悬浮小窗"
             onClick={() => setIpaFloating(!ipaFloating)}
@@ -293,6 +295,7 @@ export const IpaDock: React.FC<IpaDockProps> = ({ onInsertSymbol }) => {
           </button>
           <button
             type="button"
+            tabIndex={-1}
             className="icon-btn compact"
             title="关闭音标盘"
             onClick={() => setIpaDockOpen(false)}
@@ -309,6 +312,7 @@ export const IpaDock: React.FC<IpaDockProps> = ({ onInsertSymbol }) => {
             <button
               key={sym}
               type="button"
+              tabIndex={-1}
               className={`ipa-key recent-key ${isCombining(sym) ? 'diacritic' : ''}`}
               onMouseEnter={() => inspectSymbol(sym)}
               onMouseDown={(e) => handleKeyPress(e, sym)}
@@ -333,6 +337,7 @@ export const IpaDock: React.FC<IpaDockProps> = ({ onInsertSymbol }) => {
                   <button
                     key={`${cfg.sym}-${idx}`}
                     type="button"
+                    tabIndex={-1}
                     className={`ipa-key ${cfg.wide ? 'wide' : ''} ${isCombining(cfg.sym) ? 'diacritic' : ''} ${cfg.tiebar ? 'tiebar' : ''}`}
                     onMouseEnter={() => inspectSymbol(cfg.sym)}
                     onMouseDown={(e) => handleKeyPress(e, cfg.sym, cfg.tiebar)}

@@ -426,6 +426,7 @@ export interface TabRecord {
   playRange: { start: number; end: number } | null;
   currentTime: number;
   audioName: string;
+  audioLoading: boolean;
   audioOffset: number;
   audioDuration: number;
   audioSampleRate: number;
@@ -488,6 +489,7 @@ export interface EditorState {
 
   // Audio & Acoustic (per-tab mirrored)
   audioName: string;
+  audioLoading: boolean;
   audioOffset: number;
   audioDuration: number;
   audioSampleRate: number;
@@ -551,6 +553,7 @@ export interface EditorState {
       analysis: AudioAnalysisSummary | null;
     }
   ) => void;
+  setAudioLoadingForTab: (tabId: string, loading: boolean) => void;
 
   // Active document actions
   setDocument: (
@@ -708,6 +711,7 @@ function createTabRecord(opts?: CreateTabOptions): TabRecord {
     playRange: null,
     currentTime: Number.isFinite(tg.xmin) ? tg.xmin : 0,
     audioName: '',
+    audioLoading: false,
     audioOffset: 0,
     audioDuration: 0,
     audioSampleRate: 0,
@@ -736,6 +740,7 @@ function fieldsFromTab(tab: TabRecord) {
     playRange: tab.playRange,
     currentTime: tab.currentTime,
     audioName: tab.audioName,
+    audioLoading: tab.audioLoading,
     audioOffset: tab.audioOffset,
     audioDuration: tab.audioDuration,
     audioSampleRate: tab.audioSampleRate,
@@ -1112,6 +1117,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return { tabs: nextTabs };
     }),
 
+  setAudioLoadingForTab: (tabId, loading) =>
+    set((s) => {
+      const target = s.tabs.find((t) => t.id === tabId);
+      if (!target || target.audioLoading === loading) return s;
+      const nextTabs = s.tabs.map((t) => (t.id === tabId ? { ...t, audioLoading: loading } : t));
+      if (tabId === s.activeTabId) {
+        return { tabs: nextTabs, audioLoading: loading };
+      }
+      return { tabs: nextTabs };
+    }),
+
   setDocument: (tg, filename, collectionTgs = [], activeIdx = 0, meta) =>
     set((s) => {
       const patch: Partial<TabRecord> = {
@@ -1129,6 +1145,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         hiddenTierIndices: [],
         playRange: null,
         currentTime: Number.isFinite(tg.xmin) ? tg.xmin : 0,
+        audioLoading: false,
         undoStack: [],
         redoStack: [],
         isBlankPlaceholder: meta?.isBlankPlaceholder ?? false

@@ -73,6 +73,8 @@ export function App() {
   const sidebarRef = useRef<RightSidebarHandle>(null);
   const playerRef = useRef<AudioPlayer | null>(null);
   const dragDepthRef = useRef(0);
+  const quickExportBusyRef = useRef(false);
+  const audioLoadSeqRef = useRef<Map<string, number>>(new Map());
 
   const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
   const [dropActive, setDropActive] = useState(false);
@@ -872,15 +874,25 @@ export function App() {
       }
 
       if (sample.audioUrl) {
+        const seq = (audioLoadSeqRef.current.get(targetTabId) ?? 0) + 1;
+        audioLoadSeqRef.current.set(targetTabId, seq);
+        useEditorStore.getState().setAudioLoadingForTab(targetTabId, true);
         try {
           const resp = await fetch(sample.audioUrl);
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
           const ab = await resp.arrayBuffer();
+          if (audioLoadSeqRef.current.get(targetTabId) !== seq) return;
           await loadAudioBytesForTab(targetTabId, new Uint8Array(ab), sample.audioName || 'sample.wav', 0);
+          if (audioLoadSeqRef.current.get(targetTabId) !== seq) return;
           showToast(`已载入示例与配套录音：${sample.label}`);
         } catch {
+          if (audioLoadSeqRef.current.get(targetTabId) !== seq) return;
           await evictTabAudio(targetTabId);
           showToast('已载入示例标注（离线模式下可手动点击「打开录音」载入音频）');
+        } finally {
+          if (audioLoadSeqRef.current.get(targetTabId) === seq) {
+            useEditorStore.getState().setAudioLoadingForTab(targetTabId, false);
+          }
         }
       } else {
         showToast(`已切换示例：${sample.label}`);
@@ -1003,6 +1015,11 @@ export function App() {
 
   const quickExportImage = useCallback(
     async (fmt: 'svg' | 'png') => {
+      if (quickExportBusyRef.current) return;
+      quickExportBusyRef.current = true;
+      showToast(fmt === 'png' ? '正在生成高清图像…' : '正在生成矢量图像…');
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
       const st = useEditorStore.getState();
       const bridge = getPlatformBridge();
       const prefs = { ...loadExportPrefs(), format: fmt };
@@ -1094,6 +1111,8 @@ export function App() {
         }
       } catch (err) {
         showToast(`导出失败：${String(err)}`, true);
+      } finally {
+        quickExportBusyRef.current = false;
       }
     },
     [audioBuffer, isDesktop, makeRevealAction, showToast]
@@ -1282,12 +1301,22 @@ export function App() {
           return;
         }
         if (st.exportOpen) {
+          const activeEl = document.activeElement;
+          if (
+            activeEl instanceof HTMLInputElement &&
+            activeEl.closest('.export-custom-range, .scrub-field')
+          ) {
+            return;
+          }
           e.preventDefault();
           e.stopPropagation();
           setExportOpen(false);
           return;
         }
         if (st.posterOpen) {
+          if (document.querySelector('.poster-point-menu.open')) {
+            return;
+          }
           e.preventDefault();
           e.stopPropagation();
           setPosterOpen(false);
