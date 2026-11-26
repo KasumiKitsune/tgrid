@@ -119,8 +119,10 @@
       --accent-green: #15803D;
       --accent-green-soft: #F0FDF4;
       --ease: cubic-bezier(0.22, 1, 0.36, 1);
+      --ease-draft: cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-caliper: cubic-bezier(0.25, 1, 0.32, 1);
       --font-sans: "Inter", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
-      --font-ipa: "Charis SIL", "Doulos SIL", "Gentium Plus", "Segoe UI", "Cambria", "Lucida Sans Unicode", "Noto Sans SC", sans-serif;
+      --font-ipa: "Charis SIL", "Doulos SIL", "Gentium Plus", "Segoe UI", "Cambria", "Lucida Sans Unicode", "Noto Sans", "DejaVu Sans", "Liberation Sans", "FreeSans", "Noto Sans SC", sans-serif;
       --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", "Menlo", "Consolas", monospace;
       --nav-h: 54px;
     }
@@ -222,6 +224,7 @@
     }
 
     .nav-links {
+      position: relative;
       display: flex;
       align-items: center;
       gap: 4px;
@@ -233,7 +236,7 @@
       font-size: 12.5px;
       color: var(--ink-muted);
       text-decoration: none;
-      transition: color 0.18s var(--ease), background-color 0.18s var(--ease);
+      transition: color 0.18s var(--ease-caliper), background-color 0.18s var(--ease-caliper);
     }
 
     .nav-link::after {
@@ -242,21 +245,42 @@
       left: 11px;
       right: 11px;
       bottom: 0;
-      height: 2px;
-      background: var(--ink);
+      height: 1.5px;
+      background: var(--rule-hover);
       transform: scaleX(0);
-      transform-origin: left center;
-      transition: transform 0.24s var(--ease);
+      transform-origin: right center;
+      transition: transform 0.22s var(--ease-caliper);
     }
 
-    .nav-link:hover,
-    .nav-link.is-active {
+    .nav-link:hover {
       color: var(--ink);
     }
 
-    .nav-link.is-active::after,
     .nav-link:hover::after {
       transform: scaleX(1);
+      transform-origin: left center;
+    }
+
+    .nav-link.is-active {
+      color: var(--ink);
+      font-weight: 600;
+    }
+
+    .nav-link.is-active::after {
+      transform: scaleX(0);
+    }
+
+    .nav-active-bar {
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      width: 100px;
+      height: 2px;
+      background: var(--accent-blue);
+      transform-origin: left center;
+      transform: translate3d(11px, 0, 0) scaleX(0.5);
+      transition: transform 0.32s var(--ease-draft);
+      pointer-events: none;
     }
 
     .nav-actions {
@@ -275,9 +299,11 @@
 
     .scroll-ruler-fill {
       height: 100%;
-      width: 0%;
+      width: 100%;
       background: linear-gradient(90deg, var(--ink) 0%, var(--accent-blue) 100%);
-      transition: width 0.08s linear;
+      transform-origin: left center;
+      transform: scaleX(0);
+      will-change: transform;
     }
 
     /* ============================================================
@@ -310,7 +336,7 @@
     }
 
     .btn:active {
-      transform: translateY(1px);
+      transform: translateY(1.5px);
     }
 
     .btn.compact {
@@ -329,8 +355,9 @@
       position: absolute;
       inset: 0;
       background: var(--accent-blue);
-      transform: translateX(-101%);
-      transition: transform 0.34s var(--ease);
+      transform: scaleX(0);
+      transform-origin: right center;
+      transition: transform 0.32s var(--ease-draft);
       z-index: 0;
     }
 
@@ -340,7 +367,8 @@
     }
 
     .btn.primary:hover::before {
-      transform: translateX(0);
+      transform: scaleX(1);
+      transform-origin: left center;
     }
 
     .btn.primary > :not(.hero-cta-sheen) {
@@ -370,7 +398,7 @@
       border-color: var(--rule);
     }
 
-    /* Segmented Control with Sliding Ink Indicator */
+    /* Segmented Control with Caliper Stretch & Sub-Pixel Inverse Clip Layer */
     .seg-control {
       position: relative;
       display: inline-flex;
@@ -379,17 +407,21 @@
       background: var(--bg-subtle);
       padding: 2px;
       gap: 2px;
+      user-select: none;
     }
 
     .seg-slider {
       position: absolute;
       top: 2px;
       bottom: 2px;
-      left: 2px;
+      left: 0;
+      width: 100px;
       background: var(--ink);
-      transition: transform 0.3s var(--ease), width 0.3s var(--ease);
+      transform-origin: left center;
+      transform: translate3d(2px, 0, 0) scaleX(0.5);
       pointer-events: none;
       z-index: 0;
+      will-change: transform;
     }
 
     .seg-btn {
@@ -404,15 +436,45 @@
       padding: 5px 12px;
       cursor: pointer;
       white-space: nowrap;
-      transition: color 0.22s var(--ease);
+      transition: color 0.16s var(--ease-caliper);
     }
 
     .seg-btn:hover {
       color: var(--ink);
     }
 
-    .seg-btn.is-active {
+    .seg-control:not(.has-clip-overlay) .seg-btn.is-active {
       color: var(--bg-bar);
+    }
+
+    .seg-control.has-clip-overlay .seg-btn.is-active {
+      color: var(--ink-muted);
+    }
+
+    .seg-clip-overlay {
+      position: absolute;
+      inset: 0;
+      padding: 2px;
+      display: inline-flex;
+      align-items: stretch;
+      gap: 2px;
+      background: var(--ink);
+      pointer-events: none;
+      z-index: 2;
+      clip-path: inset(2px 50% 2px 2px);
+      will-change: clip-path;
+    }
+
+    .seg-clip-label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-sans);
+      font-size: 12px;
+      font-weight: 500;
+      padding: 5px 12px;
+      color: var(--bg-bar);
+      white-space: nowrap;
     }
 
     /* Mechanical Toggle Switch */
@@ -453,8 +515,13 @@
       width: 10px;
       height: 10px;
       background: var(--ink-muted);
-      transform: translateX(0);
-      transition: transform 0.24s var(--ease), background-color 0.2s var(--ease);
+      transform-origin: left center;
+      transform: translateX(0) scaleX(1);
+      transition: transform 0.2s var(--ease-caliper), background-color 0.18s var(--ease-caliper);
+    }
+
+    .mech-toggle:active .mech-toggle-knob {
+      transform: translateX(0) scaleX(1.26);
     }
 
     .mech-toggle[aria-pressed="true"] {
@@ -469,11 +536,20 @@
     }
 
     .mech-toggle[aria-pressed="true"] .mech-toggle-knob {
-      transform: translateX(12px);
+      transform-origin: right center;
+      transform: translateX(12px) scaleX(1);
       background: #FFFFFF;
     }
 
-    /* Keycap Badge */
+    .mech-toggle[aria-pressed="true"]:active .mech-toggle-knob {
+      transform: translateX(12px) scaleX(1.26);
+    }
+
+    .mech-toggle.is-hold-z {
+      box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.22);
+    }
+
+    /* Keycap Badge (Real Mechanical Depression + OS Switch Flash) */
     kbd {
       display: inline-flex;
       align-items: center;
@@ -489,7 +565,25 @@
       background: var(--bg-sheet);
       border: 1px solid var(--rule-strong);
       box-shadow: inset 0 -2px 0 var(--bg-active);
-      transition: transform 0.14s var(--ease), border-color 0.14s var(--ease), background-color 0.14s var(--ease);
+      transition: transform 0.12s var(--ease-caliper), border-color 0.14s var(--ease-caliper), background-color 0.14s var(--ease-caliper), box-shadow 0.12s var(--ease-caliper), color 0.14s var(--ease-caliper);
+    }
+
+    kbd.is-pressed {
+      transform: translateY(1.5px) !important;
+      border-color: var(--accent-blue) !important;
+      background: var(--accent-blue-soft) !important;
+      color: var(--accent-blue) !important;
+      box-shadow: inset 0 0 0 transparent !important;
+    }
+
+    @keyframes kbdOsFlip {
+      0% { transform: translateY(0) scale(1); }
+      40% { transform: translateY(-2px) scale(1.06); background: var(--accent-blue-soft); border-color: var(--accent-blue); color: var(--accent-blue); }
+      100% { transform: translateY(0) scale(1); }
+    }
+
+    kbd.is-os-flash {
+      animation: kbdOsFlip 0.34s var(--ease-caliper);
     }
 
     /* ============================================================
@@ -542,6 +636,7 @@
     }
 
     .section-head {
+      position: relative;
       display: flex;
       flex-wrap: wrap;
       align-items: flex-end;
@@ -550,6 +645,24 @@
       margin-bottom: 30px;
       padding-bottom: 16px;
       border-bottom: 1px solid var(--rule);
+    }
+
+    .section-head::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -1px;
+      height: 1px;
+      background: var(--ink);
+      transform-origin: left center;
+      transform: scaleX(0);
+      transition: transform 0.68s var(--ease-draft) 0.08s;
+      pointer-events: none;
+    }
+
+    .section-head.is-visible::after {
+      transform: scaleX(0.18);
     }
 
     .section-kicker {
@@ -565,10 +678,16 @@
     }
 
     .section-kicker-bar {
-      width: 16px;
+      width: 18px;
       height: 2px;
       background: var(--accent-blue);
       display: inline-block;
+      transform-origin: left center;
+      transition: transform 0.52s var(--ease-draft) 0.06s;
+    }
+
+    .js-anim .section-head:not(.is-visible) .section-kicker-bar {
+      transform: scaleX(0);
     }
 
     .section-title {
@@ -618,19 +737,38 @@
       transition: color 0.18s var(--ease);
     }
 
+    .rail-vernier {
+      position: absolute;
+      left: -2px;
+      top: 0;
+      width: 3px;
+      height: 18px;
+      background: var(--accent-blue);
+      transform: translate3d(0, 8px, 0);
+      transition: transform 0.32s var(--ease-draft);
+      pointer-events: none;
+    }
+
     .rail-item::before {
       content: "";
       position: absolute;
       left: -1px;
       top: 50%;
-      width: 6px;
+      width: 8px;
       height: 1px;
       background: var(--rule-strong);
-      transition: width 0.22s var(--ease), background-color 0.22s var(--ease), height 0.22s var(--ease);
+      transform-origin: left center;
+      transform: translateY(-50%) scaleX(0.75);
+      transition: transform 0.22s var(--ease-caliper), background-color 0.22s var(--ease-caliper);
     }
 
     .rail-item:hover {
       color: var(--ink);
+    }
+
+    .rail-item:hover::before {
+      transform: translateY(-50%) scaleX(1.1);
+      background: var(--ink);
     }
 
     .rail-item.is-active {
@@ -639,8 +777,7 @@
     }
 
     .rail-item.is-active::before {
-      width: 9px;
-      height: 2px;
+      transform: translateY(-50%) scaleX(1.25) scaleY(2);
       background: var(--accent-blue);
     }
 
@@ -900,8 +1037,11 @@
     .hero-c-token::before { top: -3px; left: -3px; }
     .hero-c-token::after { bottom: -3px; right: -3px; }
 
-    .hero-c-stage:hover .hero-c-token::before { transform: translate(-1px, -1px); }
-    .hero-c-stage:hover .hero-c-token::after { transform: translate(1px, 1px); }
+    .hero-c-stage:hover .hero-c-token {
+      background: #E0EAFF;
+    }
+    .hero-c-stage:hover .hero-c-token::before { transform: translate(-2px, -2px); }
+    .hero-c-stage:hover .hero-c-token::after { transform: translate(2px, 2px); }
 
     .hero-c-desc {
       margin: 0 0 20px;
@@ -987,130 +1127,86 @@
     }
 
     /* ============================================================
-       BOLD CHOREOGRAPHED HERO ENTRANCE (GPU-composited, progressive)
+       THREE-BEAT ARCHITECTURAL HERO ENTRANCE (Frame -> Score -> Caliper)
     ============================================================ */
     @keyframes heroScanSweep {
-      0% { opacity: 0; transform: translateX(-120%); }
-      18% { opacity: 1; }
-      82% { opacity: 0.85; }
-      100% { opacity: 0; transform: translateX(260%); }
+      0% { opacity: 0; transform: translateX(-110%); }
+      20% { opacity: 0.9; }
+      85% { opacity: 0.6; }
+      100% { opacity: 0; transform: translateX(250%); }
     }
 
     @keyframes heroTokenExpand {
-      0% { opacity: 0; transform: translateX(-16px) scaleX(0.62); }
-      62% { opacity: 1; transform: translateX(0) scaleX(1.03); }
-      100% { opacity: 1; transform: translateX(0) scaleX(1); }
+      0% { opacity: 0; transform: scaleX(0.48); }
+      72% { opacity: 1; transform: scaleX(1.02); }
+      100% { opacity: 1; transform: scaleX(1); }
     }
 
     @keyframes heroAnchorPop {
       0% { transform: scale(0); }
-      65% { transform: scale(1.45); }
+      68% { transform: scale(1.38); }
       100% { transform: scale(1); }
     }
 
-    @keyframes heroBtnSheen {
-      0% { transform: translateX(-160%) skewX(-24deg); opacity: 0; }
-      25% { opacity: 0.45; }
-      100% { transform: translateX(260%) skewX(-24deg); opacity: 0; }
-    }
-
+    /* Beat 1 (0 - 240ms): Frame & Drafting Baselines Lock In */
     .js-anim .top-nav {
       transform: translateY(-100%);
-      transition: transform 0.62s cubic-bezier(0.16, 1, 0.3, 1);
+      transition: transform 0.48s var(--ease-draft);
     }
     .js-anim.hero-ready .top-nav {
       transform: translateY(0);
     }
 
-    .js-anim .hero-c-titleblock {
-      clip-path: inset(0 100% 0 0);
-      transform: translateX(-16px);
+    .js-anim .hero-c-titleblock,
+    .js-anim .hero-c-rail-row {
       opacity: 0;
-      transition: clip-path 0.72s cubic-bezier(0.16, 1, 0.3, 1) 0.05s,
-                  transform 0.72s cubic-bezier(0.16, 1, 0.3, 1) 0.05s,
-                  opacity 0.32s ease 0.05s;
+      transform: translateY(8px);
+      transition: opacity 0.42s var(--ease-draft) 0.04s,
+                  transform 0.46s var(--ease-draft) 0.04s;
     }
-    .js-anim.hero-ready .hero-c-titleblock {
-      clip-path: inset(0 0 0 0);
-      transform: translateX(0);
+    .js-anim.hero-ready .hero-c-titleblock,
+    .js-anim.hero-ready .hero-c-rail-row {
       opacity: 1;
+      transform: translateY(0);
     }
 
-    .js-anim .hero-c-chip {
-      opacity: 0;
-      transform: translateX(-14px) scale(0.92);
-      transition: opacity 0.46s cubic-bezier(0.16, 1, 0.3, 1) 0.14s,
-                  transform 0.56s cubic-bezier(0.16, 1, 0.3, 1) 0.14s;
-    }
-    .js-anim.hero-ready .hero-c-chip {
-      opacity: 1;
-      transform: translateX(0) scale(1);
-    }
-
-    .js-anim .hero-c-rail-label {
-      opacity: 0;
-      transform: translateX(-10px);
-      transition: opacity 0.46s cubic-bezier(0.16, 1, 0.3, 1) 0.2s,
-                  transform 0.52s cubic-bezier(0.16, 1, 0.3, 1) 0.2s;
-    }
-    .js-anim.hero-ready .hero-c-rail-label {
-      opacity: 1;
-      transform: translateX(0);
-    }
-
-    .js-anim .hero-c-rail-line {
-      transform: scaleX(0);
-      transition: transform 0.66s cubic-bezier(0.16, 1, 0.3, 1) 0.22s;
-    }
-    .js-anim.hero-ready .hero-c-rail-line {
-      transform: scaleX(1);
-    }
-
-    .js-anim .hero-c-stage::before {
-      transform: scaleX(0);
-      transition: transform 0.68s cubic-bezier(0.16, 1, 0.3, 1) 0.18s;
-    }
+    .js-anim .hero-c-rail-line,
+    .js-anim .hero-c-stage::before,
     .js-anim .hero-c-stage::after {
       transform: scaleX(0);
-      transition: transform 0.68s cubic-bezier(0.16, 1, 0.3, 1) 0.28s;
+      transition: transform 0.56s var(--ease-draft) 0.08s;
     }
+    .js-anim.hero-ready .hero-c-rail-line,
     .js-anim.hero-ready .hero-c-stage::before,
     .js-anim.hero-ready .hero-c-stage::after {
       transform: scaleX(1);
     }
 
-    .js-anim .hero-c-row-1::before {
-      transform: scaleY(0);
-      transition: transform 0.52s cubic-bezier(0.16, 1, 0.3, 1) 0.22s;
-    }
+    .js-anim .hero-c-row-1::before,
     .js-anim .hero-c-row-2::before {
       transform: scaleY(0);
-      transition: transform 0.52s cubic-bezier(0.16, 1, 0.3, 1) 0.34s;
+      transition: transform 0.42s var(--ease-draft) 0.14s;
     }
     .js-anim.hero-ready .hero-c-row-1::before,
     .js-anim.hero-ready .hero-c-row-2::before {
       transform: scaleY(1);
     }
 
+    /* Beat 2 (180 - 600ms): Score Wave Inscription & Masked Display Push */
     .js-anim.hero-ready .hero-c-row-1 .hero-c-row-scan {
-      animation: heroScanSweep 0.78s cubic-bezier(0.16, 1, 0.3, 1) 0.24s both;
-    }
-    .js-anim.hero-ready .hero-c-row-2 .hero-c-row-scan {
-      animation: heroScanSweep 0.78s cubic-bezier(0.16, 1, 0.3, 1) 0.36s both;
+      animation: heroScanSweep 0.64s var(--ease-draft) 0.18s both;
     }
 
-    .js-anim .hero-c-row-1 .hero-c-display {
-      opacity: 0;
-      transform: translateY(112%);
-      transition: transform 0.74s cubic-bezier(0.16, 1, 0.3, 1) 0.24s,
-                  opacity 0.36s ease 0.24s;
-    }
+    .js-anim .hero-c-row-1 .hero-c-display,
     .js-anim .hero-c-row-2 .hero-c-display-lead {
       display: inline-block;
       opacity: 0;
-      transform: translateY(112%);
-      transition: transform 0.74s cubic-bezier(0.16, 1, 0.3, 1) 0.34s,
-                  opacity 0.36s ease 0.34s;
+      transform: translateY(108%);
+      transition: transform 0.58s var(--ease-draft) 0.18s,
+                  opacity 0.28s ease 0.18s;
+    }
+    .js-anim .hero-c-row-2 .hero-c-display-lead {
+      transition-delay: 0.25s, 0.25s;
     }
     .js-anim.hero-ready .hero-c-row-1 .hero-c-display,
     .js-anim.hero-ready .hero-c-row-2 .hero-c-display-lead {
@@ -1118,102 +1214,54 @@
       transform: translateY(0);
     }
 
-    .js-anim .hero-c-token {
-      opacity: 0;
-    }
-    .js-anim.hero-ready .hero-c-token {
-      animation: heroTokenExpand 0.74s cubic-bezier(0.16, 1, 0.3, 1) 0.42s both;
-    }
-    .js-anim .hero-c-token::before,
-    .js-anim .hero-c-token::after {
-      transform: scale(0);
-    }
-    .js-anim.hero-ready .hero-c-token::before {
-      animation: heroAnchorPop 0.42s cubic-bezier(0.16, 1, 0.3, 1) 0.72s both;
-    }
-    .js-anim.hero-ready .hero-c-token::after {
-      animation: heroAnchorPop 0.42s cubic-bezier(0.16, 1, 0.3, 1) 0.78s both;
-    }
-
     .js-anim .hero-c-row::after {
       opacity: 0;
-      transform: translateX(12px);
-      transition: opacity 0.48s cubic-bezier(0.16, 1, 0.3, 1) 0.56s,
-                  transform 0.56s cubic-bezier(0.16, 1, 0.3, 1) 0.56s;
-    }
-    .js-anim .hero-c-row-2::after {
-      transition-delay: 0.66s;
+      transition: opacity 0.36s ease 0.42s;
     }
     .js-anim.hero-ready .hero-c-row::after {
       opacity: 1;
-      transform: translateX(0);
     }
 
-    .js-anim .hero-c-desc {
+    /* Beat 3 (440 - 840ms): Caliper Interval Expansion -> Unlocks Hover on Settle */
+    .js-anim:not(.hero-settled) .hero-c-token {
       opacity: 0;
-      transform: translateY(18px);
-      transition: opacity 0.64s cubic-bezier(0.16, 1, 0.3, 1) 0.5s,
-                  transform 0.68s cubic-bezier(0.16, 1, 0.3, 1) 0.5s;
     }
-    .js-anim.hero-ready .hero-c-desc {
-      opacity: 1;
-      transform: translateY(0);
+    .js-anim.hero-ready:not(.hero-settled) .hero-c-token {
+      animation: heroTokenExpand 0.56s var(--ease-draft) 0.38s both;
     }
-
-    .js-anim .hero-c-actions > * {
-      opacity: 0;
-      transform: translateY(16px);
-      transition: opacity 0.56s cubic-bezier(0.16, 1, 0.3, 1),
-                  transform 0.62s cubic-bezier(0.16, 1, 0.3, 1);
+    .js-anim:not(.hero-settled) .hero-c-token::before,
+    .js-anim:not(.hero-settled) .hero-c-token::after {
+      transform: scale(0);
     }
-    .js-anim .hero-c-actions > *:nth-child(1) { transition-delay: 0.58s; }
-    .js-anim .hero-c-actions > *:nth-child(2) { transition-delay: 0.66s; }
-    .js-anim .hero-c-actions > *:nth-child(3) { transition-delay: 0.74s; }
-    .js-anim.hero-ready .hero-c-actions > * {
-      opacity: 1;
-      transform: translateY(0);
+    .js-anim.hero-ready:not(.hero-settled) .hero-c-token::before {
+      animation: heroAnchorPop 0.34s var(--ease-caliper) 0.62s both;
+    }
+    .js-anim.hero-ready:not(.hero-settled) .hero-c-token::after {
+      animation: heroAnchorPop 0.34s var(--ease-caliper) 0.68s both;
     }
 
-    .btn.primary > .hero-cta-sheen {
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      left: 0;
-      width: 42%;
-      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.42), transparent);
-      pointer-events: none;
-      opacity: 0;
-      z-index: 2;
-    }
-    .js-anim.hero-ready .hero-cta-sheen {
-      animation: heroBtnSheen 0.9s cubic-bezier(0.16, 1, 0.3, 1) 1.05s 1 both;
-    }
-
+    .js-anim .hero-c-desc,
+    .js-anim .hero-c-actions,
     .js-anim .hero-c-tier-facts {
       opacity: 0;
-      transform: translateY(14px);
-      transition: opacity 0.52s cubic-bezier(0.16, 1, 0.3, 1) 0.68s,
-                  transform 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.68s;
+      transform: translateY(12px);
+      transition: opacity 0.52s var(--ease-draft) 0.44s,
+                  transform 0.56s var(--ease-draft) 0.44s;
     }
+    .js-anim .hero-c-actions { transition-delay: 0.5s, 0.5s; }
+    .js-anim .hero-c-tier-facts { transition-delay: 0.56s, 0.56s; }
+    .js-anim.hero-ready .hero-c-desc,
+    .js-anim.hero-ready .hero-c-actions,
     .js-anim.hero-ready .hero-c-tier-facts {
       opacity: 1;
       transform: translateY(0);
     }
 
-    .js-anim .hero-c-tier-cell {
-      clip-path: inset(0 100% 0 0);
-      transition: clip-path 0.64s cubic-bezier(0.16, 1, 0.3, 1),
-                  background-color 0.18s var(--ease),
-                  box-shadow 0.18s var(--ease);
-    }
-    .js-anim .hero-c-tier-cell:nth-child(2) { transition-delay: 0.72s, 0s, 0s; }
-    .js-anim .hero-c-tier-cell:nth-child(3) { transition-delay: 0.82s, 0s, 0s; }
-    .js-anim .hero-c-tier-cell:nth-child(4) { transition-delay: 0.92s, 0s, 0s; }
-    .js-anim.hero-ready .hero-c-tier-cell {
-      clip-path: inset(0 0 0 0);
+    .btn.primary > .hero-cta-sheen {
+      display: none;
     }
 
-    /* Live Interactive Specimen Frame + Dramatic Curtain Unveil */
+    /* Live Interactive Specimen Frame + Crisp Blueprint Unveil */
     .specimen-frame {
       border: 1px solid var(--ink);
       background: var(--bg-sheet);
@@ -1224,17 +1272,17 @@
     .js-anim .specimen-frame {
       opacity: 0;
       clip-path: inset(0 0 100% 0);
-      transform: translateY(26px) scale(0.985);
+      transform: translateY(14px);
       box-shadow: 0 0 0 var(--bg-active);
-      transition: clip-path 0.92s cubic-bezier(0.16, 1, 0.3, 1) 0.18s,
-                  transform 0.92s cubic-bezier(0.16, 1, 0.3, 1) 0.18s,
-                  opacity 0.42s ease 0.18s,
-                  box-shadow 0.56s cubic-bezier(0.16, 1, 0.3, 1) 0.68s;
+      transition: clip-path 0.72s var(--ease-draft) 0.08s,
+                  transform 0.72s var(--ease-draft) 0.08s,
+                  opacity 0.32s ease 0.08s,
+                  box-shadow 0.44s var(--ease-draft) 0.52s;
     }
     .js-anim.hero-ready .specimen-frame {
       opacity: 1;
       clip-path: inset(0 0 0 0);
-      transform: translateY(0) scale(1);
+      transform: translateY(0);
       box-shadow: 6px 6px 0 var(--bg-active);
     }
 
@@ -1288,8 +1336,23 @@
     .specimen-stage {
       position: relative;
       background: var(--bg-sheet);
-      cursor: crosshair;
+      cursor: ew-resize;
       user-select: none;
+      touch-action: pan-y;
+    }
+
+    .specimen-stage.is-scrubbing {
+      cursor: grabbing;
+    }
+
+    #heroTierWord rect,
+    #heroTierIpa rect {
+      cursor: pointer;
+    }
+
+    #heroTierWord text,
+    #heroTierIpa text {
+      pointer-events: none;
     }
 
     .specimen-svg {
@@ -1378,18 +1441,181 @@
       color: var(--bg-bar);
     }
 
-    .wb-icon-box svg * {
-      transition: transform 0.34s var(--ease), stroke-dashoffset 0.4s var(--ease);
-      transform-box: fill-box;
-      transform-origin: center;
+    /* Native @tgrid/icons micro-interactions (synced with packages/tgrid-icons) */
+    .tgi {
+      display: inline-block;
+      flex-shrink: 0;
+      vertical-align: middle;
+      overflow: visible;
     }
 
-    .wb-card:hover .ico-loupe-ring { transform: scale(1.1); }
-    .wb-card:hover .ico-wave-bar-1 { transform: scaleY(1.35); }
-    .wb-card:hover .ico-wave-bar-2 { transform: scaleY(0.75); }
-    .wb-card:hover .ico-wave-bar-3 { transform: scaleY(1.25); }
-    .wb-card:hover .ico-frame-inner { transform: scale(0.88); }
-    .wb-card:hover .ico-check-mark { transform: translateY(-1px) scale(1.08); }
+    /* Card 01: zeroCross */
+    .tgi-zeroCross .zero-axis {
+      stroke: currentColor;
+      opacity: 0.42;
+      stroke-width: 1;
+      stroke-linecap: round;
+      transition: opacity 0.22s ease, stroke 0.22s ease;
+    }
+    .tgi-zeroCross .sine {
+      stroke: currentColor;
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      transition: stroke 0.2s ease;
+    }
+    .tgi-zeroCross .ring {
+      stroke: currentColor;
+      stroke-width: 1.35;
+      transform-origin: 8px 8px;
+      transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), stroke 0.2s ease;
+    }
+    .tgi-zeroCross .ring-cut {
+      fill: #000000;
+      transform-origin: 8px 8px;
+      transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .tgi-zeroCross .lock-core {
+      fill: #60A5FA;
+      opacity: 0;
+      transform-origin: 8px 8px;
+      transform: scale(0.2);
+      transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
+    }
+    .wb-card:hover .tgi-zeroCross .zero-axis { opacity: 0.62; }
+    .wb-card:hover .tgi-zeroCross .ring { stroke: #60A5FA; transform: scale(1.16); }
+    .wb-card:hover .tgi-zeroCross .ring-cut { transform: scale(1.16); }
+    .wb-card:hover .tgi-zeroCross .lock-core { opacity: 1; transform: scale(1); }
+
+    /* Card 02: ipaMode */
+    .tgi-ipaMode .tg-cycle {
+      opacity: 0.72;
+      transform-origin: 8px 8px;
+      transition: opacity 0.2s ease, transform 0.28s var(--ease);
+    }
+    .tgi-ipaMode .tg-schwa {
+      transition: stroke 0.2s ease;
+    }
+    .wb-card:hover .tgi-ipaMode .tg-cycle {
+      opacity: 1;
+      transform: rotate(30deg);
+    }
+    .wb-card:hover .tgi-ipaMode .tg-schwa {
+      stroke: #60A5FA;
+    }
+
+    /* Card 03: exportSvg */
+    .tgi-exportSvg .esvg-arch {
+      stroke: currentColor;
+      stroke-width: 1.45;
+      stroke-linecap: round;
+      transform-origin: 8px 11.3px;
+      transition: transform 0.28s var(--ease), stroke 0.2s ease;
+    }
+    .tgi-exportSvg .esvg-end-node {
+      stroke: currentColor;
+      stroke-width: 1.35;
+      stroke-linejoin: round;
+      transition: stroke 0.2s ease;
+    }
+    .tgi-exportSvg .esvg-handles {
+      transform-origin: 8px 4.5px;
+      transition: transform 0.28s var(--ease);
+    }
+    .tgi-exportSvg .esvg-arm {
+      stroke: currentColor;
+      stroke-width: 1.35;
+      stroke-linecap: round;
+      transition: stroke 0.2s ease;
+    }
+    .tgi-exportSvg .esvg-knob {
+      fill: currentColor;
+      transition: fill 0.2s ease;
+    }
+    .tgi-exportSvg .esvg-top-node {
+      stroke: currentColor;
+      stroke-width: 1.4;
+      stroke-linejoin: round;
+      fill: rgba(96, 165, 250, 0);
+      transition: transform 0.28s var(--ease), stroke 0.2s ease, fill 0.2s ease;
+    }
+    .wb-card:hover .tgi-exportSvg .esvg-arch { transform: scaleY(1.04); }
+    .wb-card:hover .tgi-exportSvg .esvg-handles { transform: translateY(-0.2px) scaleX(1.08); }
+    .wb-card:hover .tgi-exportSvg .esvg-arm { stroke: #60A5FA; }
+    .wb-card:hover .tgi-exportSvg .esvg-knob { fill: #60A5FA; }
+    .wb-card:hover .tgi-exportSvg .esvg-top-node {
+      stroke: #60A5FA;
+      fill: rgba(96, 165, 250, 0.22);
+      transform: translateY(-0.25px);
+    }
+
+    /* Card 04: fileCollection */
+    .tgi-fileCollection .fc-file {
+      stroke: currentColor;
+      stroke-width: 1.45;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: stroke 0.2s ease;
+    }
+    .tgi-fileCollection .fc-wave {
+      stroke: currentColor;
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      transform-origin: 7.8px 5.6px;
+      transition: transform 0.26s var(--ease), stroke 0.2s ease;
+    }
+    .tgi-fileCollection .fc-tier {
+      transition: transform 0.26s var(--ease);
+    }
+    .tgi-fileCollection .fc-tier-box {
+      stroke: currentColor;
+      stroke-width: 1.35;
+      stroke-linejoin: round;
+      fill: rgba(96, 165, 250, 0);
+      transition: stroke 0.2s ease, fill 0.2s ease;
+    }
+    .tgi-fileCollection .fc-tier-div {
+      stroke: currentColor;
+      stroke-width: 1.35;
+      stroke-linecap: round;
+      transition: stroke 0.2s ease;
+    }
+    .wb-card:hover .tgi-fileCollection .fc-wave {
+      stroke: #60A5FA;
+      transform: translateY(-0.2px) scaleY(1.1);
+    }
+    .wb-card:hover .tgi-fileCollection .fc-tier { transform: translateY(0.25px); }
+    .wb-card:hover .tgi-fileCollection .fc-tier-box { fill: rgba(96, 165, 250, 0.2); }
+    .wb-card:hover .tgi-fileCollection .fc-tier-div { stroke: #60A5FA; }
+
+    /* Hero transport play / pause */
+    .tgi-transport .t-play {
+      fill: currentColor;
+      transform-origin: 8px 8px;
+      transition: transform 0.22s var(--ease), fill 0.18s ease;
+    }
+    .tgi-transport .bar {
+      fill: currentColor;
+      transition: transform 0.22s var(--ease), fill 0.18s ease;
+    }
+    .specimen-play-btn:hover .tgi-transport .t-play { transform: translateX(0.6px) scale(1.06); }
+    .specimen-play-btn:hover .tgi-transport .bar-l { transform: translateX(-0.55px); }
+    .specimen-play-btn:hover .tgi-transport .bar-r { transform: translateX(0.55px); }
+
+    /* Button export icon */
+    .tgi-export .arrow,
+    .tgi-export .tray {
+      stroke: currentColor;
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: transform 0.26s var(--ease), stroke 0.2s ease;
+    }
+    .btn:hover .tgi-export .arrow {
+      stroke: var(--accent-blue);
+      transform: translateY(1.2px);
+    }
+    .btn.primary:hover .tgi-export .arrow { stroke: currentColor; }
+    .btn:hover .tgi-export .tray { transform: translateY(0.35px); }
 
     .wb-num {
       font-family: var(--font-mono);
@@ -1521,17 +1747,77 @@
       overflow: hidden;
     }
 
+    #loupeSvg {
+      display: block;
+      cursor: ew-resize;
+      user-select: none;
+      touch-action: pan-y;
+    }
+
+    #loupeSvg.is-dragging {
+      cursor: grabbing;
+    }
+
+    @keyframes loupePulseRing {
+      0% { transform: scale(0.85); opacity: 0.9; }
+      100% { transform: scale(2.35); opacity: 0; }
+    }
+
+    #loupeSnapPulse {
+      transform-box: fill-box;
+      transform-origin: center;
+      pointer-events: none;
+      opacity: 0;
+    }
+
+    #loupeSnapPulse.is-pulsing {
+      animation: loupePulseRing 0.34s var(--ease-draft) forwards;
+    }
+
+    .ipa-buffer-pill {
+      position: absolute;
+      top: 6px;
+      padding: 1px 6px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--accent-blue);
+      background: var(--accent-blue-soft);
+      border: 1px solid rgba(29, 78, 216, 0.35);
+      opacity: 0;
+      transform: translateY(-4px) scale(0.92);
+      pointer-events: none;
+    }
+
+    @keyframes ipaBufferCollapse {
+      0% { opacity: 1; transform: translateY(0) scale(1); }
+      65% { opacity: 1; transform: translateY(6px) scale(0.88); }
+      100% { opacity: 0; transform: translateY(12px) scale(0.65); }
+    }
+
+    .ipa-buffer-pill.is-collapsing {
+      animation: ipaBufferCollapse 0.26s var(--ease-caliper) forwards;
+    }
+
     .ipa-glyph-char {
       font-family: var(--font-ipa);
       font-size: 32px;
       line-height: 1.15;
       color: var(--ink);
-      transition: transform 0.24s var(--ease), opacity 0.2s var(--ease);
+      transition: transform 0.22s var(--ease-caliper), color 0.2s var(--ease-caliper), opacity 0.16s ease;
     }
 
     .ipa-glyph-char.is-pop {
-      transform: translateY(-3px) scale(1.08);
+      transform: translateY(-2px) scale(1.1);
       color: var(--accent-blue);
+    }
+
+    @keyframes ipaCodeFlip {
+      0% { opacity: 0; transform: translateY(-5px); color: var(--accent-blue); }
+      100% { opacity: 1; transform: translateY(0); color: var(--ink-muted); }
+    }
+
+    .ipa-key-code.is-flip {
+      animation: ipaCodeFlip 0.26s var(--ease-caliper) both;
     }
 
     .ipa-glyph-note {
@@ -1617,12 +1903,103 @@
       width: 100%;
       height: 100%;
       display: block;
-      animation: artSwapIn 0.32s var(--ease) both;
+      animation: artSwapIn 0.32s var(--ease-draft) both;
     }
 
     @keyframes artSwapIn {
-      from { opacity: 0.35; transform: scale(0.97); }
+      from { opacity: 0.4; transform: scale(0.975); }
       to { opacity: 1; transform: scale(1); }
+    }
+
+    /* Bespoke Signature Preset Choreography (Card 03) */
+    @keyframes expTraceF0 {
+      from { stroke-dashoffset: 180; }
+      to { stroke-dashoffset: 0; }
+    }
+    .exp-journal-f0 {
+      stroke-dasharray: 180;
+      animation: expTraceF0 0.62s var(--ease-draft) 0.06s both;
+    }
+
+    @keyframes expMonoWipe {
+      from { clip-path: inset(0 100% 0 0); }
+      to { clip-path: inset(0 0 0 0); }
+    }
+    .exp-mono-sheet {
+      animation: expMonoWipe 0.52s var(--ease-draft) both;
+    }
+
+    @keyframes expLayerLower {
+      from { transform: translate(21px, 30px); }
+      to { transform: translate(26px, 46px); }
+    }
+    @keyframes expLayerUpper {
+      from { transform: translate(21px, 30px); }
+      to { transform: translate(16px, 14px); }
+    }
+    @keyframes expGuideFade {
+      from { opacity: 0; }
+      to { opacity: 0.6; }
+    }
+    .exp-bundle-lower {
+      animation: expLayerLower 0.54s var(--ease-draft) both;
+    }
+    .exp-bundle-upper {
+      animation: expLayerUpper 0.54s var(--ease-draft) both;
+    }
+    .exp-bundle-guides {
+      animation: expGuideFade 0.46s ease 0.14s both;
+    }
+    .export-preview-art:hover .exp-bundle-lower {
+      transform: translate(28px, 49px);
+      transition: transform 0.28s var(--ease-draft);
+    }
+    .export-preview-art:hover .exp-bundle-upper {
+      transform: translate(14px, 11px);
+      transition: transform 0.28s var(--ease-draft);
+    }
+
+    @keyframes expVinylSpin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @keyframes expTonearmDrop {
+      from { transform: rotate(-16deg); }
+      to { transform: rotate(0deg); }
+    }
+    .exp-vinyl-disc {
+      transform-origin: 86px 70px;
+      animation: expVinylSpin 14s linear infinite;
+    }
+    .exp-vinyl-arm {
+      transform-origin: 144px 24px;
+      animation: expTonearmDrop 0.58s var(--ease-draft) 0.08s both;
+    }
+
+    @keyframes expFanUnfurl {
+      from { opacity: 0.2; transform: rotate(-22deg) scale(0.84); }
+      to { opacity: 1; transform: rotate(0deg) scale(1); }
+    }
+    @keyframes expSealStamp {
+      0% { opacity: 0; transform: scale(1.35); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    .exp-fan-leaf {
+      transform-origin: 88px 114px;
+      animation: expFanUnfurl 0.56s var(--ease-draft) both;
+    }
+    .exp-fan-seal {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: expSealStamp 0.32s var(--ease-caliper) 0.24s both;
+    }
+
+    @keyframes expMetaSlide {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .export-meta-anim {
+      animation: expMetaSlide 0.28s var(--ease-draft) both;
     }
 
     .export-meta-title {
@@ -1655,14 +2032,41 @@
       color: var(--ink-muted);
     }
 
-    /* Diagnostic QA Demo */
+    /* Diagnostic QA Demo (Interactive Per-Row Fix + Linter Scanline) */
     .qa-list {
+      position: relative;
       display: flex;
       flex-direction: column;
       gap: 6px;
+      overflow: hidden;
+    }
+
+    @keyframes qaLaserScan {
+      0% { opacity: 0; transform: translateY(-4px); }
+      15% { opacity: 1; }
+      85% { opacity: 0.9; }
+      100% { opacity: 0; transform: translateY(118px); }
+    }
+
+    .qa-scanline {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent 0%, var(--accent-blue) 20%, var(--accent-green) 80%, transparent 100%);
+      box-shadow: 0 2px 8px rgba(29, 78, 216, 0.32);
+      pointer-events: none;
+      opacity: 0;
+      z-index: 3;
+    }
+
+    .qa-list.is-scanning .qa-scanline {
+      animation: qaLaserScan 0.38s var(--ease-draft) forwards;
     }
 
     .qa-row {
+      position: relative;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -1671,7 +2075,18 @@
       border: 1px solid var(--rule);
       background: var(--bg-sheet);
       font-size: 12px;
-      transition: border-color 0.3s var(--ease), background-color 0.3s var(--ease);
+      cursor: pointer;
+      user-select: none;
+      transition: border-color 0.24s var(--ease-caliper), background-color 0.24s var(--ease-caliper), transform 0.22s var(--ease-caliper);
+    }
+
+    .qa-row:hover {
+      border-color: var(--rule-hover);
+      background: #FCFBF9;
+    }
+
+    .qa-row.is-snapping {
+      transform: translateX(3px);
     }
 
     .qa-row-left {
@@ -1706,8 +2121,15 @@
     .qa-time {
       font-family: var(--font-mono);
       font-size: 11px;
+      font-variant-numeric: tabular-nums;
       color: var(--ink-faint);
       flex-shrink: 0;
+      transition: color 0.24s var(--ease-caliper);
+    }
+
+    .qa-row.is-fixed .qa-time {
+      color: var(--accent-green);
+      font-weight: 600;
     }
 
     .format-strip {
@@ -1768,6 +2190,67 @@
       margin-bottom: 16px;
     }
 
+    .step-head svg {
+      color: var(--ink-muted);
+      transition: color 0.22s var(--ease-caliper);
+    }
+
+    .step-cell:hover .step-head svg {
+      color: var(--ink);
+    }
+
+    /* Step 01: folder */
+    .tgi-folder .folder-back,
+    .tgi-folder .folder-flap {
+      stroke: currentColor;
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: transform 0.28s var(--ease), stroke 0.22s ease, fill 0.22s ease;
+    }
+    .tgi-folder .folder-flap {
+      fill: rgba(29, 78, 216, 0);
+      transform-origin: 8px 13px;
+    }
+    .step-cell:hover .tgi-folder .folder-flap {
+      stroke: var(--accent-blue);
+      fill: rgba(29, 78, 216, 0.08);
+      transform: skewX(-10deg) scaleY(0.84);
+    }
+
+    /* Step 02: split */
+    .tgi-split .half {
+      stroke: currentColor;
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: transform 0.26s var(--ease), stroke 0.2s ease;
+    }
+    .tgi-split .blade {
+      stroke: currentColor;
+      stroke-width: 1.45;
+      stroke-linecap: round;
+      transform-origin: 8px 8px;
+      transition: transform 0.26s var(--ease), stroke 0.2s ease;
+    }
+    .step-cell:hover .tgi-split .half-l { transform: translateX(-0.7px); }
+    .step-cell:hover .tgi-split .half-r { transform: translateX(0.7px); }
+    .step-cell:hover .tgi-split .blade { stroke: var(--accent-blue); transform: scaleY(1.1); }
+
+    /* Step 03: save */
+    .tgi-save .tg-fill {
+      opacity: 0;
+      fill: var(--accent-blue);
+      transition: opacity 0.22s ease;
+    }
+    .tgi-save .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.22s ease, transform 0.26s var(--ease), stroke 0.22s ease;
+    }
+    .step-cell:hover .tgi-save .tg-fill { opacity: 0.14; }
+    .step-cell:hover .tgi-save .tg-sub { opacity: 1; }
+    .step-cell:hover .tgi-save .tg-shutter { stroke: var(--accent-blue); transform: translateY(0.45px); }
+
     .step-index {
       font-family: var(--font-mono);
       font-size: 12px;
@@ -1804,9 +2287,23 @@
       margin-bottom: 18px;
     }
 
+    .shortcut-stage {
+      position: relative;
+      background-color: var(--bg-bar);
+      background-image:
+        linear-gradient(to right, rgba(20, 20, 19, 0.025) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(20, 20, 19, 0.025) 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+
     .shortcut-panel {
       display: none;
-      animation: panelFadeIn 0.28s var(--ease) both;
+      --panel-shift: 12px;
+      animation: panelSlideIn 0.26s var(--ease-draft) both;
+    }
+
+    .shortcut-panel.slide-from-left {
+      --panel-shift: -12px;
     }
 
     .shortcut-panel.is-active {
@@ -1816,9 +2313,9 @@
       border-left: 1px solid var(--rule);
     }
 
-    @keyframes panelFadeIn {
-      from { opacity: 0; transform: translateY(6px); }
-      to { opacity: 1; transform: translateY(0); }
+    @keyframes panelSlideIn {
+      from { opacity: 0; transform: translate3d(var(--panel-shift, 12px), 0, 0); }
+      to { opacity: 1; transform: translate3d(0, 0, 0); }
     }
 
     .sc-item {
@@ -1830,7 +2327,7 @@
       border-right: 1px solid var(--rule);
       border-bottom: 1px solid var(--rule);
       background: var(--bg-sheet);
-      transition: background-color 0.16s var(--ease);
+      transition: background-color 0.16s var(--ease-caliper);
     }
 
     .sc-item:hover {
@@ -1840,7 +2337,9 @@
     .sc-item:hover kbd {
       border-color: var(--ink);
       background: var(--accent-blue-soft);
-      transform: translateY(-1px);
+      color: var(--accent-blue);
+      transform: translateY(1px);
+      box-shadow: inset 0 -1px 0 rgba(29, 78, 216, 0.25);
     }
 
     .sc-info strong {
@@ -1886,6 +2385,19 @@
       justify-content: space-between;
       gap: 18px;
       position: relative;
+      transition: transform 0.24s var(--ease-draft), box-shadow 0.24s var(--ease-draft), background-color 0.22s var(--ease);
+    }
+
+    .ed-card:hover {
+      z-index: 2;
+      transform: translate(-2px, -2px);
+      box-shadow: 5px 5px 0 var(--bg-active), inset 0 0 0 1px var(--ink);
+      background: #FDFCFA;
+    }
+
+    .ed-card.is-featured:hover {
+      box-shadow: 6px 6px 0 rgba(29, 78, 216, 0.18), inset 0 0 0 1px var(--accent-blue);
+      background: var(--bg-sheet);
     }
 
     .ed-card.is-featured {
@@ -1956,6 +2468,12 @@
       width: 7px;
       height: 1.5px;
       background: var(--ink);
+      transform-origin: left center;
+      transition: transform 0.22s var(--ease-caliper), background-color 0.22s var(--ease-caliper);
+    }
+
+    .ed-card:hover .ed-list li::before {
+      transform: scaleX(1.45);
     }
 
     .ed-card.is-featured .ed-list li::before {
@@ -1977,7 +2495,7 @@
       width: 100%;
       border: 0;
       background: transparent;
-      padding: 17px 6px;
+      padding: 17px 8px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -1988,12 +2506,19 @@
       font-weight: 600;
       color: var(--ink);
       cursor: pointer;
-      transition: background-color 0.16s var(--ease), padding-left 0.2s var(--ease);
+      transition: background-color 0.16s var(--ease-caliper);
+    }
+
+    .faq-trigger > span:first-child {
+      transition: transform 0.22s var(--ease-draft), color 0.18s var(--ease-caliper);
     }
 
     .faq-trigger:hover {
       background: var(--bg-bar);
-      padding-left: 12px;
+    }
+
+    .faq-trigger:hover > span:first-child {
+      transform: translateX(6px);
     }
 
     .faq-plus {
@@ -2050,6 +2575,14 @@
       color: var(--ink-muted);
       line-height: 1.78;
       max-width: 780px;
+      opacity: 0;
+      transform: translateY(-6px);
+      transition: opacity 0.24s ease, transform 0.28s var(--ease-draft);
+    }
+
+    .faq-item.is-open .faq-body-inner p {
+      opacity: 1;
+      transform: translateY(0);
     }
 
     /* Companion Resources & Specs */
@@ -2082,12 +2615,19 @@
       border-bottom: 1px solid var(--rule);
       text-decoration: none;
       background: var(--bg-sheet);
-      transition: background-color 0.18s var(--ease), padding-left 0.2s var(--ease);
+      transition: background-color 0.18s var(--ease-caliper);
+    }
+
+    .ref-row > div {
+      transition: transform 0.22s var(--ease-draft);
     }
 
     .ref-row:hover {
       background: var(--bg-bar);
-      padding-left: 16px;
+    }
+
+    .ref-row:hover > div {
+      transform: translateX(5px);
     }
 
     .ref-row strong {
@@ -2105,12 +2645,25 @@
     .ref-row svg {
       flex-shrink: 0;
       color: var(--ink-muted);
-      transition: transform 0.2s var(--ease), color 0.2s var(--ease);
+      transition: color 0.2s var(--ease);
     }
 
-    .ref-row:hover svg {
-      transform: translate(2px, -2px);
-      color: var(--accent-blue);
+    .tgi-externalLink .ext-box,
+    .tgi-externalLink .ext-arrow {
+      stroke: currentColor;
+      stroke-width: 1.45;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: transform 0.26s var(--ease), stroke 0.2s ease;
+    }
+
+    .ref-row:hover .tgi-externalLink .ext-box {
+      stroke: var(--ink);
+    }
+
+    .ref-row:hover .tgi-externalLink .ext-arrow {
+      stroke: var(--accent-blue);
+      transform: translate(0.95px, -0.95px);
     }
 
     /* Footer */
@@ -2146,12 +2699,12 @@
     }
 
     /* ============================================================
-       SCROLL REVEAL CHOREOGRAPHY (Progressive Enhancement)
+       SCROLL REVEAL CHOREOGRAPHY (Blueprint Rule + Staggered Cells)
     ============================================================ */
     .js-anim [data-reveal] {
       opacity: 0;
-      transform: translateY(18px);
-      transition: opacity 0.62s var(--ease), transform 0.62s var(--ease);
+      transform: translateY(14px);
+      transition: opacity 0.54s var(--ease-draft), transform 0.58s var(--ease-draft);
     }
 
     .js-anim [data-reveal].is-visible {
@@ -2162,6 +2715,39 @@
     .js-anim [data-reveal-delay="1"] { transition-delay: 0.08s; }
     .js-anim [data-reveal-delay="2"] { transition-delay: 0.16s; }
     .js-anim [data-reveal-delay="3"] { transition-delay: 0.24s; }
+
+    /* Cascading child stagger on architectural grids */
+    .js-anim .steps-grid[data-reveal] .step-cell,
+    .js-anim .editions-grid[data-reveal] .ed-card,
+    .js-anim .faq-list[data-reveal] .faq-item,
+    .js-anim .ref-grid[data-reveal] > div {
+      opacity: 0;
+      transform: translateY(12px);
+      transition: opacity 0.48s var(--ease-draft), transform 0.52s var(--ease-draft), background-color 0.22s var(--ease), box-shadow 0.24s var(--ease-draft);
+    }
+
+    .js-anim .steps-grid.is-visible .step-cell,
+    .js-anim .editions-grid.is-visible .ed-card,
+    .js-anim .faq-list.is-visible .faq-item,
+    .js-anim .ref-grid.is-visible > div {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .js-anim .editions-grid.is-visible .ed-card:hover {
+      transform: translate(-2px, -2px);
+    }
+
+    .js-anim .steps-grid.is-visible .step-cell:nth-child(2),
+    .js-anim .editions-grid.is-visible .ed-card:nth-child(2),
+    .js-anim .ref-grid.is-visible > div:nth-child(2) { transition-delay: 0.07s, 0.07s, 0s, 0s; }
+    .js-anim .steps-grid.is-visible .step-cell:nth-child(3),
+    .js-anim .editions-grid.is-visible .ed-card:nth-child(3) { transition-delay: 0.14s, 0.14s, 0s, 0s; }
+
+    .js-anim .faq-list.is-visible .faq-item:nth-child(2) { transition-delay: 0.045s; }
+    .js-anim .faq-list.is-visible .faq-item:nth-child(3) { transition-delay: 0.09s; }
+    .js-anim .faq-list.is-visible .faq-item:nth-child(4) { transition-delay: 0.135s; }
+    .js-anim .faq-list.is-visible .faq-item:nth-child(5) { transition-delay: 0.18s; }
 
     /* ============================================================
        RESPONSIVE LAYOUT
@@ -2216,7 +2802,13 @@
       .js-anim .hero-c-actions > *,
       .js-anim .hero-c-tier-facts,
       .js-anim .hero-c-tier-cell,
-      .js-anim .specimen-frame {
+      .js-anim .specimen-frame,
+      .js-anim .hero-c-rail-row,
+      .js-anim .hero-c-actions,
+      .js-anim .steps-grid .step-cell,
+      .js-anim .editions-grid .ed-card,
+      .js-anim .faq-list .faq-item,
+      .js-anim .ref-grid > div {
         opacity: 1 !important;
         transform: none !important;
         clip-path: none !important;
@@ -2240,7 +2832,8 @@
         <span class="nav-brand-sub">使用指南</span>
       </a>
 
-      <nav class="nav-links" aria-label="章节导航">
+      <nav class="nav-links" id="topNavLinks" aria-label="章节导航">
+        <span class="nav-active-bar" id="navActiveBar" aria-hidden="true"></span>
         <a class="nav-link is-active" href="#features">核心能力</a>
         <a class="nav-link" href="#quickstart">三步上手</a>
         <a class="nav-link" href="#shortcuts">快捷键</a>
@@ -2266,7 +2859,8 @@
   </header>
 
   <!-- RIGHT FLOATING CHAPTER RAIL (WIDE SCREENS) -->
-  <aside class="chapter-rail" aria-label="页面进度目录">
+  <aside class="chapter-rail" id="chapterRail" aria-label="页面进度目录">
+    <span class="rail-vernier" id="railVernier" aria-hidden="true"></span>
     <a class="rail-item is-active" href="#hero">00 概览</a>
     <a class="rail-item" href="#features">01 能力</a>
     <a class="rail-item" href="#quickstart">02 上手</a>
@@ -2330,8 +2924,12 @@
                 </svg>
               </a>
               <a class="btn" href="https://github.com/KasumiKitsune/tgrid/releases/latest" target="_blank" rel="noopener noreferrer">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                  <path d="M8 2.5V10.5M5 7.5L8 10.5L11 7.5M2.5 13H13.5" />
+                <svg class="tgi tgi-export" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <g class="arrow">
+                    <path d="M8 2.4 V9.8" />
+                    <path d="M5.2 7.2 L8 10 L10.8 7.2" />
+                  </g>
+                  <path class="tray" d="M2.6 10.6 V12.1 C2.6 12.8 3.2 13.4 3.9 13.4 H12.1 C12.8 13.4 13.4 12.8 13.4 12.1 V10.6" />
                 </svg>
                 <span>下载桌面安装包</span>
               </a>
@@ -2360,9 +2958,11 @@
             <div class="specimen-chrome">
               <div class="specimen-chrome-left">
                 <button type="button" class="specimen-play-btn" id="heroPlayBtn" aria-label="暂停或播放演示光标" title="播放 / 暂停演示">
-                  <svg id="heroPlayIcon" width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-                    <rect x="2" y="1.5" width="2.8" height="9" />
-                    <rect x="7.2" y="1.5" width="2.8" height="9" />
+                  <svg id="heroPlayIcon" class="tgi tgi-transport" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <g class="t-pause-root">
+                      <rect class="bar bar-l" x="3.8" y="2.8" width="3" height="10.4" rx="1.1" />
+                      <rect class="bar bar-r" x="9.2" y="2.8" width="3" height="10.4" rx="1.1" />
+                    </g>
                   </svg>
                 </button>
                 <span class="specimen-clock" id="heroClock">0.000 s</span>
@@ -2380,7 +2980,7 @@
               </button>
             </div>
 
-            <div class="specimen-stage" id="heroSpecimenStage" title="点击谱面任意位置跳转光标">
+            <div class="specimen-stage" id="heroSpecimenStage" title="按住拖动谱面实时擦除定位 · 悬停下方词格查看对齐带">
               <svg class="specimen-svg" id="heroSvg" viewBox="0 0 580 344" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="我说 TextGrid 这个词双尺语音标注谱演示">
                 <defs>
                   <pattern id="silenceHatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -2479,10 +3079,19 @@
             <div>
               <div class="wb-top">
                 <div class="wb-icon-box" aria-hidden="true">
-                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <circle class="ico-loupe-ring" cx="9" cy="9" r="5.5" />
-                    <path d="M13 13L17.5 17.5" />
-                    <path d="M6.5 9H11.5M9 6.5V11.5" stroke-width="1.2" />
+                  <svg class="tgi tgi-zeroCross" width="20" height="20" viewBox="0 0 16 16" fill="none">
+                    <defs>
+                      <mask id="zc-center-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+                        <rect width="16" height="16" fill="#ffffff" />
+                        <circle class="ring-cut" cx="8" cy="8" r="2.15" />
+                      </mask>
+                    </defs>
+                    <g mask="url(#zc-center-mask)">
+                      <path class="zero-axis" d="M1.8 8 H14.2" />
+                      <path class="sine" d="M2.2 4.8 C4.1 2.2 6.2 4.3 8 8 C9.8 11.7 11.9 13.8 13.8 11.2" />
+                    </g>
+                    <circle class="ring" cx="8" cy="8" r="1.85" />
+                    <circle class="lock-core" cx="8" cy="8" r="0.72" />
                   </svg>
                 </div>
                 <span class="wb-num">01 / ACOUSTIC ALIGN</span>
@@ -2495,7 +3104,7 @@
 
             <div class="demo-box">
               <div class="demo-bar">
-                <span class="demo-caption">拖动滑块查看微距窗与过零点吸附</span>
+                <span class="demo-caption" id="loupeCaption">直接拖谱面或滑块 · 按住 Z 键磁吸过零点</span>
                 <button type="button" class="mech-toggle" id="loupeSnapToggle" aria-pressed="true">
                   <span class="mech-toggle-track"><span class="mech-toggle-knob"></span></span>
                   <span>吸附过零点 (Z)</span>
@@ -2534,6 +3143,7 @@
                 <!-- Fixed Center Precision Reticle in Magnified Loupe -->
                 <line x1="220" y1="22" x2="220" y2="80" stroke="#B91C1C" stroke-width="1.5" />
                 <polygon points="216,22 224,22 220,27" fill="#B91C1C" />
+                <circle id="loupeSnapPulse" cx="220" cy="51" r="5.5" fill="none" stroke="#1D4ED8" stroke-width="1.6" />
                 <g id="loupeSnapTarget">
                   <circle cx="220" cy="51" r="5.5" fill="none" stroke="#1D4ED8" stroke-width="1.5" />
                   <circle cx="220" cy="51" r="2" fill="#1D4ED8" />
@@ -2572,11 +3182,12 @@
             <div>
               <div class="wb-top">
                 <div class="wb-icon-box" aria-hidden="true">
-                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <rect x="2.5" y="4" width="15" height="12" />
-                    <path class="ico-wave-bar-1" d="M6 12.5V7.5" />
-                    <path class="ico-wave-bar-2" d="M10 13V7" />
-                    <path class="ico-wave-bar-3" d="M14 12.5V7.5" />
+                  <svg class="tgi tgi-ipaMode" width="20" height="20" viewBox="0 0 16 16" fill="none">
+                    <g class="tg-cycle">
+                      <path d="M3.25 4A6.25 6.25 0 0 1 12.75 4M10.75 4.25L12.85 4.15L12.7 2.05" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                      <path d="M12.75 12A6.25 6.25 0 0 1 3.25 12M5.25 11.75L3.15 11.85L3.3 13.95" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                    </g>
+                    <path class="tg-schwa" d="M10.15 8.15H5.85C5.85 9.85 6.75 11 8.05 11C9.35 11 10.2 9.85 10.2 8.15V7.75C10.2 6.05 9.35 5 8.05 5C7.25 5 6.6 5.25 6.15 5.75" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
                   </svg>
                 </div>
                 <span class="wb-num">02 / IPA &amp; TRIGRAPH</span>
@@ -2599,6 +3210,7 @@
 
               <div class="ipa-stage">
                 <div class="ipa-glyph-box">
+                  <span class="ipa-buffer-pill" id="ipaBufferPill" aria-hidden="true">\sh</span>
                   <span class="ipa-glyph-char" id="ipaBigChar">ʃ</span>
                   <span class="ipa-glyph-note" id="ipaBigNote">清龈后擦音 · \sh</span>
                 </div>
@@ -2637,10 +3249,16 @@
             <div>
               <div class="wb-top">
                 <div class="wb-icon-box" aria-hidden="true">
-                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <rect x="2.5" y="2.5" width="15" height="15" />
-                    <rect class="ico-frame-inner" x="5.5" y="5.5" width="9" height="9" stroke-width="1.2" />
-                    <path d="M6 12L9 9L11.5 11.5L14 8.5" stroke-width="1.2" />
+                  <svg class="tgi tgi-exportSvg" width="20" height="20" viewBox="0 0 16 16" fill="none">
+                    <path class="esvg-arch" d="M2.8 11.3 C2.8 7.8 4.55 5.05 6.65 4.65 M9.35 4.65 C11.45 5.05 13.2 7.8 13.2 11.3" />
+                    <rect class="esvg-end-node" x="1.75" y="11.3" width="2.1" height="2.1" rx="0.45" />
+                    <rect class="esvg-end-node" x="12.15" y="11.3" width="2.1" height="2.1" rx="0.45" />
+                    <g class="esvg-handles">
+                      <path class="esvg-arm" d="M3.55 4.5 H6.65 M9.35 4.5 H12.45" />
+                      <circle class="esvg-knob" cx="2.7" cy="4.5" r="0.95" />
+                      <circle class="esvg-knob" cx="13.3" cy="4.5" r="0.95" />
+                    </g>
+                    <rect class="esvg-top-node" x="6.65" y="3.15" width="2.7" height="2.7" rx="0.55" />
                   </svg>
                 </div>
                 <span class="wb-num">03 / FIGURE &amp; POSTER</span>
@@ -2732,9 +3350,13 @@
             <div>
               <div class="wb-top">
                 <div class="wb-icon-box" aria-hidden="true">
-                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <path d="M4 2.5H12.5L16 6V17.5H4V2.5Z" />
-                    <path class="ico-check-mark" d="M7 11.2L9.2 13.4L13.4 8.6" stroke-width="1.6" />
+                  <svg class="tgi tgi-fileCollection" width="20" height="20" viewBox="0 0 16 16" fill="none">
+                    <path class="fc-file" d="M3.25 2 H11.15 L14 4.85 V12.75 C14 13.44 13.44 14 12.75 14 H3.25 C2.56 14 2 13.44 2 12.75 V3.25 C2 2.56 2.56 2 3.25 2 Z" />
+                    <path class="fc-wave" d="M5.5 5 V6.2 M7.8 4.1 V7.1 M10.1 4.75 V6.45" />
+                    <g class="fc-tier">
+                      <rect class="fc-tier-box" x="4.8" y="9.6" width="6.4" height="2.4" rx="0.55" />
+                      <path class="fc-tier-div" d="M7.8 9.6 V12" />
+                    </g>
                   </svg>
                 </div>
                 <span class="wb-num">04 / PRAAT COMPAT &amp; QA</span>
@@ -2751,26 +3373,27 @@
                 <button type="button" class="btn compact" id="qaFixBtn">一键整理演示</button>
               </div>
               <div class="qa-list" id="qaList">
-                <div class="qa-row">
+                <span class="qa-scanline" aria-hidden="true"></span>
+                <div class="qa-row" role="button" tabindex="0" title="点击单独对齐此项隐患">
                   <div class="qa-row-left">
                     <span class="qa-badge" data-orig="重叠" data-fixed="已对齐">重叠</span>
                     <span>字词层相邻区间边界倒置 2 ms</span>
                   </div>
-                  <span class="qa-time">0.842 s</span>
+                  <span class="qa-time" data-orig-time="0.842 s" data-fixed-time="0.840 s">0.842 s</span>
                 </div>
-                <div class="qa-row">
+                <div class="qa-row" role="button" tabindex="0" title="点击单独合并此项隐患">
                   <div class="qa-row-left">
                     <span class="qa-badge" data-orig="极短" data-fixed="已合并">极短</span>
                     <span>音标层出现 4 ms 误切碎片</span>
                   </div>
-                  <span class="qa-time">1.390 s</span>
+                  <span class="qa-time" data-orig-time="1.390 s" data-fixed-time="1.394 s">1.390 s</span>
                 </div>
-                <div class="qa-row">
+                <div class="qa-row" role="button" tabindex="0" title="点击单独归一点层终点">
                   <div class="qa-row-left">
                     <span class="qa-badge" data-orig="越界" data-fixed="已归一">越界</span>
                     <span>点层终点超出主时长 0.015 s</span>
                   </div>
-                  <span class="qa-time">2.860 s</span>
+                  <span class="qa-time" data-orig-time="2.860 s" data-fixed-time="2.845 s">2.860 s</span>
                 </div>
               </div>
               <div class="format-strip">
@@ -2805,9 +3428,9 @@
           <div class="step-cell">
             <div class="step-head">
               <span class="step-index">STEP 01</span>
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="M3 13.5V16.5H17V13.5" />
-                <path d="M10 3.5V12.5M6.5 9L10 12.5L13.5 9" />
+              <svg class="tgi tgi-folder" width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path class="folder-back" d="M2 11.8 V4.1 C2 3.38 2.58 2.8 3.3 2.8 H5.95 C6.38 2.8 6.78 3.01 7.02 3.36 L7.58 4.14 C7.76 4.4 8.05 4.55 8.37 4.55 H12.7 C13.42 4.55 14 5.13 14 5.85 V11.8 C14 12.46 13.46 13 12.8 13 H3.2 C2.54 13 2 12.46 2 11.8 Z" />
+                <path class="folder-flap" d="M2 8.1 C2 7.44 2.54 6.9 3.2 6.9 H12.8 C13.46 6.9 14 7.44 14 8.1 V11.8 C14 12.46 13.46 13 12.8 13 H3.2 C2.54 13 2 12.46 2 11.8 Z" />
               </svg>
             </div>
             <h3 class="step-title">载入标注与音频</h3>
@@ -2819,8 +3442,10 @@
           <div class="step-cell">
             <div class="step-head">
               <span class="step-index">STEP 02</span>
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="M3 10H6L8 4.5L11.5 15.5L14 10H17" />
+              <svg class="tgi tgi-split" width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path class="half half-l" d="M5.4 4.3 H3.4 C2.74 4.3 2.2 4.84 2.2 5.5 V10.5 C2.2 11.16 2.74 11.7 3.4 11.7 H5.4" />
+                <path class="half half-r" d="M10.6 4.3 H12.6 C13.26 4.3 13.8 4.84 13.8 5.5 V10.5 C13.8 11.16 13.26 11.7 12.6 11.7 H10.6" />
+                <path class="blade" d="M8 2.2 V13.8" />
               </svg>
             </div>
             <h3 class="step-title">切音精校与录字</h3>
@@ -2832,9 +3457,11 @@
           <div class="step-cell">
             <div class="step-head">
               <span class="step-index">STEP 03</span>
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <rect x="3" y="3" width="14" height="14" />
-                <path d="M6.5 13.5L13.5 6.5M8.5 6.5H13.5V11.5" />
+              <svg class="tgi tgi-save" width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path class="tg-fill" d="M4.75 14V9.75C4.75 9.2 5.2 8.75 5.75 8.75H10.25C10.8 8.75 11.25 9.2 11.25 9.75V14H4.75Z" />
+                <path d="M3.25 2H11.15L14 4.85V12.75C14 13.44 13.44 14 12.75 14H3.25C2.56 14 2 13.44 2 12.75V3.25C2 2.56 2.56 2 3.25 2Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                <path class="tg-sub tg-shutter" d="M5 2V5.25C5 5.66 5.34 6 5.75 6H9.75C10.16 6 10.5 5.66 10.5 5.25V2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                <path class="tg-sub" d="M4.75 14V9.75C4.75 9.2 5.2 8.75 5.75 8.75H10.25C10.8 8.75 11.25 9.2 11.25 9.75V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
             </div>
             <h3 class="step-title">回写 Praat 或导出插图</h3>
@@ -2876,6 +3503,7 @@
           </div>
         </div>
 
+        <div class="shortcut-stage" id="shortcutStage">
         <!-- TAB 1: PLAYBACK & NAV -->
         <div class="shortcut-panel is-active" data-panel="play">
           <div class="sc-item">
@@ -3101,6 +3729,7 @@
             <div class="sc-keys"><kbd>?</kbd><kbd>F1</kbd></div>
           </div>
         </div>
+        </div>
       </section>
 
       <!-- ========================================================
@@ -3176,10 +3805,14 @@
               </ul>
             </div>
             <div>
-              <a class="btn" style="width:100%;" href="./tgrid-standalone.html" download="tgrid-standalone.html" rel="nofollow">
+              <a class="btn" style="width:100%;" href="./tgrid-standalone.html" download="tgrid-standalone.html">
                 <span>下载离线单文件版</span>
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-                  <path d="M8 2.5V10.5M5 7.5L8 10.5L11 7.5M2.5 13H13.5" />
+                <svg class="tgi tgi-export" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <g class="arrow">
+                    <path d="M8 2.4 V9.8" />
+                    <path d="M5.2 7.2 L8 10 L10.8 7.2" />
+                  </g>
+                  <path class="tray" d="M2.6 10.6 V12.1 C2.6 12.8 3.2 13.4 3.9 13.4 H12.1 C12.8 13.4 13.4 12.8 13.4 12.1 V10.6" />
                 </svg>
               </a>
             </div>
@@ -3273,8 +3906,12 @@
                   <strong>双尺折行标注图：核心设计规范（精简版）</strong>
                   <span>5 分钟读懂声学视图与舒展标注层的对齐排版规则</span>
                 </div>
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                  <path d="M4.5 11.5L11.5 4.5M6 4.5H11.5V10" />
+                <svg class="tgi tgi-externalLink" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path class="ext-box" d="M7.15 3.45 H3.65 C2.88 3.45 2.25 4.08 2.25 4.85 V12.35 C2.25 13.12 2.88 13.75 3.65 13.75 H11.15 C11.92 13.75 12.55 13.12 12.55 12.35 V8.85" />
+                  <g class="ext-arrow">
+                    <path d="M7.5 8.5 L13.65 2.35" />
+                    <path d="M9.85 2.35 H13.65 V6.15" />
+                  </g>
                 </svg>
               </a>
               <a class="ref-row" href="https://github.com/KasumiKitsune/tgrid/blob/main/docs/PRAAT_TEXTGRID_AND_COLLECTION_SPEC.md" target="_blank" rel="noopener noreferrer">
@@ -3282,8 +3919,12 @@
                   <strong>Praat TextGrid 与 Collection 文件格式规范</strong>
                   <span>对照 Praat 源码整理的完整解析与序列化参考文档</span>
                 </div>
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                  <path d="M4.5 11.5L11.5 4.5M6 4.5H11.5V10" />
+                <svg class="tgi tgi-externalLink" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path class="ext-box" d="M7.15 3.45 H3.65 C2.88 3.45 2.25 4.08 2.25 4.85 V12.35 C2.25 13.12 2.88 13.75 3.65 13.75 H11.15 C11.92 13.75 12.55 13.12 12.55 12.35 V8.85" />
+                  <g class="ext-arrow">
+                    <path d="M7.5 8.5 L13.65 2.35" />
+                    <path d="M9.85 2.35 H13.65 V6.15" />
+                  </g>
                 </svg>
               </a>
             </div>
@@ -3297,8 +3938,12 @@
                   <strong>Praat 汉化版</strong>
                   <span>Praat 非官方简体中文本地化与日常语音分析增强版本</span>
                 </div>
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                  <path d="M4.5 11.5L11.5 4.5M6 4.5H11.5V10" />
+                <svg class="tgi tgi-externalLink" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path class="ext-box" d="M7.15 3.45 H3.65 C2.88 3.45 2.25 4.08 2.25 4.85 V12.35 C2.25 13.12 2.88 13.75 3.65 13.75 H11.15 C11.92 13.75 12.55 13.12 12.55 12.35 V8.85" />
+                  <g class="ext-arrow">
+                    <path d="M7.5 8.5 L13.65 2.35" />
+                    <path d="M9.85 2.35 H13.65 V6.15" />
+                  </g>
                 </svg>
               </a>
               <a class="ref-row" href="https://kasumikitsune.github.io/PhonAcq/" target="_blank" rel="noopener noreferrer">
@@ -3306,8 +3951,12 @@
                   <strong>PhonAcq 语音采集工具</strong>
                   <span>面向方言田野调查与实验室批量录制的多端互联录音工具</span>
                 </div>
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                  <path d="M4.5 11.5L11.5 4.5M6 4.5H11.5V10" />
+                <svg class="tgi tgi-externalLink" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path class="ext-box" d="M7.15 3.45 H3.65 C2.88 3.45 2.25 4.08 2.25 4.85 V12.35 C2.25 13.12 2.88 13.75 3.65 13.75 H11.15 C11.92 13.75 12.55 13.12 12.55 12.35 V8.85" />
+                  <g class="ext-arrow">
+                    <path d="M7.5 8.5 L13.65 2.35" />
+                    <path d="M9.85 2.35 H13.65 V6.15" />
+                  </g>
                 </svg>
               </a>
             </div>
@@ -3339,14 +3988,37 @@
         requestAnimationFrame(function () {
           requestAnimationFrame(function () {
             document.documentElement.classList.add('hero-ready');
+            setTimeout(function () {
+              document.documentElement.classList.add('hero-settled');
+            }, 980);
           });
         });
       } else {
-        document.documentElement.classList.add('hero-ready');
+        document.documentElement.classList.add('hero-ready', 'hero-settled');
       }
 
       /* ============================================================
-         1. SCROLL REVEAL & PROGRESS RULER & ACTIVE NAV TRACKING
+         GLOBAL PHYSICAL KEYCAP FEEDBACK HELPER
+      ============================================================ */
+      var allKbds = Array.prototype.slice.call(document.querySelectorAll('kbd'));
+      function setKeycapPressed(keyText, pressed) {
+        var norm = keyText.toLowerCase();
+        for (var i = 0; i < allKbds.length; i++) {
+          var txt = (allKbds[i].textContent || '').trim().toLowerCase();
+          if (txt === norm) {
+            allKbds[i].classList.toggle('is-pressed', pressed);
+          }
+        }
+      }
+
+      function isTypingContext(target) {
+        if (!target || !target.tagName) return false;
+        var tag = target.tagName.toLowerCase();
+        return tag === 'input' || tag === 'textarea' || target.isContentEditable;
+      }
+
+      /* ============================================================
+         1. SCROLL REVEAL, GPU RULER & SLIDING NAV / VERNIER CURSORS
       ============================================================ */
       var revealEls = document.querySelectorAll('[data-reveal]');
       if ('IntersectionObserver' in window && !prefersReduced) {
@@ -3364,16 +4036,49 @@
       }
 
       var scrollBar = document.getElementById('scrollProgress');
+      var navActiveBar = document.getElementById('navActiveBar');
+      var railVernier = document.getElementById('railVernier');
       var sectionIds = ['hero', 'features', 'quickstart', 'shortcuts', 'editions', 'faq'];
       var sectionEls = sectionIds.map(function (id) { return document.getElementById(id); }).filter(Boolean);
-      var navLinks = document.querySelectorAll('.nav-link');
-      var railItems = document.querySelectorAll('.rail-item');
+      var navLinks = Array.prototype.slice.call(document.querySelectorAll('.nav-link'));
+      var railItems = Array.prototype.slice.call(document.querySelectorAll('.rail-item'));
+      var scrollRafPending = false;
+      var lastActiveSection = '';
+
+      function syncNavCursors(activeId) {
+        var navTargetId = activeId === 'hero' ? 'features' : activeId;
+        var activeNavEl = null;
+        navLinks.forEach(function (a) {
+          var isCur = a.getAttribute('href') === '#' + navTargetId;
+          a.classList.toggle('is-active', isCur);
+          if (isCur) activeNavEl = a;
+        });
+        if (navActiveBar && activeNavEl && activeNavEl.offsetWidth > 0) {
+          var barX = activeNavEl.offsetLeft + 11;
+          var barW = Math.max(12, activeNavEl.offsetWidth - 22);
+          navActiveBar.style.transform = 'translate3d(' + barX.toFixed(1) + 'px, 0, 0) scaleX(' + (barW / 100).toFixed(4) + ')';
+        }
+
+        var activeRailEl = null;
+        railItems.forEach(function (a) {
+          var isCur = a.getAttribute('href') === '#' + activeId;
+          a.classList.toggle('is-active', isCur);
+          if (isCur) activeRailEl = a;
+        });
+        if (railVernier && activeRailEl && activeRailEl.offsetHeight > 0) {
+          var vy = activeRailEl.offsetTop + (activeRailEl.offsetHeight - 18) / 2;
+          railVernier.style.transform = 'translate3d(0, ' + vy.toFixed(1) + 'px, 0)';
+        }
+      }
 
       function updateScrollUI() {
+        scrollRafPending = false;
         var scrollTop = window.scrollY || document.documentElement.scrollTop || 0;
         var maxScroll = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-        var pct = Math.min(100, Math.max(0, (scrollTop / maxScroll) * 100));
-        if (scrollBar) scrollBar.style.width = pct.toFixed(2) + '%';
+        var ratio = Math.min(1, Math.max(0, scrollTop / maxScroll));
+        if (scrollBar) {
+          scrollBar.style.transform = 'scaleX(' + ratio.toFixed(4) + ')';
+        }
 
         var activeId = 'hero';
         var triggerY = scrollTop + 140;
@@ -3382,66 +4087,168 @@
             activeId = sectionEls[i].id;
           }
         }
-        navLinks.forEach(function (a) {
-          a.classList.toggle('is-active', a.getAttribute('href') === '#' + activeId);
-        });
-        railItems.forEach(function (a) {
-          a.classList.toggle('is-active', a.getAttribute('href') === '#' + activeId);
+        if (activeId !== lastActiveSection) {
+          lastActiveSection = activeId;
+          syncNavCursors(activeId);
+        }
+      }
+
+      function requestScrollTick() {
+        if (!scrollRafPending) {
+          scrollRafPending = true;
+          requestAnimationFrame(updateScrollUI);
+        }
+      }
+
+      window.addEventListener('scroll', requestScrollTick, { passive: true });
+      window.addEventListener('resize', function () {
+        lastActiveSection = '';
+        requestScrollTick();
+      }, { passive: true });
+      updateScrollUI();
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(function () {
+          lastActiveSection = '';
+          updateScrollUI();
         });
       }
 
-      window.addEventListener('scroll', updateScrollUI, { passive: true });
-      window.addEventListener('resize', updateScrollUI, { passive: true });
-      updateScrollUI();
-
       /* ============================================================
-         2. HELPER: SLIDING INDICATOR FOR SEGMENTED CONTROLS
+         2. HELPER: CALIPER-STRETCH & CLIP-OVERLAY SEGMENTED CONTROLS
       ============================================================ */
       function initSegmented(containerId, onChange) {
         var wrap = document.getElementById(containerId);
         if (!wrap) return null;
         var slider = wrap.querySelector('.seg-slider');
         var buttons = Array.prototype.slice.call(wrap.querySelectorAll('.seg-btn'));
+        if (!buttons.length) return null;
 
-        function syncSlider(activeBtn) {
-          if (!slider || !activeBtn) return;
-          slider.style.width = activeBtn.offsetWidth + 'px';
-          slider.style.transform = 'translateX(' + (activeBtn.offsetLeft - 2) + 'px)';
+        // Build aria-hidden synchronized inverse label overlay so text flips at exact sub-pixel ink edge
+        var overlay = document.createElement('div');
+        overlay.className = 'seg-clip-overlay';
+        overlay.setAttribute('aria-hidden', 'true');
+        var overlayLabels = buttons.map(function (b) {
+          var sp = document.createElement('span');
+          sp.className = 'seg-clip-label';
+          sp.textContent = b.textContent;
+          overlay.appendChild(sp);
+          return sp;
+        });
+        wrap.appendChild(overlay);
+        wrap.classList.add('has-clip-overlay');
+        if (slider) slider.style.opacity = '0';
+
+        var curL = 2;
+        var curR = 2;
+        var targetL = 2;
+        var targetR = 2;
+        var dirRight = true;
+        var segRaf = 0;
+        var lastSegTs = 0;
+
+        function applyGeometry(l, r, totalW) {
+          var rightInset = Math.max(0, totalW - r);
+          overlay.style.clipPath = 'inset(2px ' + rightInset.toFixed(1) + 'px 2px ' + l.toFixed(1) + 'px)';
+          if (slider) {
+            var w = Math.max(4, r - l);
+            slider.style.transform = 'translate3d(' + l.toFixed(1) + 'px, 0, 0) scaleX(' + (w / 100).toFixed(4) + ')';
+          }
         }
 
-        function activate(btn, emit) {
-          buttons.forEach(function (b) {
+        function stepSeg(now) {
+          var dt = Math.min(0.04, (now - lastSegTs) / 1000);
+          lastSegTs = now;
+          var totalW = wrap.clientWidth || 200;
+
+          // Asymmetric caliper velocity: leading edge darts fast, trailing edge snaps cleanly behind it
+          var rateLead = Math.min(1, dt * 26);
+          var rateTrail = Math.min(1, dt * 15);
+          var rateL = dirRight ? rateTrail : rateLead;
+          var rateR = dirRight ? rateLead : rateTrail;
+
+          curL += (targetL - curL) * rateL;
+          curR += (targetR - curR) * rateR;
+
+          if (Math.abs(targetL - curL) < 0.25 && Math.abs(targetR - curR) < 0.25) {
+            curL = targetL;
+            curR = targetR;
+            applyGeometry(curL, curR, totalW);
+            segRaf = 0;
+            return;
+          }
+          applyGeometry(curL, curR, totalW);
+          segRaf = requestAnimationFrame(stepSeg);
+        }
+
+        function measureActive(activeBtn, immediate) {
+          if (!activeBtn) return;
+          var totalW = wrap.clientWidth || 200;
+          var nextL = activeBtn.offsetLeft;
+          var nextR = nextL + activeBtn.offsetWidth;
+          if (nextR <= nextL) return;
+
+          dirRight = nextL >= curL;
+          targetL = nextL;
+          targetR = nextR;
+
+          if (immediate || prefersReduced) {
+            if (segRaf) { cancelAnimationFrame(segRaf); segRaf = 0; }
+            curL = nextL;
+            curR = nextR;
+            applyGeometry(curL, curR, totalW);
+          } else if (!segRaf) {
+            lastSegTs = performance.now();
+            segRaf = requestAnimationFrame(stepSeg);
+          }
+        }
+
+        function activate(btn, emit, immediate) {
+          var prevIdx = buttons.indexOf(wrap.querySelector('.seg-btn.is-active'));
+          var nextIdx = buttons.indexOf(btn);
+          buttons.forEach(function (b, idx) {
             var isCur = b === btn;
             b.classList.toggle('is-active', isCur);
             if (b.getAttribute('role') === 'tab') {
               b.setAttribute('aria-selected', isCur ? 'true' : 'false');
             }
+            if (overlayLabels[idx]) {
+              overlayLabels[idx].textContent = b.textContent;
+            }
           });
-          syncSlider(btn);
-          if (emit && onChange) onChange(btn);
+          measureActive(btn, Boolean(immediate));
+          if (emit && onChange) onChange(btn, nextIdx, prevIdx);
         }
 
         buttons.forEach(function (btn) {
-          btn.addEventListener('click', function () { activate(btn, true); });
+          btn.addEventListener('click', function () { activate(btn, true, false); });
         });
 
         var initActive = wrap.querySelector('.seg-btn.is-active') || buttons[0];
-        syncSlider(initActive);
+        measureActive(initActive, true);
         if (document.fonts && document.fonts.ready) {
           document.fonts.ready.then(function () {
-            syncSlider(wrap.querySelector('.seg-btn.is-active') || buttons[0]);
+            measureActive(wrap.querySelector('.seg-btn.is-active') || buttons[0], true);
           });
         }
         window.addEventListener('resize', function () {
-          syncSlider(wrap.querySelector('.seg-btn.is-active') || buttons[0]);
-        });
-        return { activate: activate, sync: function () { syncSlider(wrap.querySelector('.seg-btn.is-active')); } };
+          measureActive(wrap.querySelector('.seg-btn.is-active') || buttons[0], true);
+        }, { passive: true });
+
+        return {
+          activate: activate,
+          sync: function () { measureActive(wrap.querySelector('.seg-btn.is-active') || buttons[0], true); }
+        };
       }
 
       /* ============================================================
          3. HERO INTERACTIVE DUAL-SCALE PHONETIC SCORE SPECIMEN
-            Example: "我说 TextGrid 这个词" (auto-stops after 2 loops)
+            - Smart idle/offscreen rAF hibernation (0% background CPU)
+            - Direct pointer scrubbing & smooth magnetic click-seek
+            - Hover tier cell -> live projection neck highlight
+            - Radial caliper wave on Dual-Scale <-> 1:1 Linear switch
       ============================================================ */
+      var heroTogglePlayFromKey = null;
+
       (function initHeroSpecimen() {
         var NS = 'http://www.w3.org/2000/svg';
         var X0 = 64;
@@ -3449,21 +4256,19 @@
         var W = X1 - X0;
         var TOTAL_T = 1.80;
 
-        // 10 phoneme intervals: leading/trailing silence folds cleanly; short English stops (tʰ 70ms, t̚ 50ms) expand!
         var segs = [
-          { t0: 0.00, t1: 0.24, ipa: '//',       folded: true,  dual0: 0.000, dual1: 0.050 },
-          { t0: 0.24, t1: 0.44, ipa: 'wɔ²¹',     folded: false, dual0: 0.050, dual1: 0.165 },
-          { t0: 0.44, t1: 0.64, ipa: 'ʂwɔ⁵⁵',    folded: false, dual0: 0.165, dual1: 0.285 },
-          { t0: 0.64, t1: 0.71, ipa: 'tʰ',       folded: false, dual0: 0.285, dual1: 0.365 },
-          { t0: 0.71, t1: 0.84, ipa: 'ɛks',      folded: false, dual0: 0.365, dual1: 0.480 },
-          { t0: 0.84, t1: 0.89, ipa: 't̚',        folded: false, dual0: 0.480, dual1: 0.555 },
-          { t0: 0.89, t1: 1.14, ipa: 'ɡɹɪd',     folded: false, dual0: 0.555, dual1: 0.695 },
-          { t0: 1.14, t1: 1.38, ipa: 'ʈʂɤ⁵¹kə',  folded: false, dual0: 0.695, dual1: 0.835 },
-          { t0: 1.38, t1: 1.62, ipa: 'tsʰɿ³⁵',   folded: false, dual0: 0.835, dual1: 0.955 },
-          { t0: 1.62, t1: 1.80, ipa: '//',       folded: true,  dual0: 0.955, dual1: 1.000 }
+          { t0: 0.00, t1: 0.24, ipa: '//',       folded: true,  dual0: 0.000, dual1: 0.050, shortStop: false },
+          { t0: 0.24, t1: 0.44, ipa: 'wɔ²¹',     folded: false, dual0: 0.050, dual1: 0.165, shortStop: false },
+          { t0: 0.44, t1: 0.64, ipa: 'ʂwɔ⁵⁵',    folded: false, dual0: 0.165, dual1: 0.285, shortStop: false },
+          { t0: 0.64, t1: 0.71, ipa: 'tʰ',       folded: false, dual0: 0.285, dual1: 0.365, shortStop: true },
+          { t0: 0.71, t1: 0.84, ipa: 'ɛks',      folded: false, dual0: 0.365, dual1: 0.480, shortStop: false },
+          { t0: 0.84, t1: 0.89, ipa: 't̚',        folded: false, dual0: 0.480, dual1: 0.555, shortStop: true },
+          { t0: 0.89, t1: 1.14, ipa: 'ɡɹɪd',     folded: false, dual0: 0.555, dual1: 0.695, shortStop: false },
+          { t0: 1.14, t1: 1.38, ipa: 'ʈʂɤ⁵¹kə',  folded: false, dual0: 0.695, dual1: 0.835, shortStop: false },
+          { t0: 1.38, t1: 1.62, ipa: 'tsʰɿ³⁵',   folded: false, dual0: 0.835, dual1: 0.955, shortStop: false },
+          { t0: 1.62, t1: 1.80, ipa: '//',       folded: true,  dual0: 0.955, dual1: 1.000, shortStop: false }
         ];
 
-        // Parent word tier spans across phoneme boundaries ("TextGrid" spans segs 3..6)
         var words = [
           { t0: 0.00, t1: 0.24, text: '//',       folded: true,  dual0: 0.000, dual1: 0.050 },
           { t0: 0.24, t1: 0.44, text: '我',       folded: false, dual0: 0.050, dual1: 0.165 },
@@ -3474,7 +4279,6 @@
           { t0: 1.62, t1: 1.80, text: '//',       folded: true,  dual0: 0.955, dual1: 1.000 }
         ];
 
-        // Authentic TextTier point events
         var pointEvents = [
           { t: 0.64, label: '语码切换', color: '#1D4ED8' },
           { t: 0.89, label: 'ɡ 除阻',   color: '#B45309' },
@@ -3489,7 +4293,6 @@
           return el;
         }
 
-        // Build ruler ticks (0.0s .. 1.8s, cleanly framed so last tick never clips)
         var rulerG = document.getElementById('heroRulerTicks');
         for (var i = 0; i <= 18; i++) {
           var t = i * 0.1;
@@ -3514,15 +4317,14 @@
           }
         }
 
-        // Deterministic acoustic model: voicing + frication + stop bursts
         function voicedEnergy(t) {
           var vowels = [
-            { c: 0.34, w: 0.085, a: 0.90 }, // 我
-            { c: 0.56, w: 0.068, a: 0.86 }, // 说 (元音段)
-            { c: 0.75, w: 0.042, a: 0.82 }, // ɛ
-            { c: 1.01, w: 0.095, a: 0.92 }, // ɡɹɪd
-            { c: 1.27, w: 0.088, a: 0.85 }, // 这个
-            { c: 1.52, w: 0.075, a: 0.94 }  // 词 (元音段)
+            { c: 0.34, w: 0.085, a: 0.90 },
+            { c: 0.56, w: 0.068, a: 0.86 },
+            { c: 0.75, w: 0.042, a: 0.82 },
+            { c: 1.01, w: 0.095, a: 0.92 },
+            { c: 1.27, w: 0.088, a: 0.85 },
+            { c: 1.52, w: 0.075, a: 0.94 }
           ];
           var e = 0;
           for (var i = 0; i < vowels.length; i++) {
@@ -3534,12 +4336,12 @@
 
         function fricativeEnergy(t) {
           var frics = [
-            { c: 0.475, w: 0.032, a: 0.70 }, // ʂ
-            { c: 0.675, w: 0.024, a: 0.62 }, // tʰ 除阻送气
-            { c: 0.810, w: 0.028, a: 0.78 }, // s
-            { c: 0.868, w: 0.015, a: 0.58 }, // t 爆破
-            { c: 1.168, w: 0.028, a: 0.64 }, // ʈʂ
-            { c: 1.415, w: 0.032, a: 0.74 }  // tsʰ
+            { c: 0.475, w: 0.032, a: 0.70 },
+            { c: 0.675, w: 0.024, a: 0.62 },
+            { c: 0.810, w: 0.028, a: 0.78 },
+            { c: 0.868, w: 0.015, a: 0.58 },
+            { c: 1.168, w: 0.028, a: 0.64 },
+            { c: 1.415, w: 0.032, a: 0.74 }
           ];
           var e = 0;
           for (var i = 0; i < frics.length; i++) {
@@ -3549,7 +4351,6 @@
           return e;
         }
 
-        // Build Realistic Multi-Component Speech Waveform
         var wavePts = [];
         for (var k = 0; k <= 320; k++) {
           var wt = (k / 320) * TOTAL_T;
@@ -3564,7 +4365,6 @@
         }
         document.getElementById('heroWavePath').setAttribute('d', wavePts.join(' '));
 
-        // Build High-Density Broadband Spectrogram (92 cols x 9 frequency bands)
         var specG = document.getElementById('heroSpecBars');
         var specRects = [];
         var cols = 92;
@@ -3576,7 +4376,7 @@
           var ve = voicedEnergy(ct);
           var fe = fricativeEnergy(ct);
           for (var row = 0; row < rows; row++) {
-            var fNorm = 1 - row / (rows - 1); // 1 = high freq (top), 0 = low freq (bottom)
+            var fNorm = 1 - row / (rows - 1);
             var f1Band = Math.exp(-Math.pow((fNorm - 0.18) / 0.14, 2));
             var f2Band = Math.exp(-Math.pow((fNorm - (0.50 + 0.12 * Math.sin(ct * 6.5))) / 0.15, 2));
             var f3Band = Math.exp(-Math.pow((fNorm - 0.78) / 0.14, 2)) * 0.45;
@@ -3584,21 +4384,21 @@
             var val = ve * (f1Band * 0.72 + f2Band * 0.64 + f3Band * 0.4) + fe * hiFricBand * 0.72;
             var alpha = Math.min(0.72, val);
             if (alpha > 0.045) {
+              var baseStr = alpha.toFixed(2);
               var rect = svgEl('rect', {
                 x: (X0 + c * colW).toFixed(1),
                 y: (81 + row * rowH).toFixed(1),
                 width: Math.max(1, colW - 0.4).toFixed(1),
                 height: (rowH - 0.5).toFixed(1),
                 fill: '#141413',
-                opacity: alpha.toFixed(2)
+                opacity: baseStr
               });
               specG.appendChild(rect);
-              specRects.push({ el: rect, base: alpha, t: ct });
+              specRects.push({ el: rect, base: alpha, baseStr: baseStr, t: ct, boosted: false });
             }
           }
         }
 
-        // Build F0 / F1 / F2 contours (naturally break on voiceless stops/fricatives!)
         function makeVoicedContour(fn) {
           var d = '';
           var active = false;
@@ -3616,8 +4416,8 @@
           return d;
         }
 
-        // Realistic Mandarin + English F0 tones: 我(21 half-third fall), 说(55 high), TextGrid(stress fall), 这(51 fall), 词(35 rise)
-        document.getElementById('heroF0Path').setAttribute('d', makeVoicedContour(function (t) {
+        var f0El = document.getElementById('heroF0Path');
+        f0El.setAttribute('d', makeVoicedContour(function (t) {
           if (t < 0.45) return 124 + (t - 0.24) * 65;
           if (t < 0.65) return 105 + Math.sin(t * 14) * 1.5;
           if (t < 0.85) return 109 + (t - 0.71) * 45;
@@ -3632,11 +4432,47 @@
           return 107 + Math.sin(t * 7.8 + 0.4) * 10;
         }));
 
-        // Build Dynamic Neck Paths, Word Tier, Phoneme Tier, and Point Tier
         var neckG = document.getElementById('heroNeckPaths');
         var wordG = document.getElementById('heroTierWord');
         var ipaG = document.getElementById('heroTierIpa');
         var pointG = document.getElementById('heroTierPoints');
+        var captionEl = document.getElementById('heroModeCaption');
+
+        var morph = 1;
+        var targetMorph = 1;
+        var caliperPulse = 0;
+        var maxLoops = 2;
+        var completedLoops = 0;
+        var playing = false;
+        var isScrubbing = false;
+        var wasPlayingBeforeScrub = false;
+        var curTime = 0.0;
+        var seekTargetTime = null;
+        var hoveredRange = null; // { t0, t1, label }
+        var heroInView = true;
+        var rafId = 0;
+        var lastTs = performance.now();
+
+        function getModeDefaultCaption() {
+          return targetMorph > 0.5
+            ? '长静默折叠 · 短塞音自动舒展 · 三层与点标同步对齐'
+            : '1:1 线性模式 · 注意「tʰ」「t̚」极短塞音被挤窄、静默占宽';
+        }
+
+        function setHoverRange(rangeObj) {
+          hoveredRange = rangeObj;
+          if (captionEl) {
+            if (rangeObj) {
+              var physMs = Math.round((rangeObj.t1 - rangeObj.t0) * 1000);
+              var dualPct = Math.round(((rangeObj.dual1 - rangeObj.dual0) / ((rangeObj.t1 - rangeObj.t0) / TOTAL_T) - 1) * 100);
+              var stretchTxt = dualPct > 8 ? (' · 双尺舒展 +' + dualPct + '%') : '';
+              captionEl.textContent = '区间 [' + rangeObj.label + '] · 物理时长 ' + physMs + ' ms' + (targetMorph > 0.5 ? stretchTxt : ' · 1:1 物理比例');
+            } else {
+              captionEl.textContent = getModeDefaultCaption();
+            }
+          }
+          renderSingleSnapshot();
+        }
 
         var wordNodes = words.map(function (w) {
           var rect = svgEl('rect', {
@@ -3647,11 +4483,17 @@
           var text = svgEl('text', {
             y: '225.5', 'text-anchor': 'middle',
             'font-family': w.accent ? 'JetBrains Mono, Inter, sans-serif' : 'Inter, Noto Sans SC, sans-serif',
-            'font-size': w.folded ? '10.5' : (w.accent ? '13.5' : '13.5'),
+            'font-size': w.folded ? '10.5' : '13.5',
             'font-weight': w.folded ? '400' : '700',
             fill: w.folded ? '#9E9B92' : '#141413'
           });
           text.textContent = w.text;
+          if (!w.folded) {
+            rect.addEventListener('pointerenter', function () {
+              setHoverRange({ t0: w.t0, t1: w.t1, dual0: w.dual0, dual1: w.dual1, label: w.text });
+            });
+            rect.addEventListener('pointerleave', function () { setHoverRange(null); });
+          }
           wordG.appendChild(rect);
           wordG.appendChild(text);
           return { word: w, rect: rect, text: text };
@@ -3670,6 +4512,12 @@
             fill: s.folded ? '#9E9B92' : '#5C5951'
           });
           ipaText.textContent = s.ipa;
+          if (!s.folded) {
+            ipaRect.addEventListener('pointerenter', function () {
+              setHoverRange({ t0: s.t0, t1: s.t1, dual0: s.dual0, dual1: s.dual1, label: s.ipa });
+            });
+            ipaRect.addEventListener('pointerleave', function () { setHoverRange(null); });
+          }
           ipaG.appendChild(ipaRect);
           ipaG.appendChild(ipaText);
 
@@ -3701,66 +4549,43 @@
           return { pt: pt, stem: stem, diamond: diamond, box: box, label: label };
         });
 
-        var morph = 1; // 1 = Dual-Scale, 0 = 1:1 Linear
-        var targetMorph = 1;
-        var maxLoops = 2;
-        var completedLoops = 0;
-        var playing = false;
-        var curTime = 0.0;
-        var lastTs = performance.now();
-
-        // Choreographed stroke-draw on waveform & F0 during Hero curtain reveal, then launch playhead sweep!
-        if (!prefersReduced) {
-          var waveEl = document.getElementById('heroWavePath');
-          var f0El = document.getElementById('heroF0Path');
-          [waveEl, f0El].forEach(function (pathEl, idx) {
-            if (!pathEl || typeof pathEl.getTotalLength !== 'function') return;
-            var len = pathEl.getTotalLength();
-            pathEl.style.strokeDasharray = len + ' ' + len;
-            pathEl.style.strokeDashoffset = String(len);
-            pathEl.style.transition = 'stroke-dashoffset 0.92s cubic-bezier(0.16, 1, 0.3, 1) ' + (idx === 0 ? '0.38s' : '0.52s');
-            requestAnimationFrame(function () {
-              requestAnimationFrame(function () {
-                pathEl.style.strokeDashoffset = '0';
-              });
-            });
-          });
-          setTimeout(function () {
-            if (completedLoops === 0 && !playing) {
-              playing = true;
-              lastTs = performance.now();
-              syncPlayIcon();
-            }
-          }, 760);
-        }
-
         var clockEl = document.getElementById('heroClock');
         var loopHintEl = document.getElementById('heroLoopHint');
         var headUpper = document.getElementById('heroHeadUpper');
         var headNeck = document.getElementById('heroHeadNeck');
         var headLower = document.getElementById('heroHeadLower');
         var headCap = document.getElementById('heroHeadCap');
-
         var playBtn = document.getElementById('heroPlayBtn');
         var playIcon = document.getElementById('heroPlayIcon');
+
         function syncPlayIcon() {
           playIcon.innerHTML = playing
-            ? '<rect x="2" y="1.5" width="2.8" height="9"/><rect x="7.2" y="1.5" width="2.8" height="9"/>'
-            : '<polygon points="2.5,1.5 10.5,6 2.5,10.5"/>';
+            ? '<g class="t-pause-root"><rect class="bar bar-l" x="3.8" y="2.8" width="3" height="10.4" rx="1.1"/><rect class="bar bar-r" x="9.2" y="2.8" width="3" height="10.4" rx="1.1"/></g>'
+            : '<path class="t-play" d="M4.3 3.55 C4.3 2.75 5.18 2.26 5.86 2.68 L12.92 7.13 C13.56 7.53 13.56 8.47 12.92 8.87 L5.86 13.32 C5.18 13.74 4.3 13.25 4.3 12.45 Z"/>';
           if (loopHintEl) {
-            if (playing) {
+            if (isScrubbing) {
+              loopHintEl.textContent = '实时擦除定位 · ' + curTime.toFixed(3) + ' s';
+            } else if (playing) {
               loopHintEl.textContent = '演示中（第 ' + (completedLoops + 1) + ' / ' + maxLoops + ' 遍）';
             } else if (completedLoops >= maxLoops) {
-              loopHintEl.textContent = '已播放 2 遍并停止 · 点击可重播';
+              loopHintEl.textContent = '已播放 2 遍并停止 · 拖谱擦除或点播放重播';
             } else {
-              loopHintEl.textContent = '已暂停 · 点击播放键或谱面定位';
+              loopHintEl.textContent = '已暂停 · 按住谱面左右拖动可擦除定位';
             }
           }
         }
-        syncPlayIcon();
+
+        // Radial wave morph: center short stops (t ~ 0.78s) lead expansion when entering dual-scale!
+        function getBoundaryMorph(physFrac) {
+          if (Math.abs(targetMorph - morph) < 0.002) return morph;
+          var centerDist = Math.abs(physFrac - 0.43); // 0.78s / 1.80s = 0.433
+          var waveBias = (0.28 - centerDist) * 0.22 * Math.sin(morph * Math.PI);
+          return Math.min(1, Math.max(0, morph + (targetMorph > morph ? waveBias : -waveBias)));
+        }
 
         function getLowerX(fracLinear, fracDual) {
-          var f = fracLinear + (fracDual - fracLinear) * morph;
+          var m = getBoundaryMorph(fracLinear);
+          var f = fracLinear + (fracDual - fracLinear) * m;
           return X0 + f * W;
         }
 
@@ -3777,43 +4602,19 @@
           return { x: X0, idx: 0 };
         }
 
-        function renderHeroFrame(now) {
-          var dt = Math.min(0.05, (now - lastTs) / 1000);
-          lastTs = now;
-
-          var diff = targetMorph - morph;
-          if (Math.abs(diff) > 0.001) {
-            morph += diff * Math.min(1, dt * 11);
-          } else {
-            morph = targetMorph;
-          }
-
-          if (playing) {
-            curTime += dt * 0.48;
-            if (curTime >= TOTAL_T) {
-              completedLoops++;
-              if (completedLoops >= maxLoops) {
-                playing = false;
-                curTime = 0.0;
-                syncPlayIcon();
-              } else {
-                curTime = 0.0;
-                syncPlayIcon();
-              }
-            }
-          }
-
+        function drawSpecimenDOM() {
           var mapped = mapTimeToLowerX(curTime);
           var activeSegIdx = mapped.idx;
+          var hasPlayFocus = playing || isScrubbing || curTime > 0.001;
 
-          // Update parent word tier
           for (var wi = 0; wi < wordNodes.length; wi++) {
             var wn = wordNodes[wi];
             var w = wn.word;
             var wx0 = getLowerX(w.t0 / TOTAL_T, w.dual0);
             var wx1 = getLowerX(w.t1 / TOTAL_T, w.dual1);
             var ww = Math.max(1, wx1 - wx0);
-            var wHit = !w.folded && (playing || curTime > 0) && curTime >= w.t0 && curTime < w.t1;
+            var wHovered = hoveredRange && w.t0 >= hoveredRange.t0 - 0.001 && w.t1 <= hoveredRange.t1 + 0.001;
+            var wHit = !w.folded && (wHovered || (hasPlayFocus && curTime >= w.t0 && curTime < w.t1));
             wn.rect.setAttribute('x', wx0.toFixed(1));
             wn.rect.setAttribute('width', ww.toFixed(1));
             wn.rect.setAttribute('fill', wHit ? '#EEF3FF' : (w.folded ? 'url(#silenceHatch)' : '#FFFFFF'));
@@ -3823,7 +4624,6 @@
             wn.text.setAttribute('opacity', w.folded && morph < 0.25 ? '0.5' : '1');
           }
 
-          // Update phoneme tier & elastic projection necks
           for (var i = 0; i < cellNodes.length; i++) {
             var n = cellNodes[i];
             var s = n.seg;
@@ -3833,7 +4633,9 @@
             var lx1 = getLowerX(s.t1 / TOTAL_T, s.dual1);
             var cw = Math.max(1, lx1 - lx0);
             var cx = lx0 + cw / 2;
-            var isHit = !s.folded && (playing || curTime > 0) && i === activeSegIdx;
+            var segHovered = hoveredRange && s.t0 >= hoveredRange.t0 - 0.001 && s.t1 <= hoveredRange.t1 + 0.001;
+            var stopGlow = s.shortStop && caliperPulse > 0.05;
+            var isHit = !s.folded && (segHovered || stopGlow || (hasPlayFocus && i === activeSegIdx));
 
             n.ipaRect.setAttribute('x', lx0.toFixed(1));
             n.ipaRect.setAttribute('width', cw.toFixed(1));
@@ -3848,8 +4650,10 @@
               n.neckLine.setAttribute('d',
                 'M ' + ux0.toFixed(1) + ' 158 C ' + ux0.toFixed(1) + ' 179 ' + lx0.toFixed(1) + ' 179 ' + lx0.toFixed(1) + ' 200'
               );
-              var edgeActive = (playing || curTime > 0) && !segs[activeSegIdx].folded && (i === activeSegIdx || i === activeSegIdx + 1);
+              var prevHovered = hoveredRange && i > 0 && segs[i - 1].t0 >= hoveredRange.t0 - 0.001 && segs[i - 1].t1 <= hoveredRange.t1 + 0.001;
+              var edgeActive = segHovered || prevHovered || (hasPlayFocus && !segs[activeSegIdx].folded && (i === activeSegIdx || i === activeSegIdx + 1));
               n.neckLine.setAttribute('stroke', edgeActive ? '#1D4ED8' : '#C5C0B5');
+              n.neckLine.setAttribute('stroke-width', edgeActive ? '1.25' : '1');
             }
             if (n.bandFill) {
               n.bandFill.setAttribute('d',
@@ -3858,17 +4662,17 @@
                 'L ' + lx0.toFixed(1) + ' 200 ' +
                 'C ' + lx0.toFixed(1) + ' 179 ' + ux0.toFixed(1) + ' 179 ' + ux0.toFixed(1) + ' 158 Z'
               );
-              n.bandFill.setAttribute('opacity', isHit ? '0.14' : '0');
+              var bandOp = segHovered ? 0.22 : (stopGlow ? 0.22 * caliperPulse : (hasPlayFocus && i === activeSegIdx ? 0.14 : 0));
+              n.bandFill.setAttribute('opacity', bandOp.toFixed(2));
             }
           }
 
-          // Update TextTier Point Markers cleanly mapped along lower scale
           for (var pi = 0; pi < pointNodes.length; pi++) {
             var pn = pointNodes[pi];
             var px = mapTimeToLowerX(pn.pt.t).x;
             var boxW = pn.pt.label.length * 10 + 10;
             var bx = Math.min(X1 - boxW, Math.max(X0, px - boxW / 2));
-            var near = Math.abs(curTime - pn.pt.t) < 0.09 && (playing || curTime > 0);
+            var near = Math.abs(curTime - pn.pt.t) < 0.09 && hasPlayFocus;
             pn.stem.setAttribute('x1', px.toFixed(1));
             pn.stem.setAttribute('x2', px.toFixed(1));
             pn.diamond.setAttribute('points',
@@ -3881,90 +4685,291 @@
             pn.label.setAttribute('fill', near ? '#FFFFFF' : pn.pt.color);
           }
 
-          // Subtle playhead proximity highlight on broadband spectrogram
+          // Diff-guarded spectrogram highlight: touches only ~8 rects near playhead/hover instead of 500+
           for (var r = 0; r < specRects.length; r++) {
             var sr = specRects[r];
+            var inHoverBand = hoveredRange && sr.t >= hoveredRange.t0 && sr.t <= hoveredRange.t1;
             var dist = Math.abs(sr.t - curTime);
-            if ((playing || curTime > 0) && dist < 0.065) {
-              var boost = (1 - dist / 0.065) * 0.28;
+            var nearHead = hasPlayFocus && dist < 0.065;
+            if (inHoverBand || nearHead) {
+              var boost = inHoverBand ? 0.22 : (1 - dist / 0.065) * 0.28;
               sr.el.setAttribute('fill', '#1D4ED8');
               sr.el.setAttribute('opacity', Math.min(0.92, sr.base + boost).toFixed(2));
-            } else if (sr.el.getAttribute('fill') !== '#141413') {
+              sr.boosted = true;
+            } else if (sr.boosted) {
               sr.el.setAttribute('fill', '#141413');
-              sr.el.setAttribute('opacity', sr.base.toFixed(2));
+              sr.el.setAttribute('opacity', sr.baseStr);
+              sr.boosted = false;
             }
           }
 
-          // Update playhead
           var ux = X0 + (curTime / TOTAL_T) * W;
           var lx = mapped.x;
+          var capHalf = isScrubbing ? 5.5 : 4;
           headUpper.setAttribute('x1', ux.toFixed(1));
           headUpper.setAttribute('x2', ux.toFixed(1));
-          headNeck.setAttribute('d', 'M ' + ux.toFixed(1) + ' 158 C ' + ux.toFixed(1) + ' 179 ' + lx.toFixed(1) + ' 179 ' + lx.toFixed(1) + ' 200');
+          headNeck.setAttribute('d', 'M ' + ux.toFixed(1) + ' 158 C ' + ux0Control(ux, lx) + ' ' + lx.toFixed(1) + ' 200');
           headLower.setAttribute('x1', lx.toFixed(1));
           headLower.setAttribute('x2', lx.toFixed(1));
-          headCap.setAttribute('points', (ux - 4).toFixed(1) + ',18 ' + (ux + 4).toFixed(1) + ',18 ' + ux.toFixed(1) + ',24');
+          headCap.setAttribute('points', (ux - capHalf).toFixed(1) + ',17.5 ' + (ux + capHalf).toFixed(1) + ',17.5 ' + ux.toFixed(1) + ',24.5');
           clockEl.textContent = curTime.toFixed(3) + ' s';
-
-          requestAnimationFrame(renderHeroFrame);
         }
 
-        requestAnimationFrame(renderHeroFrame);
+        function ux0Control(ux, lx) {
+          return ux.toFixed(1) + ' 179 ' + lx.toFixed(1) + ' 179';
+        }
 
-        // Mode switcher
-        var captionEl = document.getElementById('heroModeCaption');
+        function renderSingleSnapshot() {
+          drawSpecimenDOM();
+        }
+
+        function wakeHeroLoop() {
+          if (!rafId && heroInView) {
+            lastTs = performance.now();
+            rafId = requestAnimationFrame(renderHeroFrame);
+          }
+        }
+
+        function renderHeroFrame(now) {
+          rafId = 0;
+          var dt = Math.min(0.05, (now - lastTs) / 1000);
+          lastTs = now;
+
+          var morphDiff = targetMorph - morph;
+          if (Math.abs(morphDiff) > 0.0008) {
+            morph += morphDiff * Math.min(1, dt * 12.5);
+          } else {
+            morph = targetMorph;
+          }
+
+          if (caliperPulse > 0.005) {
+            caliperPulse *= Math.max(0, 1 - dt * 3.8);
+          } else {
+            caliperPulse = 0;
+          }
+
+          if (seekTargetTime !== null && !isScrubbing) {
+            var tDiff = seekTargetTime - curTime;
+            if (Math.abs(tDiff) > 0.003) {
+              curTime += tDiff * Math.min(1, dt * 22);
+            } else {
+              curTime = seekTargetTime;
+              seekTargetTime = null;
+            }
+          } else if (playing && !isScrubbing) {
+            curTime += dt * 0.48;
+            if (curTime >= TOTAL_T) {
+              completedLoops++;
+              curTime = 0.0;
+              if (completedLoops >= maxLoops) {
+                playing = false;
+              }
+              syncPlayIcon();
+            }
+          }
+
+          drawSpecimenDOM();
+
+          var stillAnimating = playing || isScrubbing || Math.abs(targetMorph - morph) > 0.0008 || seekTargetTime !== null || caliperPulse > 0.005;
+          if (stillAnimating && heroInView) {
+            rafId = requestAnimationFrame(renderHeroFrame);
+          }
+        }
+
+        // Observe Hero visibility to hibernate rAF completely when scrolled away
+        var heroSec = document.getElementById('hero');
+        if ('IntersectionObserver' in window && heroSec) {
+          var heroVisObserver = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+              heroInView = entry.isIntersecting;
+              if (heroInView) {
+                wakeHeroLoop();
+              } else if (rafId) {
+                cancelAnimationFrame(rafId);
+                rafId = 0;
+              }
+            });
+          }, { threshold: 0.02 });
+          heroVisObserver.observe(heroSec);
+        }
+
+        // Initial draw + Beat 2/3 stroke trace & auto-play handoff
+        drawSpecimenDOM();
+        syncPlayIcon();
+
+        if (!prefersReduced) {
+          var waveEl = document.getElementById('heroWavePath');
+          [waveEl, f0El].forEach(function (pathEl, idx) {
+            if (!pathEl || typeof pathEl.getTotalLength !== 'function') return;
+            var len = pathEl.getTotalLength();
+            pathEl.style.strokeDasharray = len + ' ' + len;
+            pathEl.style.strokeDashoffset = String(len);
+            pathEl.style.transition = 'stroke-dashoffset 0.78s cubic-bezier(0.16, 1, 0.3, 1) ' + (idx === 0 ? '0.18s' : '0.3s');
+            requestAnimationFrame(function () {
+              requestAnimationFrame(function () {
+                pathEl.style.strokeDashoffset = '0';
+              });
+            });
+          });
+          setTimeout(function () {
+            if (completedLoops === 0 && !playing && !isScrubbing) {
+              playing = true;
+              syncPlayIcon();
+              wakeHeroLoop();
+            }
+          }, 680);
+        }
+
+        // Mode switcher with short-stop caliper highlight pulse
         initSegmented('heroModeSeg', function (btn) {
           var isDual = btn.getAttribute('data-mode') === 'dual';
           targetMorph = isDual ? 1 : 0;
-          captionEl.textContent = isDual
-            ? '长静默折叠 · 短塞音自动舒展 · 三层与点标同步对齐'
-            : '1:1 线性模式 · 注意「tʰ」「t̚」极短塞音被挤窄、静默占宽';
+          if (isDual && !prefersReduced) caliperPulse = 1;
+          if (!hoveredRange && captionEl) {
+            captionEl.textContent = getModeDefaultCaption();
+          }
+          wakeHeroLoop();
         });
 
-        // Play / Pause toggle (manual restart resets 2-loop counter)
-        playBtn.addEventListener('click', function () {
+        function togglePlay() {
           if (!playing && completedLoops >= maxLoops) {
             completedLoops = 0;
             curTime = 0;
           }
+          seekTargetTime = null;
           playing = !playing;
           syncPlayIcon();
-        });
+          wakeHeroLoop();
+        }
 
-        // Acoustics toggle
+        playBtn.addEventListener('click', togglePlay);
+        heroTogglePlayFromKey = function () {
+          if (!heroInView) return false;
+          togglePlay();
+          return true;
+        };
+
+        // Acoustics toggle with F0 oscilloscope trace lock-in
         var acToggle = document.getElementById('heroAcousticsToggle');
         var acOverlay = document.getElementById('heroAcousticsOverlay');
         acToggle.addEventListener('click', function () {
           var next = acToggle.getAttribute('aria-pressed') !== 'true';
           acToggle.setAttribute('aria-pressed', next ? 'true' : 'false');
           acOverlay.style.opacity = next ? '1' : '0';
-        });
-
-        // Click specimen stage to seek playhead directly
-        var stageEl = document.getElementById('heroSpecimenStage');
-        var svgNode = document.getElementById('heroSvg');
-        stageEl.addEventListener('click', function (e) {
-          var rect = svgNode.getBoundingClientRect();
-          var relX = ((e.clientX - rect.left) / rect.width) * 580;
-          var frac = Math.min(1, Math.max(0, (relX - X0) / W));
-          curTime = frac * TOTAL_T;
-          if (!playing && completedLoops >= maxLoops) {
-            completedLoops = 0;
-            playing = true;
-            syncPlayIcon();
+          if (next && !prefersReduced && f0El && typeof f0El.getTotalLength === 'function') {
+            var len = f0El.getTotalLength();
+            f0El.style.transition = 'none';
+            f0El.style.strokeDasharray = len + ' ' + len;
+            f0El.style.strokeDashoffset = String(len);
+            void f0El.getBoundingClientRect();
+            f0El.style.transition = 'stroke-dashoffset 0.52s cubic-bezier(0.16, 1, 0.3, 1)';
+            f0El.style.strokeDashoffset = '0';
           }
         });
+
+        // Direct Pointer Scrubbing + Magnetic Click Seek on Specimen Stage
+        var stageEl = document.getElementById('heroSpecimenStage');
+        var svgNode = document.getElementById('heroSvg');
+        var scrubStartX = 0;
+        var movedDuringScrub = false;
+
+        function clientXToTime(clientX, clientY) {
+          var rect = svgNode.getBoundingClientRect();
+          var relX = ((clientX - rect.left) / Math.max(1, rect.width)) * 580;
+          var relY = ((clientY - rect.top) / Math.max(1, rect.height)) * 344;
+          var clampedX = Math.min(X1, Math.max(X0, relX));
+          // If dragging in lower dual-scale tiers (y >= 200), inverse-map back to physical time!
+          if (relY >= 200 && morph > 0.05) {
+            for (var i = 0; i < segs.length; i++) {
+              var s = segs[i];
+              var sx0 = getLowerX(s.t0 / TOTAL_T, s.dual0);
+              var sx1 = getLowerX(s.t1 / TOTAL_T, s.dual1);
+              if (clampedX >= sx0 && (clampedX <= sx1 || i === segs.length - 1)) {
+                var local = sx1 > sx0 ? (clampedX - sx0) / (sx1 - sx0) : 0;
+                return s.t0 + local * (s.t1 - s.t0);
+              }
+            }
+          }
+          return ((clampedX - X0) / W) * TOTAL_T;
+        }
+
+        stageEl.addEventListener('pointerdown', function (e) {
+          if (e.button !== undefined && e.button !== 0) return;
+          isScrubbing = true;
+          movedDuringScrub = false;
+          scrubStartX = e.clientX;
+          wasPlayingBeforeScrub = playing;
+          if (!playing && completedLoops >= maxLoops) {
+            completedLoops = 0;
+          }
+          stageEl.classList.add('is-scrubbing');
+          if (stageEl.setPointerCapture) {
+            try { stageEl.setPointerCapture(e.pointerId); } catch (err) {}
+          }
+          var nextT = clientXToTime(e.clientX, e.clientY);
+          seekTargetTime = nextT;
+          if (prefersReduced) curTime = nextT;
+          syncPlayIcon();
+          wakeHeroLoop();
+        });
+
+        stageEl.addEventListener('pointermove', function (e) {
+          if (!isScrubbing) return;
+          if (Math.abs(e.clientX - scrubStartX) > 3) {
+            movedDuringScrub = true;
+          }
+          if (movedDuringScrub) {
+            seekTargetTime = null;
+            curTime = clientXToTime(e.clientX, e.clientY);
+            syncPlayIcon();
+            drawSpecimenDOM();
+          }
+        });
+
+        function finishScrub(e) {
+          if (!isScrubbing) return;
+          isScrubbing = false;
+          stageEl.classList.remove('is-scrubbing');
+          if (stageEl.releasePointerCapture && e && e.pointerId !== undefined) {
+            try { stageEl.releasePointerCapture(e.pointerId); } catch (err) {}
+          }
+          if (!movedDuringScrub && e) {
+            // Smooth magnetic seek on single click
+            var targetT = clientXToTime(e.clientX, e.clientY);
+            if (prefersReduced) {
+              curTime = targetT;
+              seekTargetTime = null;
+            } else {
+              seekTargetTime = targetT;
+            }
+            if (wasPlayingBeforeScrub) playing = true;
+          } else if (wasPlayingBeforeScrub) {
+            playing = true;
+          }
+          syncPlayIcon();
+          wakeHeroLoop();
+        }
+
+        stageEl.addEventListener('pointerup', finishScrub);
+        stageEl.addEventListener('pointercancel', finishScrub);
       })();
 
       /* ============================================================
          4. CARD 01: DUAL-SCALE ±40ms MICRO-LOUPE & ZERO-CROSS DEMO
+            - Direct dragging on both upper fine-vernier & lower context SVG
+            - Real Z key hold linkage + keycap depression
+            - Smooth magnetic potential well (zero hard-snap stutter) + lock pulse
       ============================================================ */
+      var loupeHoldZHandler = null;
+
       (function initLoupeDemo() {
         var NS = 'http://www.w3.org/2000/svg';
+        var loupeSvg = document.getElementById('loupeSvg');
         var zoomWave = document.getElementById('loupeZoomWave');
         var zoomFill = document.getElementById('loupeZoomFill');
         var zoomZerosG = document.getElementById('loupeZoomZeros');
         var snapTarget = document.getElementById('loupeSnapTarget');
+        var snapPulse = document.getElementById('loupeSnapPulse');
         var snapBadge = document.getElementById('loupeSnapBadge');
         var bridgeFill = document.getElementById('loupeBridgeFill');
         var bridgeL = document.getElementById('loupeBridgeL');
@@ -3977,14 +4982,16 @@
         var range = document.getElementById('loupeRange');
         var readout = document.getElementById('loupeReadout');
         var snapToggle = document.getElementById('loupeSnapToggle');
-        if (!zoomWave || !range) return;
+        if (!zoomWave || !range || !loupeSvg) return;
 
         var X_MIN = 8;
         var X_MAX = 432;
-        var X_W = X_MAX - X_MIN; // 424
-        var T_START = 0.490;     // 300ms context window (0.490s .. 0.790s)
+        var X_W = X_MAX - X_MIN;
+        var SLIDER_MIN = Number(range.min) || 70;
+        var SLIDER_MAX = Number(range.max) || 370;
+        var T_START = 0.490;
         var T_SPAN = 0.300;
-        var HALF_WIN = 0.040;    // ±40ms magnified loupe
+        var HALF_WIN = 0.040;
 
         function svgEl(tag, attrs) {
           var el = document.createElementNS(NS, tag);
@@ -3994,7 +5001,6 @@
           return el;
         }
 
-        // Realistic phonetic transition: quiet stop closure -> burst at 0.62s -> periodic vowel voicing
         function sampleWave(t) {
           var dt = t - 0.615;
           var env = 0.09 + 0.88 / (1 + Math.exp(-dt * 42));
@@ -4006,7 +5012,6 @@
           return Math.max(-1, Math.min(1, env * tone + burst));
         }
 
-        // Precompute accurate zero-crossings across the 300ms window
         var zeroTimes = [];
         var stepT = 0.0005;
         var prevV = sampleWave(T_START);
@@ -4019,7 +5024,6 @@
           prevV = curV;
         }
 
-        // Draw static lower context spectrogram + overview waveform + ruler
         var specCols = 64;
         var cw = X_W / specCols;
         for (var c = 0; c < specCols; c++) {
@@ -4068,26 +5072,65 @@
           ctxRulerG.appendChild(rlbl);
         }
 
-        function updateLoupe(sliderVal) {
-          var snapOn = snapToggle.getAttribute('aria-pressed') === 'true';
-          var rawX = Number(sliderVal);
-          var tCenter = T_START + ((rawX - X_MIN) / X_W) * T_SPAN;
-          var snapped = false;
+        var rawSliderX = Number(range.value);
+        var zKeyHeld = false;
+        var displayT = T_START + ((rawSliderX - X_MIN) / X_W) * T_SPAN;
+        var targetT = displayT;
+        var isSnapped = false;
+        var lastSnappedZero = -1;
+        var loupeRaf = 0;
+        var lastLoupeTs = 0;
+
+        function triggerSnapPulse() {
+          if (!snapPulse || prefersReduced) return;
+          snapPulse.classList.remove('is-pulsing');
+          void snapPulse.getBoundingClientRect();
+          snapPulse.classList.add('is-pulsing');
+        }
+
+        function computeTargetFromRawX(rawX) {
+          var snapOn = (snapToggle.getAttribute('aria-pressed') === 'true') || zKeyHeld;
+          var freeT = T_START + ((rawX - X_MIN) / X_W) * T_SPAN;
+          var locked = false;
+          var lockedIdx = -1;
+          var resolvedT = freeT;
 
           if (snapOn) {
-            var nearestT = tCenter;
+            var nearestT = freeT;
             var bestDt = 999;
+            var bestIdx = -1;
             for (var i = 0; i < zeroTimes.length; i++) {
-              var d = Math.abs(zeroTimes[i] - tCenter);
-              if (d < bestDt) { bestDt = d; nearestT = zeroTimes[i]; }
+              var d = Math.abs(zeroTimes[i] - freeT);
+              if (d < bestDt) {
+                bestDt = d;
+                nearestT = zeroTimes[i];
+                bestIdx = i;
+              }
             }
-            if (bestDt <= 0.0065) {
-              tCenter = nearestT;
-              snapped = true;
+            // Magnetic potential well: smooth attraction inside 6.5ms, firm lock inside 4.8ms
+            if (bestDt <= 0.0048) {
+              resolvedT = nearestT;
+              locked = true;
+              lockedIdx = bestIdx;
+            } else if (bestDt <= 0.0072) {
+              var pull = 1 - (bestDt - 0.0048) / 0.0024;
+              resolvedT = freeT + (nearestT - freeT) * (pull * 0.72);
             }
           }
 
-          // Re-render magnified ±40ms waveform
+          if (locked && lockedIdx !== lastSnappedZero) {
+            lastSnappedZero = lockedIdx;
+            triggerSnapPulse();
+          } else if (!locked) {
+            lastSnappedZero = -1;
+          }
+
+          isSnapped = locked;
+          targetT = resolvedT;
+        }
+
+        function renderLoupeAt(tCenter) {
+          var snapOn = (snapToggle.getAttribute('aria-pressed') === 'true') || zKeyHeld;
           var t0 = tCenter - HALF_WIN;
           var t1 = tCenter + HALF_WIN;
           var zPts = [];
@@ -4101,24 +5144,22 @@
           zoomWave.setAttribute('d', waveD);
           zoomFill.setAttribute('d', waveD + ' L 432 51 L 8 51 Z');
 
-          // Render visible zero-crossing markers inside ±40ms window
           while (zoomZerosG.firstChild) zoomZerosG.removeChild(zoomZerosG.firstChild);
           for (var j = 0; j < zeroTimes.length; j++) {
             var zct = zeroTimes[j];
             if (zct >= t0 && zct <= t1) {
               var zcx = X_MIN + ((zct - t0) / (t1 - t0)) * X_W;
-              var isLockedDot = snapped && Math.abs(zct - tCenter) < 0.0002;
+              var isLockedDot = isSnapped && Math.abs(zct - targetT) < 0.00025;
               zoomZerosG.appendChild(svgEl('circle', {
                 cx: zcx.toFixed(1), cy: '51',
-                r: isLockedDot ? '3.2' : '2.3',
+                r: isLockedDot ? '3.4' : '2.3',
                 fill: isLockedDot ? '#1D4ED8' : '#FFFFFF',
                 stroke: isLockedDot ? '#1D4ED8' : '#B45309',
-                'stroke-width': '1.2'
+                'stroke-width': '1.25'
               }));
             }
           }
 
-          // Update context box & dual-scale trapezoid bridge
           var cx = X_MIN + ((tCenter - T_START) / T_SPAN) * X_W;
           var boxW = ((HALF_WIN * 2) / T_SPAN) * X_W;
           var boxL = Math.max(X_MIN, cx - boxW / 2);
@@ -4134,65 +5175,201 @@
           bridgeL.setAttribute('x2', boxL.toFixed(1));
           bridgeR.setAttribute('x2', boxR.toFixed(1));
 
-          snapTarget.setAttribute('opacity', snapped ? '1' : '0');
-          snapBadge.textContent = snapped ? '已锁过零点' : (snapOn ? '搜寻过零点' : '自由定位');
-          snapBadge.setAttribute('fill', snapped ? '#1D4ED8' : '#8F8C83');
+          snapTarget.setAttribute('opacity', isSnapped ? '1' : '0');
+          snapBadge.textContent = isSnapped
+            ? (zKeyHeld ? 'Z 键磁吸锁定' : '已锁过零点')
+            : (snapOn ? '搜寻过零点' : '自由微距定位');
+          snapBadge.setAttribute('fill', isSnapped ? '#1D4ED8' : '#8F8C83');
           readout.textContent = tCenter.toFixed(3) + ' s';
         }
 
-        range.addEventListener('input', function () { updateLoupe(range.value); });
+        function stepLoupe(now) {
+          var dt = Math.min(0.04, (now - lastLoupeTs) / 1000);
+          lastLoupeTs = now;
+          var diff = targetT - displayT;
+          if (Math.abs(diff) < 0.00004 || prefersReduced) {
+            displayT = targetT;
+            renderLoupeAt(displayT);
+            loupeRaf = 0;
+            return;
+          }
+          displayT += diff * Math.min(1, dt * 28);
+          renderLoupeAt(displayT);
+          loupeRaf = requestAnimationFrame(stepLoupe);
+        }
+
+        function setRawX(nextX, immediate) {
+          rawSliderX = Math.min(SLIDER_MAX, Math.max(SLIDER_MIN, nextX));
+          range.value = String(Math.round(rawSliderX));
+          computeTargetFromRawX(rawSliderX);
+          if (immediate || prefersReduced) {
+            if (loupeRaf) { cancelAnimationFrame(loupeRaf); loupeRaf = 0; }
+            displayT = targetT;
+            renderLoupeAt(displayT);
+          } else {
+            renderLoupeAt(displayT);
+            if (!loupeRaf) {
+              lastLoupeTs = performance.now();
+              loupeRaf = requestAnimationFrame(stepLoupe);
+            }
+          }
+        }
+
+        range.addEventListener('input', function () {
+          setRawX(Number(range.value), false);
+        });
+
         snapToggle.addEventListener('click', function () {
           var next = snapToggle.getAttribute('aria-pressed') !== 'true';
           snapToggle.setAttribute('aria-pressed', next ? 'true' : 'false');
-          updateLoupe(range.value);
+          setRawX(rawSliderX, false);
         });
-        updateLoupe(range.value);
+
+        // Direct Pointer Dragging on SVG (Upper = fine vernier gear, Lower = 1:1 context window)
+        var draggingSvg = false;
+        var dragMode = 'context';
+        var dragStartClientX = 0;
+        var dragStartRawX = 0;
+
+        loupeSvg.addEventListener('pointerdown', function (e) {
+          if (e.button !== undefined && e.button !== 0) return;
+          draggingSvg = true;
+          loupeSvg.classList.add('is-dragging');
+          if (loupeSvg.setPointerCapture) {
+            try { loupeSvg.setPointerCapture(e.pointerId); } catch (err) {}
+          }
+          var rect = loupeSvg.getBoundingClientRect();
+          var svgX = ((e.clientX - rect.left) / Math.max(1, rect.width)) * 440;
+          var svgY = ((e.clientY - rect.top) / Math.max(1, rect.height)) * 174;
+          dragStartClientX = e.clientX;
+          dragStartRawX = rawSliderX;
+
+          if (svgY < 84) {
+            dragMode = 'fine';
+          } else {
+            dragMode = 'context';
+            setRawX(svgX, false);
+            dragStartRawX = rawSliderX;
+          }
+        });
+
+        loupeSvg.addEventListener('pointermove', function (e) {
+          if (!draggingSvg) return;
+          var rect = loupeSvg.getBoundingClientRect();
+          var scale = 440 / Math.max(1, rect.width);
+          if (dragMode === 'fine') {
+            // Grabbing magnified waveform pulls waveform under reticle with 0.32x fine vernier precision
+            var deltaSvgX = (e.clientX - dragStartClientX) * scale;
+            setRawX(dragStartRawX - deltaSvgX * 0.32, false);
+          } else {
+            var svgX = ((e.clientX - rect.left) / Math.max(1, rect.width)) * 440;
+            setRawX(svgX, false);
+          }
+        });
+
+        function endLoupeDrag(e) {
+          if (!draggingSvg) return;
+          draggingSvg = false;
+          loupeSvg.classList.remove('is-dragging');
+          if (loupeSvg.releasePointerCapture && e && e.pointerId !== undefined) {
+            try { loupeSvg.releasePointerCapture(e.pointerId); } catch (err) {}
+          }
+        }
+
+        loupeSvg.addEventListener('pointerup', endLoupeDrag);
+        loupeSvg.addEventListener('pointercancel', endLoupeDrag);
+
+        // Real Z key hold linkage
+        loupeHoldZHandler = function (held) {
+          if (zKeyHeld === held) return;
+          zKeyHeld = held;
+          snapToggle.classList.toggle('is-hold-z', held);
+          if (held) triggerSnapPulse();
+          setRawX(rawSliderX, false);
+        };
+
+        setRawX(rawSliderX, true);
       })();
 
       /* ============================================================
          5. CARD 02: IPA KEYPAD & SCHEME SWITCHER DEMO
+            - Click key: ASCII code pill collapses into Unicode IPA glyph
+            - Switch scheme: staggered key-code flip without false glyph pop
       ============================================================ */
       (function initIpaDemo() {
         var scheme = 'praat';
         var bigChar = document.getElementById('ipaBigChar');
         var bigNote = document.getElementById('ipaBigNote');
+        var bufferPill = document.getElementById('ipaBufferPill');
         var keys = Array.prototype.slice.call(document.querySelectorAll('#ipaKeyGrid .ipa-key'));
         if (!bigChar || !keys.length) return;
 
-        function renderSelected(btn) {
+        var popTimer = 0;
+
+        function selectGlyph(btn, animateGlyph) {
           keys.forEach(function (k) { k.classList.toggle('is-selected', k === btn); });
           var sym = btn.getAttribute('data-sym');
           var code = btn.getAttribute('data-' + scheme);
           var note = btn.getAttribute('data-note');
+
+          bigNote.textContent = note + ' · ' + code;
+
+          if (!animateGlyph || prefersReduced) {
+            bigChar.textContent = sym;
+            return;
+          }
+
+          if (bufferPill) {
+            bufferPill.textContent = code;
+            bufferPill.classList.remove('is-collapsing');
+            void bufferPill.offsetWidth;
+            bufferPill.classList.add('is-collapsing');
+          }
+
+          clearTimeout(popTimer);
           bigChar.textContent = sym;
           bigChar.classList.remove('is-pop');
           void bigChar.offsetWidth;
           bigChar.classList.add('is-pop');
-          setTimeout(function () { bigChar.classList.remove('is-pop'); }, 260);
-          bigNote.textContent = note + ' · ' + code;
+          popTimer = setTimeout(function () {
+            bigChar.classList.remove('is-pop');
+          }, 240);
         }
 
-        function refreshKeyCodes() {
-          keys.forEach(function (k) {
+        function flipSchemeCodes() {
+          keys.forEach(function (k, idx) {
             var codeEl = k.querySelector('.ipa-key-code');
-            if (codeEl) codeEl.textContent = k.getAttribute('data-' + scheme);
+            if (!codeEl) return;
+            var nextCode = k.getAttribute('data-' + scheme);
+            if (prefersReduced) {
+              codeEl.textContent = nextCode;
+              return;
+            }
+            codeEl.classList.remove('is-flip');
+            codeEl.style.animationDelay = (idx * 28) + 'ms';
+            codeEl.textContent = nextCode;
+            void codeEl.offsetWidth;
+            codeEl.classList.add('is-flip');
           });
           var cur = document.querySelector('#ipaKeyGrid .ipa-key.is-selected') || keys[0];
-          renderSelected(cur);
+          selectGlyph(cur, false);
         }
 
         keys.forEach(function (k) {
-          k.addEventListener('click', function () { renderSelected(k); });
+          k.addEventListener('click', function () { selectGlyph(k, true); });
         });
 
         initSegmented('ipaModeSeg', function (btn) {
           scheme = btn.getAttribute('data-scheme') || 'praat';
-          refreshKeyCodes();
+          flipSchemeCodes();
         });
       })();
 
       /* ============================================================
          6. CARD 03: EXPORT & VOICEPRINT POSTER PRESET DEMO
+            - 5 bespoke preset animations: F0 trace, laser print wipe,
+              isometric layer split, spinning vinyl + tonearm drop, fan unfurl
+            - Synchronized staggered metadata transition
       ============================================================ */
       (function initExportDemo() {
         var artBox = document.getElementById('exportArtBox');
@@ -4222,7 +5399,7 @@
               '<path d="M34 56 C44 40,58 38,66 56 Z M76 58 C84 32,102 28,116 44 C122 50,124 58,116 60 Z M130 56 C138 38,150 40,158 56 Z" fill="#E6E3DB"/>' +
               '<path d="M40 54 C46 44,56 44,62 54 Z M82 54 C90 38,104 36,112 49 Z M135 53 C140 43,148 44,153 53 Z" fill="#C4BFB3"/>' +
               '<path d="M45 52 C49 47,54 47,57 52 Z M89 50 C94 42,102 42,106 49 Z" fill="#8C877C"/>' +
-              '<path d="M36 45 C46 42,56 40,64 44 M80 41 C92 34,104 36,116 43 M132 48 C142 42,150 37,158 35" fill="none" stroke="#1D4ED8" stroke-width="1.35"/>' +
+              '<path class="exp-journal-f0" d="M36 45 C46 42,56 40,64 44 M80 41 C92 34,104 36,116 43 M132 48 C142 42,150 37,158 35" fill="none" stroke="#1D4ED8" stroke-width="1.35"/>' +
               '<path d="M36 53 C48 51,58 52,64 54 M80 51 C94 48,106 50,116 53 M132 54 C144 52,152 51,158 52" fill="none" stroke="#B91C1C" stroke-width="0.9" stroke-dasharray="2 1.8"/>' +
               '<path d="M36 33 C48 30,58 32,64 35 M80 28 C94 25,106 27,116 32 M132 34 C144 30,152 29,158 30" fill="none" stroke="#B45309" stroke-width="0.85" stroke-dasharray="2 1.8"/>' +
               '<line x1="26" y1="64" x2="164" y2="64" stroke="#D3CFC5" stroke-width="0.7"/>' +
@@ -4254,6 +5431,7 @@
             tags: ['黑白期刊', '高对比刻度', '零彩印衰减'],
             svg: '<svg viewBox="0 0 180 132" xmlns="http://www.w3.org/2000/svg">' +
               '<rect x="0" y="0" width="180" height="132" fill="#F2F2F2"/>' +
+              '<g class="exp-mono-sheet">' +
               '<rect x="10" y="8" width="160" height="116" fill="#FFFFFF" stroke="#111111" stroke-width="1"/>' +
               '<line x1="24" y1="19" x2="164" y2="19" stroke="#111111" stroke-width="0.7"/>' +
               '<path d="M24 15V19 M59 16.5V19 M94 15V19 M129 16.5V19 M164 15V19" stroke="#111111" stroke-width="0.7"/>' +
@@ -4278,7 +5456,8 @@
               '<line x1="58" y1="90" x2="58" y2="103" stroke="#111111" stroke-width="0.7"/>' +
               '<line x1="88" y1="90" x2="88" y2="103" stroke="#111111" stroke-width="0.7"/>' +
               '<line x1="128" y1="90" x2="128" y2="103" stroke="#111111" stroke-width="0.7"/>' +
-              '<text x="94" y="116.5" text-anchor="middle" font-family="Georgia, serif" font-style="italic" font-size="5.6" fill="#222222">Fig. 1. Dual-scale acoustic profile (grayscale print)</text></svg>'
+              '<text x="94" y="116.5" text-anchor="middle" font-family="Georgia, serif" font-style="italic" font-size="5.6" fill="#222222">Fig. 1. Dual-scale acoustic profile (grayscale print)</text>' +
+              '</g></svg>'
           },
           vinyl: {
             bg: '#161618',
@@ -4290,20 +5469,24 @@
               '<rect x="8" y="7" width="164" height="118" fill="#1F1F23" stroke="#3F3F46" stroke-width="0.8"/>' +
               '<text x="16" y="19" font-family="JetBrains Mono, monospace" font-size="6" font-weight="700" letter-spacing="1" fill="#FAF9F6">T·GRID PRESSING</text>' +
               '<text x="16" y="26" font-family="JetBrains Mono, monospace" font-size="4.8" fill="#A1A1AA">SIDE A · 00:01.80 · 44.1 kHz</text>' +
+              '<g class="exp-vinyl-disc">' +
               '<circle cx="86" cy="70" r="44" fill="#111113" stroke="#52525B" stroke-width="0.9"/>' +
               '<circle cx="86" cy="70" r="39" fill="none" stroke="#3F3F46" stroke-width="0.8"/>' +
               '<circle cx="86" cy="70" r="34" fill="none" stroke="#A1A1AA" stroke-width="2.1" stroke-dasharray="22 4 12 3 34 6" opacity="0.78"/>' +
               '<circle cx="86" cy="70" r="28" fill="none" stroke="#E4E4E7" stroke-width="1.6" stroke-dasharray="14 3 8 4 20 5" opacity="0.88"/>' +
               '<circle cx="86" cy="70" r="22" fill="none" stroke="#71717A" stroke-width="2.4" stroke-dasharray="10 3 18 4"/>' +
               '<circle cx="86" cy="70" r="17" fill="none" stroke="#FAF9F6" stroke-width="1" opacity="0.45"/>' +
-              '<path d="M52 46 A42 42 0 0 1 78 29" fill="none" stroke="#FFFFFF" stroke-width="1.2" opacity="0.18"/>' +
               '<circle cx="86" cy="70" r="13" fill="#D64028"/>' +
-              '<circle cx="86" cy="70" r="9.5" fill="none" stroke="#FAF9F6" stroke-width="0.5" opacity="0.55"/>' +
+              '<circle cx="86" cy="70" r="9.5" fill="none" stroke="#FAF9F6" stroke-width="0.5" stroke-dasharray="8 4" opacity="0.65"/>' +
               '<circle cx="86" cy="70" r="2.6" fill="#FAF9F6"/>' +
+              '</g>' +
+              '<path d="M52 46 A42 42 0 0 1 78 29" fill="none" stroke="#FFFFFF" stroke-width="1.2" opacity="0.2" pointer-events="none"/>' +
+              '<g class="exp-vinyl-arm">' +
               '<circle cx="144" cy="24" r="6" fill="#27272A" stroke="#71717A" stroke-width="1"/>' +
               '<circle cx="144" cy="24" r="2.2" fill="#E4E4E7"/>' +
               '<path d="M144 24 L132 62 L117 77" fill="none" stroke="#E4E4E7" stroke-width="1.7"/>' +
               '<rect x="112" y="75" width="7" height="4" transform="rotate(-42 115 77)" fill="#FAF9F6"/>' +
+              '</g>' +
               '<text x="16" y="118" font-family="Charis SIL, serif" font-size="6" fill="#D4D4D8">[wɔ²¹ ʂwɔ⁵⁵ tʰɛkst̚ ɡɹɪd]</text></svg>'
           },
           bundle: {
@@ -4313,19 +5496,16 @@
             tags: ['SVG 文字与刻度层', '高分 PNG 语谱底图', '分层精修'],
             svg: '<svg viewBox="0 0 180 132" xmlns="http://www.w3.org/2000/svg">' +
               '<rect x="0" y="0" width="180" height="132" fill="#F4F1EA"/>' +
-              /* Lower Layer: High-DPI Spectrogram Raster Card */
-              '<g transform="translate(26, 46)">' +
+              '<g class="exp-bundle-lower" transform="translate(26, 46)">' +
                 '<rect x="0" y="0" width="136" height="72" fill="#FFFFFF" stroke="#8F8C83" stroke-width="0.9"/>' +
                 '<rect x="10" y="10" width="116" height="44" fill="#ECE9E1"/>' +
                 '<path d="M16 48 C28 28,44 26,54 48 Z M64 50 C74 22,94 20,108 42 L104 50 Z" fill="#B6B1A4"/>' +
                 '<path d="M24 46 C32 34,42 34,48 46 Z M72 46 C80 30,94 30,100 44 Z" fill="#6A675F"/>' +
                 '<text x="10" y="65" font-family="JetBrains Mono, monospace" font-size="5.5" fill="#6A675F">LAYER 01 · spectrogram.png (600 DPI)</text>' +
               '</g>' +
-              /* Vertical Layer Alignment Guides */
-              '<path d="M26 46 L16 14 M162 46 L152 14 M26 118 L16 86" stroke="#1D4ED8" stroke-width="0.7" stroke-dasharray="2.5 2" opacity="0.55"/>' +
-              /* Upper Layer: Pure Vector Axes, Contours & Text SVG */
-              '<g transform="translate(16, 14)">' +
-                '<rect x="0" y="0" width="136" height="72" fill="rgba(255,255,255,0.88)" stroke="#1D4ED8" stroke-width="1.1"/>' +
+              '<path class="exp-bundle-guides" d="M26 46 L16 14 M162 46 L152 14 M26 118 L16 86" stroke="#1D4ED8" stroke-width="0.7" stroke-dasharray="2.5 2" opacity="0.55"/>' +
+              '<g class="exp-bundle-upper" transform="translate(16, 14)">' +
+                '<rect x="0" y="0" width="136" height="72" fill="rgba(255,255,255,0.9)" stroke="#1D4ED8" stroke-width="1.1"/>' +
                 '<line x1="10" y1="12" x2="126" y2="12" stroke="#141413" stroke-width="0.7"/>' +
                 '<path d="M10 9V12 M48 10V12 M88 9V12 M126 10V12" stroke="#141413" stroke-width="0.7"/>' +
                 '<path d="M16 32 C34 24,50 26,64 31 M74 26 C92 19,108 24,120 30" fill="none" stroke="#1D4ED8" stroke-width="1.3"/>' +
@@ -4348,8 +5528,11 @@
               '<rect x="0" y="0" width="180" height="132" fill="#F3EDE0"/>' +
               '<rect x="10" y="7" width="160" height="118" fill="#F9F5EB" stroke="#B6A88F" stroke-width="0.9"/>' +
               '<text x="20" y="24" font-family="Noto Sans SC, serif" font-size="8" font-weight="700" fill="#1F2421">声 纹 折 扇</text>' +
+              '<g class="exp-fan-seal">' +
               '<rect x="20" y="30" width="9" height="13" fill="#B63B2A"/>' +
               '<text x="24.5" y="39" text-anchor="middle" font-family="serif" font-size="6" fill="#F9F5EB">音</text>' +
+              '</g>' +
+              '<g class="exp-fan-leaf">' +
               '<path d="M36 68 A68 68 0 0 1 154 88 L128 96 A40 40 0 0 0 60 85 Z" fill="#2D666B" opacity="0.14"/>' +
               '<path d="M38 70 A66 66 0 0 1 152 88" fill="none" stroke="#2D666B" stroke-width="4.5" stroke-dasharray="14 2 8 2 18 3" opacity="0.88"/>' +
               '<path d="M47 76 A54 54 0 0 1 142 91" fill="none" stroke="#1F4E52" stroke-width="2.6" stroke-dasharray="9 3 16 2" opacity="0.72"/>' +
@@ -4362,12 +5545,24 @@
                 '<line x1="88" y1="114" x2="136" y2="62"/>' +
                 '<line x1="88" y1="114" x2="154" y2="88"/>' +
               '</g>' +
+              '</g>' +
               '<circle cx="88" cy="114" r="3.2" fill="#7B6242"/>' +
               '<circle cx="88" cy="114" r="1.1" fill="#F9F5EB"/>' +
               '<circle cx="114" cy="36" r="2.2" fill="#B63B2A"/>' +
               '<text x="160" y="117" text-anchor="end" font-family="Charis SIL, serif" font-size="5.5" fill="#6A675F">tʰɛkst ɡɹɪd</text></svg>'
           }
         };
+
+        function replayMetaStagger() {
+          if (prefersReduced) return;
+          [titleEl, textEl, tagsEl].forEach(function (el, idx) {
+            if (!el) return;
+            el.classList.remove('export-meta-anim');
+            el.style.animationDelay = (idx * 38) + 'ms';
+            void el.offsetWidth;
+            el.classList.add('export-meta-anim');
+          });
+        }
 
         initSegmented('exportModeSeg', function (btn) {
           var key = btn.getAttribute('data-preset');
@@ -4378,60 +5573,175 @@
           titleEl.textContent = p.title;
           textEl.textContent = p.text;
           tagsEl.innerHTML = p.tags.map(function (t) { return '<span class="mono-tag">' + t + '</span>'; }).join('');
+          replayMetaStagger();
         });
       })();
 
       /* ============================================================
-         7. CARD 04: QA DIAGNOSTICS ONE-CLICK FIX DEMO
+         7. CARD 04: QA DIAGNOSTICS (LINTER SCAN + SINGLE-ROW CLICK + DEBOUNCE)
       ============================================================ */
       (function initQaDemo() {
         var btn = document.getElementById('qaFixBtn');
         var statusEl = document.getElementById('qaStatusText');
+        var qaList = document.getElementById('qaList');
         var rows = Array.prototype.slice.call(document.querySelectorAll('#qaList .qa-row'));
-        if (!btn || !rows.length) return;
+        if (!btn || !rows.length || !qaList) return;
 
-        var fixed = false;
-        btn.addEventListener('click', function () {
-          fixed = !fixed;
-          rows.forEach(function (row, idx) {
-            var badge = row.querySelector('.qa-badge');
-            setTimeout(function () {
-              row.classList.toggle('is-fixed', fixed);
-              if (badge) {
-                badge.textContent = fixed ? badge.getAttribute('data-fixed') : badge.getAttribute('data-orig');
-              }
-            }, idx * 90);
+        var rowStates = rows.map(function () { return false; });
+        var batchBusy = false;
+
+        function applyRowState(idx, isFixed, withSnap) {
+          rowStates[idx] = isFixed;
+          var row = rows[idx];
+          var badge = row.querySelector('.qa-badge');
+          var timeEl = row.querySelector('.qa-time');
+          row.classList.toggle('is-fixed', isFixed);
+          if (badge) {
+            badge.textContent = isFixed ? badge.getAttribute('data-fixed') : badge.getAttribute('data-orig');
+          }
+          if (timeEl) {
+            var nextTime = isFixed ? timeEl.getAttribute('data-fixed-time') : timeEl.getAttribute('data-orig-time');
+            if (nextTime) timeEl.textContent = nextTime;
+          }
+          if (withSnap && !prefersReduced) {
+            row.classList.add('is-snapping');
+            setTimeout(function () { row.classList.remove('is-snapping'); }, 180);
+          }
+          syncQaSummary();
+        }
+
+        function syncQaSummary() {
+          var remaining = 0;
+          for (var i = 0; i < rowStates.length; i++) {
+            if (!rowStates[i]) remaining++;
+          }
+          if (remaining === 0) {
+            statusEl.textContent = '全部 3 处隐患已整理完成';
+            btn.textContent = '重置演示';
+          } else if (remaining === rows.length) {
+            statusEl.textContent = '检测到 3 处常见边界隐患';
+            btn.textContent = '一键整理演示';
+          } else {
+            statusEl.textContent = '剩余 ' + remaining + ' 处边界隐患待整理（可单条点选）';
+            btn.textContent = '一键整理剩余项';
+          }
+        }
+
+        rows.forEach(function (row, idx) {
+          row.addEventListener('click', function () {
+            if (batchBusy) return;
+            applyRowState(idx, !rowStates[idx], true);
           });
-          statusEl.textContent = fixed ? '全部 3 处隐患已整理完成' : '检测到 3 处常见边界隐患';
-          btn.textContent = fixed ? '重置演示' : '一键整理演示';
+          row.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              if (!batchBusy) applyRowState(idx, !rowStates[idx], true);
+            }
+          });
+        });
+
+        btn.addEventListener('click', function () {
+          if (batchBusy) return;
+          var anyUnfixed = rowStates.some(function (s) { return !s; });
+          var targetFixed = anyUnfixed;
+
+          if (!targetFixed) {
+            // Instant crisp reset
+            rows.forEach(function (_, idx) { applyRowState(idx, false, false); });
+            return;
+          }
+
+          batchBusy = true;
+          qaList.classList.remove('is-scanning');
+          void qaList.offsetWidth;
+          if (!prefersReduced) qaList.classList.add('is-scanning');
+
+          rows.forEach(function (_, idx) {
+            setTimeout(function () {
+              applyRowState(idx, true, true);
+              if (idx === rows.length - 1) {
+                batchBusy = false;
+              }
+            }, prefersReduced ? 0 : idx * 95);
+          });
         });
       })();
 
       /* ============================================================
-         8. SHORTCUTS TABS & WINDOWS / MACOS KEYCAP SWITCHER
+         8. SHORTCUTS TABS (HEIGHT LOCK + DIRECTIONAL SLIDE) & OS KEYCAPS
       ============================================================ */
       (function initShortcuts() {
-        var panels = document.querySelectorAll('.shortcut-panel');
-        initSegmented('scTabs', function (btn) {
-          var target = btn.getAttribute('data-tab');
+        var stage = document.getElementById('shortcutStage');
+        var panels = Array.prototype.slice.call(document.querySelectorAll('.shortcut-panel'));
+
+        function syncStageMinHeight() {
+          if (!stage || !panels.length) return;
+          if (window.innerWidth <= 720) {
+            stage.style.minHeight = '';
+            return;
+          }
+          var maxH = 0;
           panels.forEach(function (p) {
-            p.classList.toggle('is-active', p.getAttribute('data-panel') === target);
+            var wasActive = p.classList.contains('is-active');
+            if (!wasActive) {
+              p.style.display = 'grid';
+              p.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
+              p.style.visibility = 'hidden';
+              p.style.position = 'absolute';
+              p.style.width = '100%';
+            }
+            maxH = Math.max(maxH, p.offsetHeight);
+            if (!wasActive) {
+              p.style.display = '';
+              p.style.gridTemplateColumns = '';
+              p.style.visibility = '';
+              p.style.position = '';
+              p.style.width = '';
+            }
+          });
+          if (maxH > 0) {
+            stage.style.minHeight = maxH + 'px';
+          }
+        }
+
+        initSegmented('scTabs', function (btn, nextIdx, prevIdx) {
+          var target = btn.getAttribute('data-tab');
+          var fromLeft = nextIdx < prevIdx;
+          panels.forEach(function (p) {
+            var match = p.getAttribute('data-panel') === target;
+            p.classList.toggle('slide-from-left', match && fromLeft);
+            p.classList.toggle('is-active', match);
           });
         });
 
-        var modKeys = document.querySelectorAll('.mod-key');
-        function setOsLabels(os) {
-          modKeys.forEach(function (k) {
+        var modKeys = Array.prototype.slice.call(document.querySelectorAll('.mod-key'));
+        function setOsLabels(os, withFlash) {
+          modKeys.forEach(function (k, idx) {
             if (!k.dataset.win) k.dataset.win = k.textContent;
             k.textContent = os === 'mac' ? k.dataset.win.replace(/^Ctrl/, '⌘') : k.dataset.win;
+            if (withFlash && !prefersReduced) {
+              k.classList.remove('is-os-flash');
+              k.style.animationDelay = ((idx % 6) * 22) + 'ms';
+              void k.offsetWidth;
+              k.classList.add('is-os-flash');
+            }
           });
         }
+
+        var osBooted = false;
         var osSeg = initSegmented('osKeySeg', function (btn) {
-          setOsLabels(btn.getAttribute('data-os'));
+          setOsLabels(btn.getAttribute('data-os'), osBooted);
         });
         if (/Mac|iPod|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '')) {
           var macBtn = document.querySelector('#osKeySeg [data-os="mac"]');
-          if (osSeg && macBtn) osSeg.activate(macBtn, true);
+          if (osSeg && macBtn) osSeg.activate(macBtn, true, true);
+        }
+        osBooted = true;
+
+        syncStageMinHeight();
+        window.addEventListener('resize', syncStageMinHeight, { passive: true });
+        if (document.fonts && document.fonts.ready) {
+          document.fonts.ready.then(syncStageMinHeight);
         }
       })();
 
@@ -4445,6 +5755,44 @@
           item.classList.toggle('is-open', willOpen);
           trigger.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
         });
+      });
+
+      /* ============================================================
+         10. GLOBAL KEYBOARD LINKAGE (Z MAGNETIC HOLD / SPACE PLAY / KEYCAPS)
+      ============================================================ */
+      window.addEventListener('keydown', function (e) {
+        if (isTypingContext(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+        if (e.code === 'KeyZ') {
+          setKeycapPressed('z', true);
+          if (loupeHoldZHandler) loupeHoldZHandler(true);
+        } else if (e.code === 'Space') {
+          var activeTag = e.target && e.target.tagName ? e.target.tagName.toLowerCase() : '';
+          if (activeTag !== 'button' && activeTag !== 'a') {
+            if (heroTogglePlayFromKey && heroTogglePlayFromKey()) {
+              e.preventDefault();
+              setKeycapPressed('space', true);
+            }
+          }
+        } else if (e.key === '?' || e.code === 'F1') {
+          setKeycapPressed(e.code === 'F1' ? 'f1' : '?', true);
+        }
+      });
+
+      window.addEventListener('keyup', function (e) {
+        if (e.code === 'KeyZ') {
+          setKeycapPressed('z', false);
+          if (loupeHoldZHandler) loupeHoldZHandler(false);
+        } else if (e.code === 'Space') {
+          setKeycapPressed('space', false);
+        } else if (e.key === '?' || e.code === 'F1') {
+          setKeycapPressed(e.code === 'F1' ? 'f1' : '?', false);
+        }
+      });
+
+      window.addEventListener('blur', function () {
+        setKeycapPressed('z', false);
+        setKeycapPressed('space', false);
+        if (loupeHoldZHandler) loupeHoldZHandler(false);
       });
     })();
   </script>
