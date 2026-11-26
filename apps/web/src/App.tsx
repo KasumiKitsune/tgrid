@@ -33,6 +33,8 @@ import { ScoreStage, type ScoreStageHandle } from './components/ScoreStage';
 import { RightSidebar, type RightSidebarHandle } from './components/sidebar/RightSidebar';
 import { IpaDock } from './components/IpaDock';
 import { ExportModal } from './components/ExportModal';
+import { PosterModal } from './components/PosterModal';
+import { prunePolarSpecCacheForSession } from './render/poster/polarSpectrogram';
 import { AboutModal } from './components/AboutModal';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { FindReplaceBar } from './components/FindReplaceBar';
@@ -91,6 +93,7 @@ export function App() {
   const setRateStore = useEditorStore((s) => s.setRate);
   const setVolumeStore = useEditorStore((s) => s.setVolume);
   const setExportOpen = useEditorStore((s) => s.setExportOpen);
+  const setPosterOpen = useEditorStore((s) => s.setPosterOpen);
   const setAboutOpen = useEditorStore((s) => s.setAboutOpen);
   const showToast = useEditorStore((s) => s.showToast);
 
@@ -199,6 +202,7 @@ export function App() {
 
       if (prevSessionId !== null) {
         stageRef.current?.pruneSpecCacheForSession(prevSessionId);
+        prunePolarSpecCacheForSession(prevSessionId);
         try {
           await getPlatformBridge().removeAudioSession(prevSessionId);
         } catch {
@@ -232,6 +236,7 @@ export function App() {
       const prevSessionId = prevTab?.analysis?.sessionId ?? null;
       if (prevSessionId !== null) {
         stageRef.current?.pruneSpecCacheForSession(prevSessionId);
+        prunePolarSpecCacheForSession(prevSessionId);
         void bridge.removeAudioSession(prevSessionId).catch(() => {});
       }
 
@@ -278,6 +283,7 @@ export function App() {
       deleteTabAudioBuffer(tabId);
       if (removedSessionId !== null) {
         stageRef.current?.pruneSpecCacheForSession(removedSessionId);
+        prunePolarSpecCacheForSession(removedSessionId);
         void getPlatformBridge()
           .removeAudioSession(removedSessionId)
           .catch(() => {});
@@ -1104,6 +1110,10 @@ export function App() {
         setExportOpen(true);
         return;
       }
+      if (kind === 'poster') {
+        setPosterOpen(true);
+        return;
+      }
       if (kind === 'svg' || kind === 'png') {
         await quickExportImage(kind);
         return;
@@ -1243,6 +1253,7 @@ export function App() {
       quickExportImage,
       saveTabAsTextGrid,
       setExportOpen,
+      setPosterOpen,
       showToast
     ]
   );
@@ -1276,6 +1287,12 @@ export function App() {
           setExportOpen(false);
           return;
         }
+        if (st.posterOpen) {
+          e.preventDefault();
+          e.stopPropagation();
+          setPosterOpen(false);
+          return;
+        }
         if (st.shortcutsOpen) {
           e.preventDefault();
           e.stopPropagation();
@@ -1298,6 +1315,7 @@ export function App() {
       const anyModalOpen = Boolean(
         unsavedDialogRef.current ||
           stNow.exportOpen ||
+          stNow.posterOpen ||
           stNow.aboutOpen ||
           stNow.shortcutsOpen ||
           document.querySelector('.modal-backdrop.open')
@@ -1366,7 +1384,7 @@ export function App() {
       if (matchGlobalShortcut('shortcuts-modal')) {
         e.preventDefault();
         e.stopPropagation();
-        if (!unsavedDialogRef.current && !stNow.exportOpen && !stNow.aboutOpen) {
+        if (!unsavedDialogRef.current && !stNow.exportOpen && !stNow.posterOpen && !stNow.aboutOpen) {
           stNow.setShortcutsOpen(!stNow.shortcutsOpen);
         }
         return;
@@ -1517,6 +1535,7 @@ export function App() {
     handleOpenAudioPicker,
     handleExportAction,
     setExportOpen,
+    setPosterOpen,
     setAboutOpen
   ]);
 
@@ -1625,6 +1644,8 @@ export function App() {
       <StatusBar />
 
       <ExportModal audioBuffer={audioBuffer} />
+
+      <PosterModal audioBuffer={audioBuffer} />
 
       <AboutModal />
 

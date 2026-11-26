@@ -11,6 +11,7 @@ export type ExportActionKind =
   | 'svg'
   | 'png'
   | 'dialog'
+  | 'poster'
   | 'long'
   | 'short'
   | 'binary'
@@ -604,6 +605,13 @@ export const Topbar: React.FC<TopbarProps> = ({
                   <span>自定义导出图像…</span>
                 </span>
                 {exportFigureHint && <span className="shortcut">{exportFigureHint}</span>}
+              </button>
+              <div className="menu-divider" />
+              <button type="button" onClick={() => { setOpenMenu(null); onExportAction('poster'); }}>
+                <span className="btn-lead">
+                  <UiIcon name="exportSvg" size={13} />
+                  <span>导出声纹海报…</span>
+                </span>
               </button>
               <div className="menu-divider" />
               <button type="button" onClick={() => { setOpenMenu(null); onExportAction('long'); }}>

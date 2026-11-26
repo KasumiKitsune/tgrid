@@ -520,6 +520,7 @@ export interface EditorState {
   // Modals & Layout ref
   exportOpen: boolean;
   exportPresetRange: ExportRangePreset | null;
+  posterOpen: boolean;
   aboutOpen: boolean;
   findBarOpen: boolean;
   findBarReplaceMode: boolean;
@@ -623,6 +624,7 @@ export interface EditorState {
   setExportOpen: (open: boolean) => void;
   openExportModal: (presetRange?: ExportRangePreset | null) => void;
   clearExportPresetRange: () => void;
+  setPosterOpen: (open: boolean) => void;
   setAboutOpen: (open: boolean) => void;
   openFindBar: (replaceMode?: boolean) => void;
   closeFindBar: () => void;
@@ -954,6 +956,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   exportOpen: false,
   exportPresetRange: null,
+  posterOpen: false,
   aboutOpen: false,
   findBarOpen: false,
   findBarReplaceMode: false,
@@ -1597,6 +1600,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setExportOpen: (exportOpen) => set({ exportOpen, ...(exportOpen ? {} : { exportPresetRange: null }) }),
   openExportModal: (presetRange = null) => set({ exportOpen: true, exportPresetRange: presetRange }),
   clearExportPresetRange: () => set({ exportPresetRange: null }),
+  setPosterOpen: (posterOpen) => set({ posterOpen }),
   setAboutOpen: (aboutOpen) => set({ aboutOpen }),
   openFindBar: (replaceMode = false) =>
     set({ findBarOpen: true, findBarReplaceMode: Boolean(replaceMode) }),

@@ -126,7 +126,7 @@ export const AboutModal: React.FC = () => {
   const setAboutOpen = useEditorStore((s) => s.setAboutOpen);
   const showToast = useEditorStore((s) => s.showToast);
 
-  const [appVersion, setAppVersion] = useState('0.1.0');
+  const [appVersion, setAppVersion] = useState('0.1.1');
   const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' });
   const backdropPointerDownRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);

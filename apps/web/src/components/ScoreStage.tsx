@@ -471,6 +471,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const floatingBarConfig = useEditorStore((s) => s.floatingBarConfig);
     const customShortcuts = useEditorStore((s) => s.customShortcuts);
     const exportOpen = useEditorStore((s) => s.exportOpen);
+    const posterOpen = useEditorStore((s) => s.posterOpen);
     const aboutOpen = useEditorStore((s) => s.aboutOpen);
     const shortcutsOpen = useEditorStore((s) => s.shortcutsOpen);
     const ipaDockOpen = useEditorStore((s) => s.ipaDockOpen);
@@ -689,10 +690,10 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
     // Exit Space-pan cleanly if any modal opens
     useEffect(() => {
-      if (exportOpen || aboutOpen || shortcutsOpen) {
+      if (exportOpen || posterOpen || aboutOpen || shortcutsOpen) {
         exitSpacePan(false);
       }
-    }, [exportOpen, aboutOpen, shortcutsOpen, exitSpacePan]);
+    }, [exportOpen, posterOpen, aboutOpen, shortcutsOpen, exitSpacePan]);
 
     const handleInlineUnhandledKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (isComposingEvent(e)) return;
@@ -1629,7 +1630,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         if (inlineTargetRef.current) return;
         if (isEditableTarget(e.target)) return;
         const st = useEditorStore.getState();
-        if (st.mode !== 'edit' || st.exportOpen || st.aboutOpen || st.shortcutsOpen) {
+        if (st.mode !== 'edit' || st.exportOpen || st.posterOpen || st.aboutOpen || st.shortcutsOpen) {
           return;
         }
         const snapSel = st.selection;
@@ -2153,6 +2154,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
         const hasOpenModal =
           exportOpen ||
+          posterOpen ||
           aboutOpen ||
           shortcutsOpen ||
           Boolean(document.querySelector('.modal-backdrop.open'));
@@ -3332,6 +3334,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     }, [
       mode,
       exportOpen,
+      posterOpen,
       aboutOpen,
       shortcutsOpen,
       customShortcuts,
