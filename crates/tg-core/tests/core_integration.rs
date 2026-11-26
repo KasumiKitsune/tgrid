@@ -523,3 +523,118 @@ fn test_crc32_and_zip_store_archive() {
     let cd_offset = u32::from_le_bytes([eocd[16], eocd[17], eocd[18], eocd[19]]) as usize;
     assert_eq!(&zip[cd_offset..cd_offset + 4], &0x0201_4B50u32.to_le_bytes());
 }
+
+#[test]
+fn test_extreme_zero_duration_empty_tier_and_micro_tolerance() {
+    let raw = r#"File type = "ooTextFile"
+Object class = "TextGrid" ! extreme boundary torture
+
+xmin = 0
+xmax = 10.56
+tiers? <exists> size = 4
+item []:
+    item [1]:
+        class = "IntervalTier"
+        name = "微距边界与浮点容差"
+        xmin = 0
+        xmax = 10.56
+        intervals: size = 4
+        intervals [1]:
+            xmin = 0.0
+            xmax = 3.385
+            text = "ok"
+        intervals [2]:
+            xmin = 3.385
+            xmax = 3.3882
+            text = "!"
+        intervals [3]:
+            xmin = 5.545
+            xmax = 5.55
+            text = "exact_5ms_ieee754"
+        intervals [4]:
+            xmin = 5.55
+            xmax = 10.56
+            text = "tail"
+    item [2]:
+        class = "IntervalTier"
+        name = "异常态_同起点零时长与正时长"
+        xmin = 1.16
+        xmax = 9.995
+        intervals: size = 5
+        intervals [1]:
+            xmin = 3.385
+            xmax = 3.715
+            text = "←左侧缝隙恢复"
+        intervals [2]:
+            xmin = 3.715
+            xmax = 3.715
+            text = "0ms零时长"
+        intervals [3]:
+            xmin = 3.715
+            xmax = 4.1
+            text = ""
+        intervals [4]:
+            xmin = 4.1
+            xmax = 5.35
+            text = "重叠1"
+        intervals [5]:
+            xmin = 4.6
+            xmax = 5.55
+            text = "重叠2"
+    item [3]:
+        class = "IntervalTier"
+        name = "零区间空层_ZeroIntervals"
+        xmin = 0
+        xmax = 10.56
+        intervals: size = 0
+    item [4]:
+        class = "MarkTier"
+        name = "遗留MarkTier_空点子域"
+        xmin = 2.51
+        xmax = 8.77
+        points: size = 0
+"#;
+
+    let tg = parse_textgrid_bytes(raw.as_bytes()).expect("parse extreme torture textgrid");
+    assert_eq!(tg.tiers.len(), 4);
+
+    // 1. Same-xmin zero-duration [3.715, 3.715] AND following positive [3.715, 4.1] must BOTH survive
+    let t2 = &tg.tiers[1];
+    assert_eq!(t2.intervals.len(), 5, "must not drop [3.715, 4.1] sharing xmin with [3.715, 3.715]");
+    assert_eq!(t2.intervals[1].xmin, 3.715);
+    assert_eq!(t2.intervals[1].xmax, 3.715);
+    assert_eq!(t2.intervals[1].text, "0ms零时长");
+    assert_eq!(t2.intervals[2].xmin, 3.715);
+    assert_eq!(t2.intervals[2].xmax, 4.1);
+    assert_eq!(t2.intervals[2].text, "");
+
+    // 2. Empty IntervalTier (intervals: size = 0) must stay empty (no silent v_repair)
+    let t3 = &tg.tiers[2];
+    assert_eq!(t3.kind, TierKind::IntervalTier);
+    assert!(
+        t3.intervals.is_empty(),
+        "size = 0 IntervalTier must remain empty on parse, got {} intervals",
+        t3.intervals.len()
+    );
+
+    // 3. Round-trip across all 4 formats preserves both zero-duration pair and empty tier
+    for fmt in [
+        TextGridFormat::LongText,
+        TextGridFormat::ShortText,
+        TextGridFormat::Binary,
+        TextGridFormat::Chronological,
+    ] {
+        let bytes = serialize_textgrid(&tg, fmt).expect("serialize extreme torture");
+        let reparsed = parse_textgrid_bytes(&bytes).expect("reparse extreme torture");
+        assert_textgrid_approx_eq(&tg, &reparsed, 1e-9);
+    }
+
+    // 4. IEEE-754 floating tolerance: 5.55 - 5.545 (~0.004999999999999893) is exact 5ms, NOT micro!
+    // Only [3.385, 3.3882] (3.2ms) should be counted as micro_segment_count == 1.
+    let diags = scan_diagnostics(&tg);
+    assert_eq!(
+        diags[0].micro_segment_count, 1,
+        "5.55 - 5.545 must not false-positive as < 5ms micro-segment"
+    );
+    assert_eq!(diags[1].zero_duration_count, 1);
+}

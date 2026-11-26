@@ -8,7 +8,7 @@ import React, {
   useRef,
   useState
 } from 'react';
-import { getPlatformBridge } from '../bridge/PlatformBridge';
+import { getPlatformBridge, isTauriRuntime } from '../bridge/PlatformBridge';
 import {
   computeLayout,
   elasticXInBand,
@@ -1581,13 +1581,69 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
     const copyText = useCallback(
       (text: string, label: string) => {
-        void navigator.clipboard
-          .writeText(text)
+        void getPlatformBridge()
+          .writeClipboardText(text)
           .then(() => showToast(`已复制${label}`))
           .catch(() => showToast('剪贴板写入受限', true));
       },
       [showToast]
     );
+
+    const applyPastedTextToSelection = useCallback(
+      (snapSel: EditorSelection, rawClip: string) => {
+        if (!snapSel || (snapSel.kind !== 'interval' && snapSel.kind !== 'point')) return;
+        const clip = rawClip.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        const st = useEditorStore.getState();
+        if (snapSel.kind === 'interval') {
+          const iv = st.tg.tiers[snapSel.tierIndex]?.intervals[snapSel.itemIndex];
+          if (!iv) return;
+          commitTgMutation(
+            (d) => {
+              d.tiers[snapSel.tierIndex].intervals[snapSel.itemIndex].text = clip;
+            },
+            snapSel,
+            '粘贴区间文本'
+          );
+        } else {
+          const pt = st.tg.tiers[snapSel.tierIndex]?.points[snapSel.itemIndex];
+          if (!pt) return;
+          commitTgMutation(
+            (d) => {
+              d.tiers[snapSel.tierIndex].points[snapSel.itemIndex].mark = clip;
+            },
+            snapSel,
+            '粘贴标点文本'
+          );
+        }
+        showToast('已粘贴文本');
+      },
+      [commitTgMutation, showToast]
+    );
+
+    // Web runtime: handle native `paste` event on canvas selection without triggering
+    // browser clipboard-read permission prompts (Desktop uses native Tauri clipboard directly).
+    useEffect(() => {
+      if (isTauriRuntime()) return;
+      const onPaste = (e: ClipboardEvent) => {
+        if (e.defaultPrevented) return;
+        if (inlineTargetRef.current) return;
+        if (isEditableTarget(e.target)) return;
+        const st = useEditorStore.getState();
+        if (st.mode !== 'edit' || st.exportOpen || st.aboutOpen || st.shortcutsOpen) {
+          return;
+        }
+        const snapSel = st.selection;
+        if (!snapSel || (snapSel.kind !== 'interval' && snapSel.kind !== 'point')) return;
+        const nativeSel = window.getSelection()?.toString() || '';
+        if (nativeSel.length > 0) return;
+        const clip = e.clipboardData?.getData('text/plain');
+        if (clip === undefined || clip === null) return;
+        e.preventDefault();
+        applyPastedTextToSelection(snapSel, clip);
+      };
+      window.addEventListener('paste', onPaste);
+      return () => window.removeEventListener('paste', onPaste);
+    }, [applyPastedTextToSelection]);
 
     const syncAudioForSelection = useCallback(
       (sel: EditorSelection) => {
@@ -2320,35 +2376,15 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
           if (lower === 'v' && !e.shiftKey && mode === 'edit') {
             if (selection.kind === 'interval' || selection.kind === 'point') {
+              if (!isTauriRuntime()) {
+                // Let the browser dispatch a native `paste` event (handled above with zero permission prompt).
+                return;
+              }
               e.preventDefault();
               const snapSel = selection;
-              void navigator.clipboard
-                .readText()
-                .then((clip) => {
-                  const st = useEditorStore.getState();
-                  if (snapSel.kind === 'interval') {
-                    const iv = st.tg.tiers[snapSel.tierIndex]?.intervals[snapSel.itemIndex];
-                    if (!iv) return;
-                    commitTgMutation(
-                      (d) => {
-                        d.tiers[snapSel.tierIndex].intervals[snapSel.itemIndex].text = clip;
-                      },
-                      snapSel,
-                      '粘贴区间文本'
-                    );
-                  } else {
-                    const pt = st.tg.tiers[snapSel.tierIndex]?.points[snapSel.itemIndex];
-                    if (!pt) return;
-                    commitTgMutation(
-                      (d) => {
-                        d.tiers[snapSel.tierIndex].points[snapSel.itemIndex].mark = clip;
-                      },
-                      snapSel,
-                      '粘贴标点文本'
-                    );
-                  }
-                  showToast('已粘贴文本');
-                })
+              void getPlatformBridge()
+                .readClipboardText()
+                .then((clip) => applyPastedTextToSelection(snapSel, clip))
                 .catch(() => showToast('剪贴板读取受限', true));
             }
             return;
@@ -3353,6 +3389,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       replayCurrent,
       snapTargetToZeroCrossing,
       copyText,
+      applyPastedTextToSelection,
       showToast,
       clearHoverGuide,
       exitSpacePan

@@ -722,6 +722,28 @@ fn split_class_token(tok: &str) -> (&str, i32) {
     }
 }
 
+fn cmp_interval_key(a: &Interval, b: &Interval) -> std::cmp::Ordering {
+    let a_fin = a.xmin.is_finite() && a.xmax.is_finite();
+    let b_fin = b.xmin.is_finite() && b.xmax.is_finite();
+    match (a_fin, b_fin) {
+        (true, true) => a.xmin.total_cmp(&b.xmin).then_with(|| a.xmax.total_cmp(&b.xmax)),
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        (false, false) => std::cmp::Ordering::Equal,
+    }
+}
+
+/// Insert interval in stable ascending `(xmin, xmax)` order without dropping intervals that share `xmin`
+/// (e.g. a zero-duration `[t, t]` immediately followed by `[t, xmax]`).
+fn insert_sorted_interval(list: &mut Vec<Interval>, item: Interval) {
+    if !item.xmin.is_finite() || !item.xmax.is_finite() {
+        list.push(item);
+        return;
+    }
+    let pos = list.partition_point(|cur| cmp_interval_key(cur, &item) != std::cmp::Ordering::Greater);
+    list.insert(pos, item);
+}
+
 fn insert_sorted_unique<T, F>(list: &mut Vec<T>, item: T, key_fn: F)
 where
     F: Fn(&T) -> f64,
@@ -736,7 +758,9 @@ where
     while lo < hi {
         let mid = (lo + hi) >> 1;
         let mk = key_fn(&list[mid]);
-        if !mk.is_finite() || mk < k {
+        if !mk.is_finite() {
+            hi = mid;
+        } else if mk < k {
             lo = mid + 1;
         } else {
             hi = mid;
@@ -766,14 +790,13 @@ fn read_interval_tier_text(sc: &mut AbcioTextScanner, name: String) -> Result<Ti
             return Err(CoreError::Parse("Interval xmin > xmax".into()));
         }
         let text = sc.read_string()?;
-        insert_sorted_unique(
+        insert_sorted_interval(
             &mut intervals,
             Interval {
                 xmin: a,
                 xmax: b,
                 text,
             },
-            |iv| iv.xmin,
         );
     }
     Ok(Tier {
@@ -837,15 +860,7 @@ fn read_textgrid_text(sc: &mut AbcioTextScanner, name: String) -> Result<TextGri
         let tier_name = sc.read_string()?;
         match class_name {
             "IntervalTier" => {
-                let mut t = read_interval_tier_text(sc, tier_name)?;
-                if t.intervals.is_empty() {
-                    t.intervals.push(Interval {
-                        xmin: t.xmin,
-                        xmax: t.xmax,
-                        text: String::new(),
-                    });
-                }
-                tiers.push(t);
+                tiers.push(read_interval_tier_text(sc, tier_name)?);
             }
             "TextTier" | "MarkTier" => {
                 tiers.push(read_text_tier_text(sc, tier_name)?);
@@ -1022,14 +1037,13 @@ fn read_chronological_textgrid(
                     return Err(CoreError::Parse("Interval xmin > xmax".into()));
                 }
                 let txt = sc.read_string()?;
-                insert_sorted_unique(
+                insert_sorted_interval(
                     &mut tier.intervals,
                     Interval {
                         xmin: a,
                         xmax: b,
                         text: txt,
                     },
-                    |iv| iv.xmin,
                 );
             }
             TierKind::TextTier => {
@@ -1066,14 +1080,13 @@ fn read_interval_tier_binary(br: &mut BinaryReader<'_>, name: String) -> Result<
             return Err(CoreError::Parse("Interval xmin > xmax".into()));
         }
         let text = br.read_w16()?;
-        insert_sorted_unique(
+        insert_sorted_interval(
             &mut intervals,
             Interval {
                 xmin: a,
                 xmax: b,
                 text,
             },
-            |iv| iv.xmin,
         );
     }
     Ok(Tier {
@@ -1139,15 +1152,7 @@ fn read_textgrid_binary(br: &mut BinaryReader<'_>, name: String) -> Result<TextG
         let tier_name = br.read_w16()?;
         match class_name {
             "IntervalTier" => {
-                let mut t = read_interval_tier_binary(br, tier_name)?;
-                if t.intervals.is_empty() {
-                    t.intervals.push(Interval {
-                        xmin: t.xmin,
-                        xmax: t.xmax,
-                        text: String::new(),
-                    });
-                }
-                tiers.push(t);
+                tiers.push(read_interval_tier_binary(br, tier_name)?);
             }
             "TextTier" | "MarkTier" => {
                 tiers.push(read_text_tier_binary(br, tier_name)?);
@@ -1561,6 +1566,10 @@ pub fn serialize_chronological(tg: &TextGrid) -> String {
     events.sort_by(|a, b| {
         a.t.total_cmp(&b.t)
             .then_with(|| a.tier_idx.cmp(&b.tier_idx))
+            .then_with(|| match (&a.ev, &b.ev) {
+                (Ev::Iv(ia), Ev::Iv(ib)) => ia.xmax.total_cmp(&ib.xmax),
+                _ => std::cmp::Ordering::Equal,
+            })
     });
 
     for item in events {

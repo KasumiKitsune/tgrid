@@ -3,6 +3,7 @@ import {
   IPA_FONT_STACK,
   MONO_FONT_STACK,
   SANS_FONT_STACK,
+  SYMBOL_FONT_STACK,
   decodeTrigraphGlossSync,
   formatPraatDouble,
   measurePx,
@@ -214,13 +215,15 @@ function renderRichTextSVG(
       if (tok.kind === 'text') ts.setAttribute('fill', pal.ink);
       else if (tok.kind === 'wrap') {
         ts.setAttribute('fill', pal.isBw ? pal.meta : pal.faint);
+        ts.setAttribute('font-family', SYMBOL_FONT_STACK);
         ts.setAttribute('font-size', String(Number((effSize - 1.5).toFixed(2))));
       } else if (tok.kind === 'ctrl') {
         ts.setAttribute('fill', pal.ctrl);
-        ts.setAttribute('font-family', '"JetBrains Mono", Consolas, monospace');
+        ts.setAttribute('font-family', MONO_FONT_STACK);
         ts.setAttribute('font-size', String(glossSize));
       } else {
         ts.setAttribute('fill', pal.meta);
+        ts.setAttribute('font-family', SYMBOL_FONT_STACK);
       }
     }
     curY += rich.lineH;
@@ -1315,8 +1318,8 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
           'stroke-width': sw(isMajor ? 1.1 : 0.8)
         };
         if (!isMajor && minLinGapAt(i) < 8) notchAttrs.opacity = 0.42;
-        svgEl('line', { x1: lx, y1: band.specY, x2: lx, y2: band.specY + (isMajor ? 6 : 4), ...notchAttrs }, specContent);
-        svgEl('line', { x1: lx, y1: band.specY + band.specH - (isMajor ? 6 : 4), x2: lx, y2: band.specY + band.specH, ...notchAttrs }, specContent);
+        svgEl('line', { x1: lx, y1: band.specY, x2: lx, y2: band.specY + (isMajor ? 6 : 4), ...notchAttrs }, specG);
+        svgEl('line', { x1: lx, y1: band.specY + band.specH - (isMajor ? 6 : 4), x2: lx, y2: band.specY + band.specH, ...notchAttrs }, specG);
       }
 
       for (const tl of band.tiersLayout) {
@@ -1611,7 +1614,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
       const isMajor = col.usage >= 2 || isGlobalStart || isGlobalEnd;
       const exactTooltip = `${formatPraatDouble(col.t)} s`;
 
-      if (!hideStretch && prevCol && col.t - prevCol.t > 0 && col.t - prevCol.t < 0.005) {
+      if (!hideStretch && prevCol && col.t - prevCol.t > 1e-12 && col.t - prevCol.t < 0.005 - 1e-9) {
         svgEl('rect', {
           x: prevCol.x, y: band.tiersTopY - 4, width: col.x - prevCol.x, height: 3, fill: pal.microWarn,
           ...(isExp ? {} : { 'data-legend-keys': 'micro-seg' })
@@ -1834,7 +1837,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
         if (tier.name === '') {
           if (!hideMeta) {
             svgEl('text', {
-              x: nameX, y: midY + 4, 'font-family': SANS_FONT_STACK, 'font-size': fs(isPrimaryBand ? 11.5 : 10.5), fill: pal.meta, opacity: isPrimaryBand ? '1' : '0.75',
+              x: nameX, y: midY + 4, 'font-family': SYMBOL_FONT_STACK, 'font-size': fs(isPrimaryBand ? 11.5 : 10.5), fill: pal.meta, opacity: isPrimaryBand ? '1' : '0.75',
               ...(isExp ? {} : { 'data-legend-keys': 'meta-symbols' })
             }, nameWrap).textContent = '∅';
           }
@@ -2027,15 +2030,29 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             }
 
             if (vi.rich) {
-              const needsClip = layout.scaleMode === 'linear' || vi.rich.width > vi.w - 4;
+              let leftInset = 0;
+              let rightInset = 0;
+              for (const vz of tl.visibleZeros || []) {
+                if (!vz.rich) continue;
+                const halfBadge = (vz.rich.width + 8) / 2 + 3;
+                if (!vi.clippedLeft && Math.abs(vz.iv.xmin - vi.iv.xmin) <= 1e-12) {
+                  leftInset = Math.max(leftInset, Math.min(vi.w * 0.42, halfBadge));
+                }
+                if (!vi.clippedRight && Math.abs(vz.iv.xmin - vi.iv.xmax) <= 1e-12) {
+                  rightInset = Math.max(rightInset, Math.min(vi.w * 0.42, halfBadge));
+                }
+              }
+              const textAvailW = Math.max(8, vi.w - leftInset - rightInset);
+              const textCenterX = vi.x0 + leftInset + textAvailW / 2;
+              const needsClip = layout.scaleMode === 'linear' || vi.rich.width > textAvailW - 4;
               if (needsClip) {
                 const cid = `${pfx}ivc-${band.bandIndex}-${ti}-${ivClipCounter++}`;
                 const icp = svgEl('clipPath', { id: cid }, defs);
-                svgEl('rect', { x: vi.x0 + 1, y: ly + 1, width: Math.max(1, vi.w - 2), height: Math.max(1, lh - 2) }, icp);
+                svgEl('rect', { x: vi.x0 + Math.max(1, leftInset), y: ly + 1, width: Math.max(1, textAvailW - 2), height: Math.max(1, lh - 2) }, icp);
                 const clipWrap = svgEl('g', { 'clip-path': `url(#${cid})` }, ivG);
-                renderRichTextSVG(clipWrap, vi.rich, vi.x0 + vi.w / 2, ly + (lh - vi.rich.height) / 2 + 1, 'middle', 12.5, richStyle);
+                renderRichTextSVG(clipWrap, vi.rich, textCenterX, ly + (lh - vi.rich.height) / 2 + 1, 'middle', 12.5, richStyle);
               } else {
-                renderRichTextSVG(ivG, vi.rich, vi.x0 + vi.w / 2, ly + (lh - vi.rich.height) / 2 + 1, 'middle', 12.5, richStyle);
+                renderRichTextSVG(ivG, vi.rich, textCenterX, ly + (lh - vi.rich.height) / 2 + 1, 'middle', 12.5, richStyle);
               }
             }
           }
@@ -2122,8 +2139,12 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             }, pG);
           } else {
             const boxY = tl.y + (tl.levelY?.[vp.level] || 0);
+            const stemTargetX =
+              vp.boxW >= 4
+                ? Math.max(vp.bx + 1, Math.min(vp.bx + vp.boxW - 1, px))
+                : vp.bx + vp.boxW / 2;
             if (!isExp) svgEl('rect', { x: px - 7, y: wy - 7, width: 14, height: 14, fill: 'transparent', 'data-ui-only': '1' }, pG);
-            svgEl('line', { ...(isExp ? {} : { class: 'pt-stem' }), x1: px, y1: wy + 3.5, x2: px, y2: boxY, stroke: strokeCol, 'stroke-width': sw(1) }, pG);
+            svgEl('line', { ...(isExp ? {} : { class: 'pt-stem' }), x1: px, y1: wy + 3.5, x2: stemTargetX, y2: boxY, stroke: strokeCol, 'stroke-width': sw(1) }, pG);
             svgEl('polygon', { ...(isExp ? {} : { class: 'pt-diamond' }), points: `${px},${wy - 4} ${px + 4},${wy} ${px},${wy + 4} ${px - 4},${wy}`, fill: strokeCol, stroke: strokeCol, 'stroke-width': sw(0.8) }, pG);
             svgEl('rect', { ...(isExp ? {} : { class: 'pt-flag' }), x: vp.bx, y: boxY, width: vp.boxW, height: vp.boxH, fill: pal.paper, stroke: strokeCol, 'stroke-width': sw(1) }, pG);
             renderRichTextSVG(pG, vp.rich, vp.bx + vp.boxW / 2, boxY + (vp.boxH - vp.rich.height) / 2, 'middle', 11.5, richStyle);
@@ -2131,11 +2152,31 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
         }
       }
 
-      if (Number.isFinite(tier.xmin) && tier.xmin !== tg.xmin && tier.xmin >= band.startT && tier.xmin <= band.endT) {
+      const tierHasValidSpanInBand = domEnd > domStart + 1e-12;
+      const isZeroSpanTier =
+        Number.isFinite(tier.xmin) &&
+        Number.isFinite(tier.xmax) &&
+        Math.abs(tier.xmax - tier.xmin) <= 1e-12;
+      const showTierStartBracket =
+        Number.isFinite(tier.xmin) &&
+        tier.xmin !== tg.xmin &&
+        ((tierHasValidSpanInBand && tier.xmin >= band.startT && tier.xmin < band.endT) ||
+          (isZeroSpanTier &&
+            (band.bandIndex === 0 ? tier.xmin >= band.startT : tier.xmin > band.startT) &&
+            tier.xmin <= band.endT));
+      const showTierEndBracket =
+        Number.isFinite(tier.xmax) &&
+        tier.xmax !== tg.xmax &&
+        ((tierHasValidSpanInBand && tier.xmax > band.startT && tier.xmax <= band.endT) ||
+          (isZeroSpanTier &&
+            (band.bandIndex === 0 ? tier.xmax >= band.startT : tier.xmax > band.startT) &&
+            tier.xmax <= band.endT));
+
+      if (showTierStartBracket) {
         const cx = safeColX(tier.xmin);
         svgEl('path', { d: `M${cx + 5},${tl.y} L${cx},${tl.y} L${cx},${tl.y + tl.h} L${cx + 5},${tl.y + tl.h}`, fill: 'none', stroke: pal.isBw ? pal.ink : pal.amber, 'stroke-width': sw(2), ...(isExp ? {} : { 'data-legend-keys': 'ood' }) }, tG);
       }
-      if (Number.isFinite(tier.xmax) && tier.xmax !== tg.xmax && tier.xmax >= band.startT && tier.xmax <= band.endT) {
+      if (showTierEndBracket) {
         const cx = safeColX(tier.xmax);
         svgEl('path', { d: `M${cx - 5},${tl.y} L${cx},${tl.y} L${cx},${tl.y + tl.h} L${cx - 5},${tl.y + tl.h}`, fill: 'none', stroke: pal.isBw ? pal.ink : pal.amber, 'stroke-width': sw(2), ...(isExp ? {} : { 'data-legend-keys': 'ood' }) }, tG);
       }

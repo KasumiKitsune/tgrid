@@ -19,6 +19,7 @@ function scanQuickDiagnostics(tg: TextGrid): QuickDiagCounts {
   let zeros = 0;
   let micros = 0;
   const eps = 1e-9;
+  const microThreshold = 0.005 - 1e-9;
 
   for (const tier of tg.tiers) {
     if (tier.kind !== 'intervalTier') continue;
@@ -34,7 +35,7 @@ function scanQuickDiagnostics(tg: TextGrid): QuickDiagCounts {
       const dur = iv.xmax - iv.xmin;
       if (dur <= 1e-12) {
         zeros++;
-      } else if (dur < 0.005) {
+      } else if (dur < microThreshold) {
         micros++;
       }
       if (i > 0) {

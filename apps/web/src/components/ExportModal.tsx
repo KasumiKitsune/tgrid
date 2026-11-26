@@ -380,7 +380,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
           ...buildInput(false),
           forceSpecStrategy: isZip ? 'curves-only' : undefined
         });
-        await navigator.clipboard.writeText(res.svgMarkup);
+        await getPlatformBridge().writeClipboardText(res.svgMarkup);
         showToast(isZip ? '已复制 SVG 矢量代码（不含分离底图）' : '已复制 SVG 矢量代码到剪贴板');
       }
     } catch (err) {

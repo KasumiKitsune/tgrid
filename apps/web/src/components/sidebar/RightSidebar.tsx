@@ -22,7 +22,7 @@ interface RightSidebarProps {
 
 function detectQuickQaIssues(tg: TextGrid): boolean {
   const EPS = 1e-9;
-  const MICRO_THRESHOLD = 0.005;
+  const MICRO_THRESHOLD = 0.005 - 1e-9;
   const boundaryEntries: Array<{ t: number; ti: number }> = [];
 
   for (let ti = 0; ti < tg.tiers.length; ti++) {

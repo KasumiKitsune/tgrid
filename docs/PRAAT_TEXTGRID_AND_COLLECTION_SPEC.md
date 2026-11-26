@@ -550,6 +550,8 @@ Praat 提供 `Save as chronological text file...` 将所有层的区间和点打
 | **0 个层 (`tiers? <exists>`, `size = 0`)** | **允许加载**（长文本写出 `item []: (empty)`）。 | UI 创建通常要求 `size >= 1`，但程序化处理应安全支持 `size == 0`。 |
 | **`tiers? <absent>`（二进制 `0x00`）或混入非层子类** | `<absent>` 会导致原生 Praat 空指针解引用异常（`v_repair` 直接访问 `tiers->size`）；`tiers` 内混入非 Tier 类会导致后续强制转型未定义行为。 | **不得写出** `<absent>` 或非层对象。读取器须校验 `tiers` 存在、`size >= 0`，且每个子项类名仅限 `"IntervalTier"`、`"TextTier"`（或读取兼容别名 `"MarkTier"`）。 |
 
+> **可视化与查错场景的加载说明**：若解析器服务于支持异常态展示的可视化视图或标注检查工具（如双尺折行标注图），加载阶段**不应自动执行 `v_repair` 补齐 `intervals: size = 0` 的空区间层**，也**不应按单一 `xmin` 静默丢弃同起点区间**（否则同起点的零时长区间 `[t, t]` 与紧邻正时长区间 `[t, xmax]` 会互相覆盖并产生假缝隙）；此时应按 `(xmin, xmax)` 顺序完整保留全部原始条目，直至用户主动触发边界整理或以严格模式导出。
+
 ### 6.2 标注文本中的音标三字符组（Backslash Trigraphs）与排版标记
 
 1. **磁盘存储原则**：

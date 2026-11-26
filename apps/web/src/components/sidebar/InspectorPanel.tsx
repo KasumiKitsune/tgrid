@@ -148,7 +148,7 @@ interface QaIssue {
 
 const QA_ISSUE_CAP = 120;
 const QA_EPS = 1e-9;
-const QA_MICRO_THRESHOLD = 0.005;
+const QA_MICRO_THRESHOLD = 0.005 - 1e-9;
 
 function scanQaIssues(tg: TextGrid): {
   issues: QaIssue[];
@@ -872,8 +872,8 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
         showMidFormants && stats.f2 !== null ? stats.f2.toFixed(0) : '',
         showMidFormants && stats.f3 !== null ? stats.f3.toFixed(0) : ''
       ];
-      void navigator.clipboard
-        .writeText(cols.join('\t'))
+      void getPlatformBridge()
+        .writeClipboardText(cols.join('\t'))
         .then(() => showToast('已复制声学数据（制表符分隔）'))
         .catch(() => showToast('剪贴板写入受限', true));
     };

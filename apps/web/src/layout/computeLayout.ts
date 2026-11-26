@@ -611,6 +611,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
   } else {
     const minSliverW = isTinyView ? 3 : 4;
     const colHasActiveText = new Array<boolean>(numCols).fill(false);
+    const colHasAnomaly = new Array<boolean>(numCols).fill(false);
     const colExactAtom = new Array<boolean>(numCols).fill(false);
     const colInteriorPt = new Array<boolean>(numCols).fill(false);
     let hasAnyActiveText = false;
@@ -628,6 +629,30 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
             }
             if (!colHasActiveText[i] && iv.xmin <= a && iv.xmax >= b && iv.text !== '') {
               colHasActiveText[i] = true;
+            }
+          }
+          if (!colHasAnomaly[i]) {
+            for (const g of tm.gaps) {
+              if (g.xmin < b - 1e-12 && g.xmax > a + 1e-12) {
+                colHasAnomaly[i] = true;
+                break;
+              }
+            }
+          }
+          if (!colHasAnomaly[i]) {
+            for (const ov of tm.overlaps) {
+              if (ov.xmin < b - 1e-12 && ov.xmax > a + 1e-12) {
+                colHasAnomaly[i] = true;
+                break;
+              }
+            }
+          }
+          if (!colHasAnomaly[i]) {
+            for (const z of tm.zeroIvs) {
+              if (z.xmin >= a - 1e-12 && z.xmin <= b + 1e-12) {
+                colHasAnomaly[i] = true;
+                break;
+              }
             }
           }
         } else {
@@ -649,16 +674,22 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       const b = spineT[i + 1];
       const dt = b - a;
       const hasActiveText = colHasActiveText[i];
+      const hasAnomaly = colHasAnomaly[i];
       const isExactSingleTierAtom = colExactAtom[i];
       const hasInteriorPoint = colInteriorPt[i];
+      const hasAudible =
+        Boolean(hasAudio && audioBuffer) &&
+        (!hasActiveText || dt >= 0.25) &&
+        hasAudibleEnergy(audioBuffer, audioOffset, a, b);
 
-      // Only fold a pause when the document has actual annotations AND (if audio is loaded)
-      // the segment has no audible speech energy — never fold unannotated audio or blank tabs.
+      // Only fold a pause when the document has actual annotations, the column contains no structural
+      // anomaly (gap / overlap / zero-duration interval), AND (if audio is loaded) has no audible energy.
       const shouldCollapse =
         hasAnyActiveText &&
         !hasActiveText &&
+        !hasAnomaly &&
         dt >= SILENCE_THRESHOLD &&
-        !(hasAudio && audioBuffer && hasAudibleEnergy(audioBuffer, audioOffset, a, b));
+        !hasAudible;
 
       if (shouldCollapse) {
         colCollapsed[i] = true;
@@ -678,7 +709,17 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
           colFloor[i] = sliverW;
         } else {
           dx[i] = Math.max(MIN_COL_W, naturalW);
-          colFloor[i] = MIN_COL_W;
+          // Protect unfolded long voiced/regular columns from being flattened to 19px during water-filling
+          const acousticFloor =
+            !hasActiveText && hasAudible
+              ? Math.min(Math.round(maxBandContentW * 0.42), Math.max(MIN_COL_W, Math.round(dt * 90)))
+              : dt >= 0.2
+                ? Math.min(
+                    Math.round(maxBandContentW * 0.32),
+                    Math.max(MIN_COL_W, Math.round(12 + (hasAudible ? 52 : 38) * dt))
+                  )
+                : MIN_COL_W;
+          colFloor[i] = Math.min(dx[i], acousticFloor);
         }
       }
     }
@@ -731,6 +772,41 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
                 if (extraFloor > 0) colFloor[c] += extraFloor * share;
               }
             }
+          }
+        }
+        for (const zIv of tm.zeroIvs) {
+          if (zIv.text === '') continue;
+          const zIdx = tToIdx.get(zIv.xmin);
+          if (zIdx === undefined) continue;
+          const zRich = layoutRichText(zIv.text, 120, ptFontMeasure, mode, effectiveRichOpts);
+          const halfNeed = Math.min(84, Math.ceil((zRich.width + 8) / 2) + 4);
+          const cL = zIdx - 1;
+          const cR = zIdx;
+          if (cL >= 0 && !colCollapsed[cL]) {
+            const hasLabeledLeft = tm.normalIvs.some(
+              (iv) => Math.abs(iv.xmax - zIv.xmin) <= 1e-12 && iv.text !== ''
+            );
+            const targetL = hasLabeledLeft
+              ? dx[cL] + Math.min(36, Math.ceil(halfNeed * 0.65))
+              : Math.max(dx[cL], halfNeed);
+            const floorL = hasLabeledLeft
+              ? colFloor[cL] + Math.min(28, Math.ceil(halfNeed * 0.55))
+              : Math.max(colFloor[cL], Math.min(72, halfNeed));
+            dx[cL] = Math.max(dx[cL], targetL);
+            colFloor[cL] = Math.min(dx[cL], Math.max(colFloor[cL], floorL));
+          }
+          if (cR < numCols && !colCollapsed[cR]) {
+            const hasLabeledRight = tm.normalIvs.some(
+              (iv) => Math.abs(iv.xmin - zIv.xmin) <= 1e-12 && iv.text !== ''
+            );
+            const targetR = hasLabeledRight
+              ? dx[cR] + Math.min(36, Math.ceil(halfNeed * 0.65))
+              : Math.max(dx[cR], halfNeed);
+            const floorR = hasLabeledRight
+              ? colFloor[cR] + Math.min(28, Math.ceil(halfNeed * 0.55))
+              : Math.max(colFloor[cR], Math.min(72, halfNeed));
+            dx[cR] = Math.max(dx[cR], targetR);
+            colFloor[cR] = Math.min(dx[cR], Math.max(colFloor[cR], floorR));
           }
         }
       }
@@ -838,6 +914,9 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       prefW[i + 1] = prefW[i] + dx[i];
     }
 
+    const availW0 = maxBandContentW;
+    const availWRest = Math.max(130, targetWidth - PAD_X * 2 - GUTTER_SUBSEQUENT - RIGHT_OVERHANG);
+
     const diff = new Float64Array(numCols + 1);
     for (let ti = 0; ti < tg.tiers.length; ti++) {
       if (!isTierVisible(ti)) continue;
@@ -848,7 +927,16 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
         const aIdx = iv.xmin < vMin ? 0 : tToIdx.get(Math.max(vMin, iv.xmin));
         const bIdx = iv.xmax > vMax ? numCols : tToIdx.get(Math.min(vMax, iv.xmax));
         if (aIdx !== undefined && bIdx !== undefined && bIdx - aIdx >= 2) {
-          const w = iv.text !== '' ? 120 : 18;
+          const ivW = prefW[bIdx] - prefW[aIdx];
+          const spanRatio = ivW / Math.max(1, availWRest);
+          const w =
+            iv.text === ''
+              ? 18
+              : spanRatio >= 0.95
+                ? 18
+                : spanRatio > 0.65
+                  ? Math.round(120 - ((spanRatio - 0.65) / 0.3) * (120 - 18))
+                  : 120;
           diff[aIdx + 1] += w;
           diff[bIdx] -= w;
         }
@@ -866,9 +954,6 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       breakCost[k] =
         cutPenalty[k] - Math.min(spineUsage[k], 4) * 10 - (colCollapsed[k - 1] ? 20 : 0);
     }
-
-    const availW0 = maxBandContentW;
-    const availWRest = Math.max(130, targetWidth - PAD_X * 2 - GUTTER_SUBSEQUENT - RIGHT_OVERHANG);
 
     if (prefW[numCols] <= availW0) {
       bands.push({ startIdx: 0, endIdx: numCols });
@@ -1423,7 +1508,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
         }
 
         const visibleZeros: VisibleZero[] = tm.zeroIvs
-          .filter((iv) => iv.xmin >= startT && iv.xmin <= endT)
+          .filter((iv) => (bandIndex === 0 ? iv.xmin >= startT : iv.xmin > startT) && iv.xmin <= endT)
           .map((iv) => ({
             iv,
             x: xForGlobalIdx(tToIdx.get(iv.xmin)!),
@@ -1463,14 +1548,6 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       } else {
         const bandLeft = originX;
         const bandRight = originX + bandContentW;
-        const domStart = Math.max(startT, Number.isFinite(tier.xmin) ? tier.xmin : startT);
-        const domEnd = Math.min(endT, Number.isFinite(tier.xmax) ? tier.xmax : endT);
-        const domStartX =
-          domStart <= startT ? bandLeft : domStart >= endT ? bandRight : elasticXLocal(domStart);
-        const domEndX =
-          domEnd >= endT ? bandRight : domEnd <= startT ? bandLeft : elasticXLocal(domEnd);
-        const clampLeft = Math.max(bandLeft, domStartX);
-        const clampRight = Math.min(bandRight, domEndX);
 
         const includeStartBoundary = bandIndex === 0 || hasNonEmptyOnsetAt(startT);
         const hasNextBand = bandIndex < bands.length - 1;
@@ -1492,10 +1569,8 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
             const boxW = rich ? Math.max(18, Math.ceil(rich.width) + 10) : 0;
             const boxH = rich ? Math.max(20, rich.height + 6) : 0;
             let bx = x - boxW / 2;
-            const effLeft = clampRight - clampLeft >= boxW ? clampLeft : bandLeft;
-            const effRight = clampRight - clampLeft >= boxW ? clampRight : bandRight;
-            if (bx + boxW > effRight) bx = effRight - boxW;
-            if (bx < effLeft) bx = effLeft;
+            if (bx + boxW > bandRight) bx = bandRight - boxW;
+            if (bx < bandLeft) bx = bandLeft;
             return { pt, x, bx, rich, boxW, boxH, level: 0 };
           });
 

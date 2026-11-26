@@ -115,6 +115,7 @@ pub fn slice_textgrid(tg: &TextGrid, opts: &SliceOptions) -> TextGrid {
 
 /// Scans all tiers for structural issues: gaps, overlaps, zero-duration intervals, micro-segments (< 5ms), and out-of-domain bounds.
 pub fn scan_diagnostics(tg: &TextGrid) -> Vec<TierDiagnostics> {
+    const MICRO_THRESHOLD: f64 = 0.005 - 1e-9;
     tg.tiers
         .iter()
         .enumerate()
@@ -129,7 +130,7 @@ pub fn scan_diagnostics(tg: &TextGrid) -> Vec<TierDiagnostics> {
                     let dur = iv.xmax - iv.xmin;
                     if dur.abs() <= 1e-12 {
                         zero_duration_count += 1;
-                    } else if dur > 0.0 && dur < 0.005 {
+                    } else if dur > 0.0 && dur < MICRO_THRESHOLD {
                         micro_segment_count += 1;
                     }
                     if i > 0 {

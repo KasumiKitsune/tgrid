@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { isTauriRuntime } from '../bridge/PlatformBridge';
+import { getPlatformBridge, isTauriRuntime } from '../bridge/PlatformBridge';
 import { useEditorStore } from '../store/useEditorStore';
 import { getLogicalViewportSize, getViewportZoom } from '../utils/uiScale';
 import { UiIcon, type IconName } from './Icons';
@@ -111,7 +111,7 @@ export const GlobalContextMenu: React.FC<GlobalContextMenuProps> = ({
               const cur = getEditableSelection(el);
               const textToCopy = cur.supported ? cur.selectedText : cur.selectedText || el.value;
               if (!textToCopy) return;
-              void navigator.clipboard.writeText(textToCopy).catch(() => {});
+              void getPlatformBridge().writeClipboardText(textToCopy).catch(() => {});
               if (cur.supported) {
                 const next = el.value.slice(0, cur.start) + el.value.slice(cur.end);
                 setReactInputValue(el, next);
@@ -134,7 +134,7 @@ export const GlobalContextMenu: React.FC<GlobalContextMenuProps> = ({
               const cur = getEditableSelection(el);
               const textToCopy = cur.supported ? cur.selectedText : cur.selectedText || el.value;
               if (textToCopy) {
-                void navigator.clipboard.writeText(textToCopy).catch(() => {});
+                void getPlatformBridge().writeClipboardText(textToCopy).catch(() => {});
               }
             }
           },
@@ -144,8 +144,8 @@ export const GlobalContextMenu: React.FC<GlobalContextMenuProps> = ({
             shortcut: 'Ctrl+V',
             disabled: readonlyOrDisabled,
             action: () => {
-              void navigator.clipboard
-                .readText()
+              void getPlatformBridge()
+                .readClipboardText()
                 .then((clip) => {
                   if (clip === undefined || clip === null) return;
                   const cur = getEditableSelection(el);

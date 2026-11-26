@@ -1,5 +1,11 @@
 import type { AudioAnalysisSummary, TextGrid } from '../bridge/types';
-import { IPA_FONT_STACK, MONO_FONT_STACK, SANS_FONT_STACK, measurePx } from './richText';
+import {
+  IPA_FONT_STACK,
+  MONO_FONT_STACK,
+  SANS_FONT_STACK,
+  SYMBOL_FONT_STACK,
+  measurePx
+} from './richText';
 import type { BandLayout, RichTextLayout, ScoreLayout } from './computeLayout';
 
 export const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -51,10 +57,10 @@ export const WARM_PALETTE: ScorePalette = {
   paper: '#FFFFFF',
   ink: '#141413',
   border: '#2A2926',
-  muted: '#6A675F',
-  mutedAlt: '#6C6961',
-  faint: '#8E8B82',
-  faintTick: '#A29F96',
+  muted: '#5F5C55',
+  mutedAlt: '#66635B',
+  faint: '#747169',
+  faintTick: '#78756C',
   rule: '#C8C4BA',
   gridMajor: '#C9C5BB',
   gridMinor: '#E5E2DA',
@@ -306,7 +312,7 @@ export function collectActiveLegendItems(
     if (!hideStretchCues) {
       for (let i = 1; i < band.spineCols.length; i++) {
         const dt = band.spineCols[i].t - band.spineCols[i - 1].t;
-        if (dt > 0 && dt < 0.005) {
+        if (dt > 1e-12 && dt < 0.005 - 1e-9) {
           flags['micro-seg'] = true;
           break;
         }
@@ -925,7 +931,7 @@ export function renderSwatchSVG(
     svgEl('text', { x: x + 4.5, y: y + 8.8, 'text-anchor': 'middle', 'font-family': IPA_FONT_STACK, 'font-size': '9.5', fill: pal.ink }, g).textContent = 'ʂ';
     svgEl('text', { x: x + 15.2, y: y + 8.8, 'text-anchor': 'middle', 'font-family': MONO_FONT_STACK, 'font-size': '7', fill: pal.gloss }, g).textContent = '\\s.';
   } else if (key === 'meta-symbols') {
-    svgEl('text', { x: x + 11, y: y + 9, 'text-anchor': 'middle', 'font-family': SANS_FONT_STACK, 'font-size': '8.2', fill: pal.meta }, g).textContent = '␣↵↪';
+    svgEl('text', { x: x + 11, y: y + 9, 'text-anchor': 'middle', 'font-family': SYMBOL_FONT_STACK, 'font-size': '8.2', fill: pal.meta }, g).textContent = '␣↵↪';
   } else if (key === 'zero-dur') {
     svgEl('polygon', { points: `${x + 11},${y + 1} ${x + 14.8},${y + 6} ${x + 11},${y + 11} ${x + 7.2},${y + 6}`, fill: pal.zeroBg, stroke: pal.isBw ? '#333333' : pal.amber, 'stroke-width': sw(1.15) }, g);
   } else if (key === 'gap') {

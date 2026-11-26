@@ -335,4 +335,19 @@ export class TauriBridge implements PlatformBridge {
     if (!hasTauriInternals()) return null;
     return invoke<string | null>('get_launch_file_arg');
   }
+
+  async readClipboardText(): Promise<string> {
+    if (hasTauriInternals()) {
+      return invoke<string>('read_clipboard_text');
+    }
+    return navigator.clipboard.readText();
+  }
+
+  async writeClipboardText(text: string): Promise<void> {
+    if (hasTauriInternals()) {
+      await invoke('write_clipboard_text', { text });
+      return;
+    }
+    await navigator.clipboard.writeText(text);
+  }
 }

@@ -332,4 +332,31 @@ export class WebWasmBridge implements PlatformBridge {
   async getLaunchFileArg(): Promise<string | null> {
     return null;
   }
+
+  async readClipboardText(): Promise<string> {
+    return navigator.clipboard.readText();
+  }
+
+  async writeClipboardText(text: string): Promise<void> {
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return;
+      } catch {
+        // Fall through to execCommand fallback
+      }
+    }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+    } finally {
+      document.body.removeChild(ta);
+    }
+  }
 }

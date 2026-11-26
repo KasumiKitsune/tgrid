@@ -256,4 +256,8 @@ export interface PlatformBridge {
   revealInExplorer(path: string): Promise<boolean>;
   openExternalUrl(url: string): Promise<void>;
   getLaunchFileArg(): Promise<string | null>;
+
+  // System Clipboard (Desktop uses native OS API without WebView permission prompts)
+  readClipboardText(): Promise<string>;
+  writeClipboardText(text: string): Promise<void>;
 }

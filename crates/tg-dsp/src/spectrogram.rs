@@ -150,10 +150,36 @@ pub fn compute_spectrogram_grid(
     values
 }
 
-/// High-resolution RGBA spectrogram rasterizer (`1x`–`6x`) for both `warm` and `bw` palettes.
-/// Returns `(px_w, px_h, rgba_bytes)`.
+/// Build a 256-entry RGBA lookup table for decoupled palette mapping (`warm` / `bw`).
+pub fn build_palette_lut(palette_key: &str) -> [[u8; 4]; 256] {
+    let is_bw = palette_key.eq_ignore_ascii_case("bw");
+    let mut lut = [[255u8; 4]; 256];
+    for (i, slot) in lut.iter_mut().enumerate() {
+        if i == 0 {
+            *slot = [255, 255, 255, 255];
+            continue;
+        }
+        let n = i as f64 / 255.0;
+        if is_bw {
+            let g = (255.0 - n * 255.0).round() as u8;
+            *slot = [g, g, g, 255];
+        } else {
+            // Warm charcoal grayscale (#FFFFFF -> #141413)
+            *slot = [
+                (255.0 - n * 235.0).round() as u8,
+                (255.0 - n * 235.0).round() as u8,
+                (255.0 - n * 236.0).round() as u8,
+                255,
+            ];
+        }
+    }
+    lut
+}
+
+/// Compute palette-independent normalized STFT raster matrix (`[0.0, 1.0]`, row-major `px_h * px_w`).
+/// Returns `(px_w, px_h, normalized_values)`.
 #[allow(clippy::too_many_arguments)]
-pub fn render_spectrogram_rgba(
+pub fn compute_spectrogram_raster_matrix(
     analysis: &AudioAnalysis,
     segs: &[LinearSeg],
     band_origin_x: f64,
@@ -162,15 +188,14 @@ pub fn render_spectrogram_rgba(
     max_freq: f64,
     scale: f64,
     dyn_range: f64,
-    palette_key: &str,
-) -> (u32, u32, Vec<u8>) {
+) -> (u32, u32, Vec<f32>) {
     if band_content_w < 2.0 || spec_h < 4.0 || analysis.pre.is_empty() {
         return (0, 0, Vec::new());
     }
     let eff_scale = scale.clamp(0.5, 6.0);
     let px_w = (band_content_w * eff_scale).round().max(2.0) as usize;
     let px_h = (spec_h * eff_scale).round().max(4.0) as usize;
-    let mut rgba = vec![255u8; px_w * px_h * 4]; // Pure white paper baseline
+    let mut matrix = vec![0.0_f32; px_w * px_h];
 
     let sr = analysis.sample_rate as f64;
     let len = analysis.pre.len() as isize;
@@ -181,7 +206,6 @@ pub fn render_spectrogram_rgba(
     let nyq_freq = sr * 0.5;
     let bin_per_hz = fft_size as f64 / sr;
     let nyq_bin = fft_size >> 1;
-    let is_bw = palette_key.eq_ignore_ascii_case("bw");
 
     let mut re = vec![0.0_f64; fft_size];
     let mut im = vec![0.0_f64; fft_size];
@@ -201,7 +225,8 @@ pub fn render_spectrogram_rgba(
         let span_px = ((seg.x1 - seg.x0) * eff_scale).max(1.0);
 
         for x in col_start..=col_end {
-            let frac = ((x as f64 - (seg.x0 - band_origin_x) * eff_scale) / span_px).clamp(0.0, 1.0);
+            let frac =
+                ((x as f64 - (seg.x0 - band_origin_x) * eff_scale) / span_px).clamp(0.0, 1.0);
             let t = seg.t0 + frac * dt;
             let center = ((t - analysis.offset) * sr).round() as isize;
             if center < 0 || center >= len {
@@ -239,24 +264,69 @@ pub fn render_spectrogram_rgba(
                 if norm <= 0.0 {
                     continue;
                 }
-                let n = norm.min(1.0).powf(0.92);
-                let p_idx = (y * px_w + x) * 4;
-                if is_bw {
-                    let g = (255.0 - n * 255.0).round() as u8;
-                    rgba[p_idx] = g;
-                    rgba[p_idx + 1] = g;
-                    rgba[p_idx + 2] = g;
-                    rgba[p_idx + 3] = 255;
-                } else {
-                    // Warm charcoal grayscale (#FFFFFF -> #141413)
-                    rgba[p_idx] = (255.0 - n * 235.0).round() as u8;
-                    rgba[p_idx + 1] = (255.0 - n * 235.0).round() as u8;
-                    rgba[p_idx + 2] = (255.0 - n * 236.0).round() as u8;
-                    rgba[p_idx + 3] = 255;
-                }
+                matrix[y * px_w + x] = norm.min(1.0).powf(0.92) as f32;
             }
         }
     }
 
-    (px_w as u32, px_h as u32, rgba)
+    (px_w as u32, px_h as u32, matrix)
+}
+
+/// Map a normalized `[0.0, 1.0]` spectrogram matrix to RGBA bytes via a decoupled palette LUT.
+pub fn colorize_spectrogram_rgba(
+    width: u32,
+    height: u32,
+    matrix: &[f32],
+    palette_key: &str,
+) -> Vec<u8> {
+    let total = (width as usize).saturating_mul(height as usize);
+    if total == 0 || matrix.len() < total {
+        return Vec::new();
+    }
+    let lut = build_palette_lut(palette_key);
+    let mut rgba = vec![255u8; total * 4];
+    for (i, &val) in matrix[..total].iter().enumerate() {
+        if val <= 0.0 || !val.is_finite() {
+            continue;
+        }
+        let lut_idx = (val.clamp(0.0, 1.0) * 255.0).round() as usize;
+        let px = lut[lut_idx.min(255)];
+        let off = i * 4;
+        rgba[off] = px[0];
+        rgba[off + 1] = px[1];
+        rgba[off + 2] = px[2];
+        rgba[off + 3] = px[3];
+    }
+    rgba
+}
+
+/// High-resolution RGBA spectrogram rasterizer (`1x`–`6x`) for both `warm` and `bw` palettes.
+/// Returns `(px_w, px_h, rgba_bytes)`.
+#[allow(clippy::too_many_arguments)]
+pub fn render_spectrogram_rgba(
+    analysis: &AudioAnalysis,
+    segs: &[LinearSeg],
+    band_origin_x: f64,
+    band_content_w: f64,
+    spec_h: f64,
+    max_freq: f64,
+    scale: f64,
+    dyn_range: f64,
+    palette_key: &str,
+) -> (u32, u32, Vec<u8>) {
+    let (w, h, matrix) = compute_spectrogram_raster_matrix(
+        analysis,
+        segs,
+        band_origin_x,
+        band_content_w,
+        spec_h,
+        max_freq,
+        scale,
+        dyn_range,
+    );
+    if w == 0 || h == 0 {
+        return (0, 0, Vec::new());
+    }
+    let rgba = colorize_spectrogram_rgba(w, h, &matrix, palette_key);
+    (w, h, rgba)
 }

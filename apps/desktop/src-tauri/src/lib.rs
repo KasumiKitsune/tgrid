@@ -344,6 +344,217 @@ fn get_launch_file_arg() -> Option<String> {
     }
 }
 
+fn normalize_clipboard_newlines(s: &str) -> String {
+    if s.contains('\r') {
+        s.replace("\r\n", "\n").replace('\r', "\n")
+    } else {
+        s.to_string()
+    }
+}
+
+#[cfg(target_os = "windows")]
+mod native_clipboard {
+    use std::ffi::c_void;
+    use std::ptr;
+    use std::thread;
+    use std::time::Duration;
+
+    const CF_UNICODETEXT: u32 = 13;
+    const GMEM_MOVEABLE: u32 = 0x0002;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn OpenClipboard(hwnd_new_owner: *mut c_void) -> i32;
+        fn CloseClipboard() -> i32;
+        fn EmptyClipboard() -> i32;
+        fn IsClipboardFormatAvailable(format: u32) -> i32;
+        fn GetClipboardData(format: u32) -> *mut c_void;
+        fn SetClipboardData(format: u32, mem: *mut c_void) -> *mut c_void;
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GlobalAlloc(flags: u32, bytes: usize) -> *mut c_void;
+        fn GlobalLock(mem: *mut c_void) -> *mut c_void;
+        fn GlobalUnlock(mem: *mut c_void) -> i32;
+        fn GlobalFree(mem: *mut c_void) -> *mut c_void;
+    }
+
+    struct ClipboardGuard;
+
+    impl ClipboardGuard {
+        fn open() -> Result<Self, String> {
+            for _ in 0..8 {
+                // SAFETY: NULL associates the open clipboard with the current task.
+                if unsafe { OpenClipboard(ptr::null_mut()) } != 0 {
+                    return Ok(Self);
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
+            Err("剪贴板正被其他程序占用，请稍后重试".to_string())
+        }
+    }
+
+    impl Drop for ClipboardGuard {
+        fn drop(&mut self) {
+            // SAFETY: Only constructed after a successful OpenClipboard call.
+            unsafe {
+                CloseClipboard();
+            }
+        }
+    }
+
+    pub fn read_text() -> Result<String, String> {
+        let _guard = ClipboardGuard::open()?;
+        // SAFETY: Clipboard is open via ClipboardGuard.
+        unsafe {
+            if IsClipboardFormatAvailable(CF_UNICODETEXT) == 0 {
+                return Ok(String::new());
+            }
+            let handle = GetClipboardData(CF_UNICODETEXT);
+            if handle.is_null() {
+                return Ok(String::new());
+            }
+            let ptr_u16 = GlobalLock(handle) as *const u16;
+            if ptr_u16.is_null() {
+                return Err("无法锁定剪贴板数据".to_string());
+            }
+            let mut len = 0usize;
+            while *ptr_u16.add(len) != 0 {
+                len += 1;
+            }
+            let slice = std::slice::from_raw_parts(ptr_u16, len);
+            let text = String::from_utf16_lossy(slice);
+            GlobalUnlock(handle);
+            Ok(super::normalize_clipboard_newlines(&text))
+        }
+    }
+
+    pub fn write_text(text: &str) -> Result<(), String> {
+        let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+        let byte_len = wide.len() * std::mem::size_of::<u16>();
+
+        let _guard = ClipboardGuard::open()?;
+        // SAFETY: Clipboard is open via ClipboardGuard; ownership of hmem transfers to Windows on SetClipboardData success.
+        unsafe {
+            if EmptyClipboard() == 0 {
+                return Err("清空剪贴板失败".to_string());
+            }
+            let hmem = GlobalAlloc(GMEM_MOVEABLE, byte_len);
+            if hmem.is_null() {
+                return Err("分配剪贴板内存失败".to_string());
+            }
+            let dst = GlobalLock(hmem) as *mut u16;
+            if dst.is_null() {
+                GlobalFree(hmem);
+                return Err("锁定剪贴板内存失败".to_string());
+            }
+            ptr::copy_nonoverlapping(wide.as_ptr(), dst, wide.len());
+            GlobalUnlock(hmem);
+
+            if SetClipboardData(CF_UNICODETEXT, hmem).is_null() {
+                GlobalFree(hmem);
+                return Err("写入剪贴板失败".to_string());
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod native_clipboard {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    pub fn read_text() -> Result<String, String> {
+        let out = Command::new("pbpaste")
+            .env("LANG", "en_US.UTF-8")
+            .output()
+            .map_err(|e| format!("读取剪贴板失败: {e}"))?;
+        if !out.status.success() {
+            return Err("读取剪贴板失败".to_string());
+        }
+        Ok(super::normalize_clipboard_newlines(
+            &String::from_utf8_lossy(&out.stdout),
+        ))
+    }
+
+    pub fn write_text(text: &str) -> Result<(), String> {
+        let mut child = Command::new("pbcopy")
+            .env("LANG", "en_US.UTF-8")
+            .stdin(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("写入剪贴板失败: {e}"))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(text.as_bytes())
+                .map_err(|e| format!("写入剪贴板失败: {e}"))?;
+        }
+        let status = child.wait().map_err(|e| format!("写入剪贴板失败: {e}"))?;
+        if !status.success() {
+            return Err("写入剪贴板失败".to_string());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+mod native_clipboard {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    pub fn read_text() -> Result<String, String> {
+        for (cmd, args) in [
+            ("wl-paste", vec!["--no-newline"]),
+            ("xclip", vec!["-selection", "clipboard", "-o"]),
+            ("xsel", vec!["--clipboard", "--output"]),
+        ] {
+            if let Ok(out) = Command::new(cmd).args(&args).output() {
+                if out.status.success() {
+                    return Ok(super::normalize_clipboard_newlines(
+                        &String::from_utf8_lossy(&out.stdout),
+                    ));
+                }
+            }
+        }
+        Err("读取剪贴板失败".to_string())
+    }
+
+    pub fn write_text(text: &str) -> Result<(), String> {
+        for (cmd, args) in [
+            ("wl-copy", vec![]),
+            ("xclip", vec!["-selection", "clipboard", "-i"]),
+            ("xsel", vec!["--clipboard", "--input"]),
+        ] {
+            if let Ok(mut child) = Command::new(cmd)
+                .args(&args)
+                .stdin(Stdio::piped())
+                .spawn()
+            {
+                if let Some(mut stdin) = child.stdin.take() {
+                    let _ = stdin.write_all(text.as_bytes());
+                }
+                if let Ok(status) = child.wait() {
+                    if status.success() {
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        Err("写入剪贴板失败".to_string())
+    }
+}
+
+#[tauri::command]
+fn read_clipboard_text() -> Result<String, String> {
+    native_clipboard::read_text()
+}
+
+#[tauri::command]
+fn write_clipboard_text(text: String) -> Result<(), String> {
+    native_clipboard::write_text(&text)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -378,7 +589,9 @@ pub fn run() {
             find_companion_audio,
             reveal_in_explorer,
             open_external_url,
-            get_launch_file_arg
+            get_launch_file_arg,
+            read_clipboard_text,
+            write_clipboard_text
         ])
         .run(tauri::generate_context!())
         .expect("error while running T·Grid - TextGrid Editor");
@@ -423,5 +636,11 @@ mod tests {
         assert!(validate_external_url("https://").is_err());
         assert!(validate_external_url("https://example.org/a b").is_err());
         assert!(validate_external_url("https://example.org/\nfoo").is_err());
+    }
+
+    #[test]
+    fn normalizes_clipboard_newlines() {
+        assert_eq!(normalize_clipboard_newlines("a\r\nb\rc\nd"), "a\nb\nc\nd");
+        assert_eq!(normalize_clipboard_newlines("plain ʃ 中文"), "plain ʃ 中文");
     }
 }

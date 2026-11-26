@@ -4,7 +4,8 @@ use tg_core::model::{ContourBox, LinearSeg};
 use tg_dsp::{
     analyze_pcm_f32, compute_spectrogram_grid, decode_wav_bytes, load_pcm_session,
     load_wav_session, remove_audio_session, render_spectrogram_rgba, session_compute_contours,
-    session_render_spectrogram_rgba, session_waveform_path, session_zero_crossing, DspError,
+    session_render_spectrogram_rgba, session_spec_cache_stats, session_waveform_path,
+    session_zero_crossing, DspError,
 };
 
 #[test]
@@ -302,4 +303,109 @@ fn test_nyquist_blanking_p995_peak_and_adaptive_f0_bounds() {
         clean_analysis.spec_max_db,
         popped_analysis.spec_max_db
     );
+}
+
+#[test]
+fn test_spectrogram_normalized_matrix_cache_decoupled_from_palette() {
+    let sr = 16000u32;
+    let n = (sr as f64 * 0.5) as usize;
+    let samples: Vec<f32> = (0..n)
+        .map(|i| {
+            let t = i as f32 / sr as f32;
+            (2.0 * std::f32::consts::PI * 300.0 * t).sin() * 0.45
+                + (2.0 * std::f32::consts::PI * 1400.0 * t).sin() * 0.35
+        })
+        .collect();
+    let analysis = analyze_pcm_f32(samples.clone(), sr, 0.0).expect("stateless analyze");
+    let summary = load_pcm_session(samples, sr, 0.0).expect("load session");
+    let segs = vec![LinearSeg {
+        x0: 20.0,
+        x1: 180.0,
+        t0: 0.05,
+        t1: 0.45,
+        collapsed: false,
+    }];
+
+    // First raster render populates normalized dB matrix cache
+    let warm = session_render_spectrogram_rgba(
+        summary.session_id,
+        &segs,
+        20.0,
+        160.0,
+        60.0,
+        5000.0,
+        1.0,
+        52.0,
+        "warm",
+    )
+    .expect("warm raster");
+    assert_eq!(session_spec_cache_stats(summary.session_id).unwrap(), (1, 0));
+
+    // Switching palette to "bw" must hit the cached normalized matrix without recomputing STFT
+    let bw = session_render_spectrogram_rgba(
+        summary.session_id,
+        &segs,
+        20.0,
+        160.0,
+        60.0,
+        5000.0,
+        1.0,
+        52.0,
+        "bw",
+    )
+    .expect("bw raster");
+    assert_eq!(session_spec_cache_stats(summary.session_id).unwrap(), (1, 1));
+    assert_eq!((bw.width, bw.height), (warm.width, warm.height));
+    assert_ne!(warm.rgba, bw.rgba);
+
+    // Must match stateless render byte-for-byte
+    let (sw, sh, srgba) =
+        render_spectrogram_rgba(&analysis, &segs, 20.0, 160.0, 60.0, 5000.0, 1.0, 52.0, "bw");
+    assert_eq!((bw.width, bw.height), (sw, sh));
+    assert_eq!(bw.rgba, srgba);
+
+    // Contours cache must also be decoupled from palette and contour levels
+    let box_rect = ContourBox {
+        x: 20.0,
+        y: 0.0,
+        width: 160.0,
+        height: 60.0,
+    };
+    let c_warm = session_compute_contours(
+        summary.session_id,
+        &segs,
+        20.0,
+        160.0,
+        5000.0,
+        60,
+        32,
+        52.0,
+        true,
+        box_rect,
+        6,
+        "warm",
+    )
+    .expect("warm contours");
+    assert!(!c_warm.is_empty());
+    assert_eq!(session_spec_cache_stats(summary.session_id).unwrap(), (2, 1));
+
+    let c_bw = session_compute_contours(
+        summary.session_id,
+        &segs,
+        20.0,
+        160.0,
+        5000.0,
+        60,
+        32,
+        52.0,
+        true,
+        box_rect,
+        8,
+        "bw",
+    )
+    .expect("bw contours");
+    assert!(!c_bw.is_empty());
+    assert_eq!(session_spec_cache_stats(summary.session_id).unwrap(), (2, 2));
+
+    assert!(remove_audio_session(summary.session_id));
 }

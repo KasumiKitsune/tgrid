@@ -7,14 +7,19 @@ pub use analysis::{
     analyze_pcm_f32, summarize_pcm_f32, AudioAnalysis, AudioAnalysisSummary, AudioSummary,
     FormantPoint, PitchPoint,
 };
-pub use spectrogram::{compute_spectrogram_grid, render_spectrogram_rgba};
+pub use spectrogram::{
+    build_palette_lut, colorize_spectrogram_rgba, compute_spectrogram_grid,
+    compute_spectrogram_raster_matrix, render_spectrogram_rgba,
+};
 pub use wav::{decode_wav_bytes, DecodedWav};
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Mutex, OnceLock};
 use tg_core::model::{ContourBox, ContourPath, LinearSeg};
 use thiserror::Error;
+
+const MAX_SPEC_CACHE_PER_SESSION: usize = 24;
 
 #[derive(Debug, Error)]
 pub enum DspError {
@@ -32,9 +37,107 @@ pub struct SpectrogramRgbaOutput {
     pub rgba: Vec<u8>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SpecCacheKey {
+    kind: u8, // 0 = raster matrix, 1 = contour grid
+    width: usize,
+    height: usize,
+    band_origin_x_bits: u64,
+    band_content_w_bits: u64,
+    max_freq_bits: u64,
+    dyn_range_bits: u64,
+    smooth: bool,
+    segs_sig: Vec<(u64, u64, u64, u64, bool)>,
+}
+
+impl SpecCacheKey {
+    fn quant_bits(v: f64) -> u64 {
+        if !v.is_finite() {
+            0
+        } else {
+            ((v * 1e6).round() as i64) as u64
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        kind: u8,
+        width: usize,
+        height: usize,
+        band_origin_x: f64,
+        band_content_w: f64,
+        max_freq: f64,
+        dyn_range: f64,
+        smooth: bool,
+        segs: &[LinearSeg],
+    ) -> Self {
+        let segs_sig = segs
+            .iter()
+            .map(|s| {
+                (
+                    Self::quant_bits(s.x0),
+                    Self::quant_bits(s.x1),
+                    Self::quant_bits(s.t0),
+                    Self::quant_bits(s.t1),
+                    s.collapsed,
+                )
+            })
+            .collect();
+        Self {
+            kind,
+            width,
+            height,
+            band_origin_x_bits: Self::quant_bits(band_origin_x),
+            band_content_w_bits: Self::quant_bits(band_content_w),
+            max_freq_bits: Self::quant_bits(max_freq),
+            dyn_range_bits: Self::quant_bits(dyn_range),
+            smooth,
+            segs_sig,
+        }
+    }
+}
+
+struct CachedSpecMatrix {
+    width: u32,
+    height: u32,
+    values: Vec<f32>,
+}
+
+struct SessionEntry {
+    analysis: AudioAnalysis,
+    spec_cache: HashMap<SpecCacheKey, Arc<CachedSpecMatrix>>,
+    spec_cache_order: VecDeque<SpecCacheKey>,
+    spec_cache_hits: usize,
+}
+
+impl SessionEntry {
+    fn new(analysis: AudioAnalysis) -> Self {
+        Self {
+            analysis,
+            spec_cache: HashMap::new(),
+            spec_cache_order: VecDeque::new(),
+            spec_cache_hits: 0,
+        }
+    }
+
+    fn insert_spec_cache(&mut self, key: SpecCacheKey, val: Arc<CachedSpecMatrix>) {
+        if self.spec_cache.contains_key(&key) {
+            self.spec_cache.insert(key, val);
+            return;
+        }
+        while self.spec_cache_order.len() >= MAX_SPEC_CACHE_PER_SESSION {
+            if let Some(oldest) = self.spec_cache_order.pop_front() {
+                self.spec_cache.remove(&oldest);
+            }
+        }
+        self.spec_cache_order.push_back(key.clone());
+        self.spec_cache.insert(key, val);
+    }
+}
+
 struct SessionSlot {
     next_id: u32,
-    sessions: HashMap<u32, AudioAnalysis>,
+    sessions: HashMap<u32, SessionEntry>,
 }
 
 fn session_store() -> &'static Mutex<SessionSlot> {
@@ -63,7 +166,7 @@ pub fn load_pcm_session(
     }
     guard.next_id = id.wrapping_add(1).max(1);
     let summary = analysis.to_summary(id);
-    guard.sessions.insert(id, analysis);
+    guard.sessions.insert(id, SessionEntry::new(analysis));
     Ok(summary)
 }
 
@@ -89,6 +192,17 @@ pub fn clear_audio_session() {
     }
 }
 
+/// Diagnostic helper returning `(cached_entries, cache_hits)` for a session's normalized dB matrix cache.
+pub fn session_spec_cache_stats(session_id: u32) -> Result<(usize, usize), DspError> {
+    let guard = session_store()
+        .lock()
+        .map_err(|_| DspError::InvalidAudio("Audio session lock poisoned".into()))?;
+    match guard.sessions.get(&session_id) {
+        Some(entry) => Ok((entry.spec_cache.len(), entry.spec_cache_hits)),
+        None => Err(DspError::SessionNotFound(session_id)),
+    }
+}
+
 pub fn with_session<R, F>(session_id: u32, f: F) -> Result<R, DspError>
 where
     F: FnOnce(&AudioAnalysis) -> R,
@@ -97,7 +211,7 @@ where
         .lock()
         .map_err(|_| DspError::InvalidAudio("Audio session lock poisoned".into()))?;
     match guard.sessions.get(&session_id) {
-        Some(analysis) => Ok(f(analysis)),
+        Some(entry) => Ok(f(&entry.analysis)),
         None => Err(DspError::SessionNotFound(session_id)),
     }
 }
@@ -114,23 +228,65 @@ pub fn session_render_spectrogram_rgba(
     dyn_range: f64,
     palette_key: &str,
 ) -> Result<SpectrogramRgbaOutput, DspError> {
-    with_session(session_id, |analysis| {
-        let (width, height, rgba) = render_spectrogram_rgba(
-            analysis,
-            segs,
-            band_origin_x,
-            band_content_w,
-            spec_h,
-            max_freq,
-            scale,
-            dyn_range,
-            palette_key,
-        );
-        SpectrogramRgbaOutput {
-            width,
-            height,
-            rgba,
+    if band_content_w < 2.0 || spec_h < 4.0 {
+        return Ok(SpectrogramRgbaOutput {
+            width: 0,
+            height: 0,
+            rgba: Vec::new(),
+        });
+    }
+    let eff_scale = scale.clamp(0.5, 6.0);
+    let px_w = (band_content_w * eff_scale).round().max(2.0) as usize;
+    let px_h = (spec_h * eff_scale).round().max(4.0) as usize;
+    let key = SpecCacheKey::new(
+        0,
+        px_w,
+        px_h,
+        band_origin_x,
+        band_content_w,
+        max_freq,
+        dyn_range,
+        false,
+        segs,
+    );
+
+    let matrix = {
+        let mut guard = session_store()
+            .lock()
+            .map_err(|_| DspError::InvalidAudio("Audio session lock poisoned".into()))?;
+        let entry = guard
+            .sessions
+            .get_mut(&session_id)
+            .ok_or(DspError::SessionNotFound(session_id))?;
+        if let Some(cached) = entry.spec_cache.get(&key) {
+            entry.spec_cache_hits += 1;
+            Arc::clone(cached)
+        } else {
+            let (width, height, values) = compute_spectrogram_raster_matrix(
+                &entry.analysis,
+                segs,
+                band_origin_x,
+                band_content_w,
+                spec_h,
+                max_freq,
+                scale,
+                dyn_range,
+            );
+            let arc = Arc::new(CachedSpecMatrix {
+                width,
+                height,
+                values,
+            });
+            entry.insert_spec_cache(key, Arc::clone(&arc));
+            arc
         }
+    };
+
+    let rgba = colorize_spectrogram_rgba(matrix.width, matrix.height, &matrix.values, palette_key);
+    Ok(SpectrogramRgbaOutput {
+        width: matrix.width,
+        height: matrix.height,
+        rgba,
     })
 }
 
@@ -149,20 +305,59 @@ pub fn session_compute_contours(
     levels: usize,
     palette_key: &str,
 ) -> Result<Vec<ContourPath>, DspError> {
-    with_session(session_id, |analysis| {
-        let grid = compute_spectrogram_grid(
-            analysis,
-            segs,
-            band_origin_x,
-            band_content_w,
-            max_freq,
-            cols,
-            rows,
-            dyn_range,
-            smooth,
-        );
-        tg_core::generate_spectrogram_contours(&grid, cols, rows, box_rect, levels, palette_key)
-    })
+    let key = SpecCacheKey::new(
+        1,
+        cols,
+        rows,
+        band_origin_x,
+        band_content_w,
+        max_freq,
+        dyn_range,
+        smooth,
+        segs,
+    );
+
+    let grid = {
+        let mut guard = session_store()
+            .lock()
+            .map_err(|_| DspError::InvalidAudio("Audio session lock poisoned".into()))?;
+        let entry = guard
+            .sessions
+            .get_mut(&session_id)
+            .ok_or(DspError::SessionNotFound(session_id))?;
+        if let Some(cached) = entry.spec_cache.get(&key) {
+            entry.spec_cache_hits += 1;
+            Arc::clone(cached)
+        } else {
+            let values = compute_spectrogram_grid(
+                &entry.analysis,
+                segs,
+                band_origin_x,
+                band_content_w,
+                max_freq,
+                cols,
+                rows,
+                dyn_range,
+                smooth,
+            );
+            let arc = Arc::new(CachedSpecMatrix {
+                width: cols as u32,
+                height: rows as u32,
+                values,
+            });
+            entry.insert_spec_cache(key, Arc::clone(&arc));
+            arc
+        }
+    };
+
+    Ok(tg_core::generate_spectrogram_contours(
+        &grid.values,
+        cols,
+        rows,
+        box_rect,
+        levels,
+        palette_key,
+    ))
 }
 
 pub fn session_waveform_path(

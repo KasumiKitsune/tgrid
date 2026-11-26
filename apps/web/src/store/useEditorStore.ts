@@ -2205,7 +2205,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   alignMicroBoundaries: (targetTierIndex, thresholdSec = 0.005) => {
     const st = get();
-    const thresh = Math.max(1e-6, thresholdSec);
+    const thresh = Math.max(1e-6, thresholdSec - 1e-9);
     const eps = 1e-12;
     const draft = cloneTg(st.tg);
     let alignedCount = 0;

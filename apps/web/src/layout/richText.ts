@@ -1,4 +1,5 @@
 import type { PlatformBridge, TextGrid } from '../bridge/types';
+import { isValidPraatTrigraphAt } from './praatTrigraphCodes';
 
 export const IPA_FONT_STACK =
   '"Charis SIL", "Doulos SIL", "Gentium Plus", "Gentium Book Plus", "Segoe UI", "Cambria", "Lucida Sans Unicode", "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
@@ -8,6 +9,8 @@ export const SANS_FONT_STACK =
   '"Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
 export const MONO_FONT_STACK =
   '"JetBrains Mono", "SF Mono", "Cascadia Code", "Consolas", monospace';
+export const SYMBOL_FONT_STACK =
+  '"Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols 2", "Noto Sans Symbols", "DejaVu Sans", "Cambria Math", "Lucida Sans Unicode", sans-serif';
 
 export const FONT_TEXT = `12.5px ${IPA_FONT_STACK}`;
 export const FONT_GLOSS = `italic 9.5px ${IPA_FONT_STACK}`;
@@ -231,31 +234,79 @@ export function tokenizeLine(
   return tokens;
 }
 
-export function tokenWidth(tok: RichToken, font: string): number {
-  if (tok.kind === 'ctrl') return measurePx(tok.str, '9.5px "JetBrains Mono", monospace') + 2;
-  if (tok.kind !== 'text') return measurePx(tok.str, font) + 2.5;
+function buildSymbolFont(baseFont: string, sizeDelta = 0): string {
+  const m = baseFont.match(/(\d+(?:\.\d+)?)px/);
+  const basePx = m ? parseFloat(m[1]) : 12.5;
+  const effPx = Math.max(8, basePx + sizeDelta);
+  return `${effPx.toFixed(2)}px ${SYMBOL_FONT_STACK}`;
+}
+
+export function tokenWidth(tok: RichToken, font: string, fontScale = 1): number {
+  if (tok.kind === 'ctrl') {
+    return measurePx(tok.str, `${(9.5 * fontScale).toFixed(2)}px ${MONO_FONT_STACK}`) + 2;
+  }
+  if (tok.kind === 'wrap') {
+    return measurePx(tok.str, buildSymbolFont(font, -1.5 * fontScale)) + 2.5;
+  }
+  if (tok.kind !== 'text') {
+    return measurePx(tok.str, buildSymbolFont(font)) + 2.5;
+  }
   return measurePx(tok.str, font) * 1.04;
 }
 
-/** Split raw Praat escape string or IPA gloss into atomic units (keeping `\xx` escapes intact). */
-function splitGlossAtoms(str: string, isRaw: boolean): string[] {
-  if (!isRaw) return splitGraphemes(str);
+/** Measure a sequence of RichTokens by coalescing adjacent plain text runs into whole-string measurements. */
+export function measureTokensWidth(tokens: RichToken[], font: string, fontScale = 1): number {
+  let total = 0;
+  let textBuf = '';
+  const flushText = () => {
+    if (textBuf) {
+      total += measurePx(textBuf, font) * 1.04;
+      textBuf = '';
+    }
+  };
+  for (const tok of tokens) {
+    if (tok.kind === 'text') {
+      textBuf += tok.str;
+    } else {
+      flushText();
+      total += tokenWidth(tok, font, fontScale);
+    }
+  }
+  flushText();
+  return total;
+}
+
+/** Split text into atomic units, preserving dictionary-verified Praat `\xx` trigraphs and grapheme clusters. */
+export function splitTextAtoms(str: string, preservePraatTrigraphs: boolean): string[] {
+  if (!preservePraatTrigraphs || !str.includes('\\')) {
+    return splitGraphemes(str);
+  }
   const out: string[] = [];
+  let plain = '';
+  const flushPlain = () => {
+    if (plain) {
+      out.push(...splitGraphemes(plain));
+      plain = '';
+    }
+  };
   let i = 0;
   while (i < str.length) {
-    if (str[i] === '\\' && i + 2 < str.length) {
-      // Praat trigraphs are 3 chars like `\as`, `\ng`, `\^h`, `\s.`, `\ir`, `\ef`
+    if (isValidPraatTrigraphAt(str, i)) {
+      flushPlain();
       out.push(str.slice(i, i + 3));
       i += 3;
-    } else if (str[i] === '\\' && i + 1 < str.length) {
-      out.push(str.slice(i, i + 2));
-      i += 2;
     } else {
-      out.push(str[i]);
+      plain += str[i];
       i += 1;
     }
   }
+  flushPlain();
   return out;
+}
+
+/** Split raw Praat escape string or IPA gloss into atomic units (keeping dictionary-valid `\xx` escapes intact). */
+function splitGlossAtoms(str: string, isRaw: boolean): string[] {
+  return splitTextAtoms(str, isRaw);
 }
 
 function measureGlossPx(text: string, font: string): number {
@@ -414,20 +465,19 @@ export function layoutRichText(
     if (!maxWidth || maxWidth <= 0) {
       visualLines.push({
         tokens,
-        width: tokens.reduce((acc, t) => acc + tokenWidth(t, font), 0)
+        width: measureTokensWidth(tokens, font, fontScale)
       });
       continue;
     }
 
     let curTokens: RichToken[] = [];
-    let curW = 0;
-    const wrapPrefixW = hideMeta ? 0 : tokenWidth({ kind: 'wrap', str: '↪' }, font);
+    const wrapPrefixW = hideMeta ? 0 : tokenWidth({ kind: 'wrap', str: '↪' }, font, fontScale);
     const spaceUpgradeExtra = hideMeta
       ? 0
       : Math.max(
           0,
-          tokenWidth({ kind: 'space-meta', str: '␣' }, font) -
-            tokenWidth({ kind: 'text', str: ' ' }, font)
+          tokenWidth({ kind: 'space-meta', str: '␣' }, font, fontScale) -
+            tokenWidth({ kind: 'text', str: ' ' }, font, fontScale)
         );
 
     const pushLine = () => {
@@ -437,15 +487,16 @@ export function layoutRichText(
         curTokens[curTokens.length - 1].kind === 'text' &&
         curTokens[curTokens.length - 1].str === ' '
       ) {
-        const oldW = tokenWidth(curTokens[curTokens.length - 1], font);
         curTokens[curTokens.length - 1] = { kind: 'space-meta', str: '␣' };
-        curW = curW - oldW + tokenWidth(curTokens[curTokens.length - 1], font);
       }
-      visualLines.push({ tokens: curTokens, width: curW });
+      visualLines.push({
+        tokens: curTokens,
+        width: measureTokensWidth(curTokens, font, fontScale)
+      });
     };
 
     for (const tok of tokens) {
-      const tw = tokenWidth(tok, font);
+      const candW = measureTokensWidth([...curTokens, tok], font, fontScale);
       const tailExtra =
         !hideMeta &&
         curTokens.length > 0 &&
@@ -454,36 +505,58 @@ export function layoutRichText(
           ? spaceUpgradeExtra
           : 0;
 
-      if (curTokens.length > 0 && curW + tw + tailExtra > maxWidth) {
-        if (tok.kind === 'text' && tok.str.length > 1 && tw > maxWidth - wrapPrefixW) {
-          let piece = '';
-          for (const ch of splitGraphemes(tok.str)) {
-            const cw = measurePx(ch, font);
-            if (curW + cw > maxWidth && (curTokens.length > 0 || piece.length > 0)) {
-              if (piece) {
-                curTokens.push({ kind: 'text', str: piece });
-                curW += measurePx(piece, font);
-                piece = '';
+      if (candW + tailExtra > maxWidth) {
+        const tokW = tokenWidth(tok, font, fontScale);
+        if (
+          tok.kind === 'text' &&
+          tok.str.length > 1 &&
+          (curTokens.length === 0 || tokW > maxWidth - wrapPrefixW)
+        ) {
+          const atoms = splitTextAtoms(tok.str, true);
+          if (atoms.length > 1) {
+            let piece = '';
+            for (const atom of atoms) {
+              const nextPiece = piece + atom;
+              const testTokens = [...curTokens, { kind: 'text' as const, str: nextPiece }];
+              const testW = measureTokensWidth(testTokens, font, fontScale);
+              const pieceTailExtra =
+                piece === '' &&
+                !hideMeta &&
+                curTokens.length > 0 &&
+                curTokens[curTokens.length - 1].kind === 'text' &&
+                curTokens[curTokens.length - 1].str === ' '
+                  ? spaceUpgradeExtra
+                  : 0;
+              if (testW + pieceTailExtra > maxWidth && (curTokens.length > 0 || piece.length > 0)) {
+                if (piece) {
+                  curTokens.push({ kind: 'text', str: piece });
+                  piece = '';
+                }
+                pushLine();
+                curTokens = hideMeta ? [] : [{ kind: 'wrap', str: '↪' }];
               }
-              pushLine();
-              curTokens = hideMeta ? [] : [{ kind: 'wrap', str: '↪' }];
-              curW = wrapPrefixW;
+              piece += atom;
             }
-            piece += ch;
-            curW += cw;
+            if (piece) curTokens.push({ kind: 'text', str: piece });
+            continue;
           }
-          if (piece) curTokens.push({ kind: 'text', str: piece });
-          continue;
         }
-        pushLine();
-        curTokens = hideMeta ? [tok] : [{ kind: 'wrap', str: '↪' }, tok];
-        curW = wrapPrefixW + tw;
+        if (curTokens.length > 0) {
+          pushLine();
+          curTokens = hideMeta ? [tok] : [{ kind: 'wrap', str: '↪' }, tok];
+        } else {
+          curTokens.push(tok);
+        }
       } else {
         curTokens.push(tok);
-        curW += tw;
       }
     }
-    if (curTokens.length > 0) visualLines.push({ tokens: curTokens, width: curW });
+    if (curTokens.length > 0) {
+      visualLines.push({
+        tokens: curTokens,
+        width: measureTokensWidth(curTokens, font, fontScale)
+      });
+    }
   }
 
   const lineH = Math.round(17 * fontScale);
