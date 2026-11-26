@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>T·Grid 功能介绍与使用指南 — Praat TextGrid 编辑器与语音标注出图工具</title>
+  <meta name="description" content="T·Grid 使用指南与核心功能说明：免费开源的 Praat TextGrid / Collection 可视化标注编辑器，支持波形语谱图、基频 F0、共振峰、国际音标输入与学术期刊级矢量 SVG / PNG / 声纹海报导出。" />
+  <meta name="keywords" content="T·Grid, TGrid, Praat, TextGrid, TextGrid编辑器, 语音标注, 语音学, 声学分析, 语谱图, 国际音标, IPA, SVG出图, 使用指南" />
+  <meta name="robots" content="index, follow" />
+  <meta name="author" content="KasumiKitsune" />
+  <link rel="canonical" href="https://kasumikitsune.github.io/tgrid/guide.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:locale" content="zh_CN" />
+  <meta property="og:site_name" content="T·Grid" />
+  <meta property="og:title" content="T·Grid 功能介绍与使用指南 — Praat TextGrid 编辑器" />
+  <meta property="og:description" content="了解 T·Grid 如何实现纯本地 Praat TextGrid / Collection 标注编辑、声学语谱联动分析与学术论文级矢量插图导出。" />
+  <meta property="og:url" content="https://kasumikitsune.github.io/tgrid/guide.html" />
+  <meta property="og:image" content="https://kasumikitsune.github.io/tgrid/favicon.png" />
+  <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+  <link rel="icon" type="image/png" sizes="512x512" href="./favicon.png" />
+  <link rel="icon" href="./favicon.ico" sizes="any" />
+  <style>
+    :root {
+      --bg: #f6f4ee;
+      --paper: #ffffff;
+      --ink: #18181b;
+      --muted: #57534e;
+      --rule: #e4e0d5;
+      --accent: #2563eb;
+      --accent-soft: #eff6ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.75;
+    }
+    .wrap {
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 36px 20px 64px;
+    }
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--rule);
+      margin-bottom: 28px;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--ink);
+      font-weight: 700;
+      font-size: 16px;
+    }
+    .nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      text-decoration: none;
+      border: 1px solid var(--rule);
+      background: var(--paper);
+      color: var(--ink);
+    }
+    .btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    main {
+      background: var(--paper);
+      border: 1px solid var(--rule);
+      border-radius: 14px;
+      padding: 32px 28px;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 26px;
+      line-height: 1.35;
+    }
+    h2 {
+      margin: 28px 0 10px;
+      font-size: 18px;
+      padding-top: 14px;
+      border-top: 1px solid var(--rule);
+    }
+    p { margin: 0 0 12px; color: var(--muted); }
+    ul { margin: 8px 0 16px; padding-left: 20px; color: var(--muted); }
+    li { margin-bottom: 6px; }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 0.9em;
+      background: var(--bg);
+      padding: 1px 6px;
+      border-radius: 4px;
+      color: var(--ink);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      margin: 18px 0 8px;
+    }
+    .card {
+      border: 1px solid var(--rule);
+      border-radius: 10px;
+      padding: 14px 16px;
+      background: #fcfbf8;
+    }
+    .card strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--ink);
+    }
+    .card p { margin: 0; font-size: 14px; }
+    footer {
+      margin-top: 24px;
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <a class="brand" href="./">
+        <img src="./icon.svg" alt="T·Grid 图标" width="24" height="24" />
+        <span>T·Grid · TextGrid Editor</span>
+      </a>
+      <nav class="nav" aria-label="快捷导航">
+        <a class="btn primary" href="./">打开在线编辑器</a>
+        <a class="btn" href="https://github.com/KasumiKitsune/tgrid/releases/latest" target="_blank" rel="noopener noreferrer">下载桌面端</a>
+        <a class="btn" href="https://github.com/KasumiKitsune/tgrid" target="_blank" rel="noopener noreferrer">GitHub 仓库</a>
+      </nav>
+    </header>
+
+    <main>
+      <h1>T·Grid — Praat TextGrid 编辑器与语音标注出图工具</h1>
+      <p>
+        <strong>T·Grid</strong> 是一款面向语言学、语音学与方言调查研究的免费开源 Praat <code>TextGrid</code> / <code>Collection</code> 可视化标注编辑器，基于 Rust（WebAssembly / Tauri）与 React 构建。所有音频解码、声学计算与标注读写均在用户设备本地完成，不向任何服务器上传数据。
+      </p>
+
+      <div class="grid">
+        <div class="card">
+          <strong>完整兼容 Praat 格式</strong>
+          <p>支持标准长文本、短文本、二进制及 Chronological 格式的 TextGrid、单层文件与包含音频的 Collection 集合文件。</p>
+        </div>
+        <div class="card">
+          <strong>声学可视化与微距精调</strong>
+          <p>内置波形、宽带语谱图、基频（F0）与共振峰（F1–F3）轨迹显示，配备 ±40 ms 声学微距放大镜与过零点吸附。</p>
+        </div>
+        <div class="card">
+          <strong>国际音标（IPA）输入</strong>
+          <p>内置云龙国际音标输入方案、Praat 三字符编码互转以及交互式虚拟 IPA 键盘，减少高频切输入法的负担。</p>
+        </div>
+        <div class="card">
+          <strong>学术论文级矢量出图</strong>
+          <p>支持双标尺自动折行排版、纯矢量等值轮廓 SVG、图文分离 ZIP 包、高清 PNG、声纹海报与中英双语图例导出。</p>
+        </div>
+      </div>
+
+      <h2>快速开始</h2>
+      <ul>
+        <li>直接访问 <a href="./">T·Grid 在线编辑器</a>，页面内置普通话示例与双人对话带音频示例，打开即可体验。</li>
+        <li>将本地 <code>.TextGrid</code>、<code>.Collection</code> 或 <code>.wav</code> / <code>.mp3</code> / <code>.flac</code> 录音文件直接拖入窗口即可加载。</li>
+        <li>Windows 与 macOS 用户可前往 <a href="https://github.com/KasumiKitsune/tgrid/releases/latest" target="_blank" rel="noopener noreferrer">GitHub Releases</a> 下载原生桌面端，支持关联文件双击打开与同名音频自动配对。</li>
+      </ul>
+
+      <h2>常用编辑与导航能力</h2>
+      <ul>
+        <li><strong>区间与边界操作</strong>：支持拖拽微调、跨层磁吸对齐、共享边界联动、等分切分、左右合并以及全局查找替换。</li>
+        <li><strong>语境试听与回放</strong>：支持区间循环播放、标点 ±250 ms 语境播放、倍速调节与硬件音频时钟同步光标。</li>
+        <li><strong>质量检查（QA Diagnostics）</strong>：自动检测空标注区间、异常极短片段、边界重叠或越界等常见问题。</li>
+        <li><strong>离线单文件版</strong>：除在线版与桌面版外，还提供可离线直接双击运行的单文件 HTML 版本（<a href="./tgrid-standalone.html" download="tgrid-standalone.html" rel="nofollow">下载 tgrid-standalone.html</a>）。</li>
+      </ul>
+
+      <h2>相关开源语音学工具</h2>
+      <ul>
+        <li><a href="https://kasumikitsune.github.io/praat-simplified-chinese/" target="_blank" rel="noopener noreferrer">Praat 汉化版</a>：Praat 的简体中文本地化与日常语音分析增强版本。</li>
+        <li><a href="https://kasumikitsune.github.io/PhonAcq/" target="_blank" rel="noopener noreferrer">PhonAcq</a>：适用于田野调查与实验室批量录音采集的多端互联语音录制工具。</li>
+      </ul>
+    </main>
+
+    <footer>
+      <p>
+        开源协议：MIT · 作者：KasumiKitsune ·
+        <a href="./">返回 T·Grid 编辑器</a> ·
+        <a href="https://github.com/KasumiKitsune/tgrid/issues" target="_blank" rel="noopener noreferrer">反馈问题</a>
+      </p>
+    </footer>
+  </div>
+</body>
+</html>

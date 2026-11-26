@@ -293,6 +293,18 @@ export const AboutModal: React.FC = () => {
               </p>
               <div className="about-meta-links">
                 <span className="about-license-tag">MIT 开源协议</span>
+                {!isDesktop && (
+                  <a
+                    href="./guide.html"
+                    className="compact about-link-btn"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    <span>使用指南</span>
+                    <ExternalLinkIcon size={11} />
+                  </a>
+                )}
                 <button
                   type="button"
                   className="compact about-link-btn"

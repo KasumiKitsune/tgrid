@@ -141,11 +141,11 @@ export const Topbar: React.FC<TopbarProps> = ({
 
   // Sync window title with active filename + dirty indicator
   // On Web, preserve the clean SEO title while viewing the unmodified default sample so crawlers
-  // do not index "春眠示例.TextGrid" as the site's main title.
+  // do not index "春晓示例.TextGrid" as the site's main title.
   useEffect(() => {
     const defaultWebTitle = 'T·Grid — Praat TextGrid 编辑器与语音标注出图工具';
     const isUnmodifiedDefaultSample =
-      !isDesktop && !isDirty && tabs.length <= 1 && (!filename || filename === '春眠示例.TextGrid');
+      !isDesktop && !isDirty && tabs.length <= 1 && (!filename || filename === '春晓示例.TextGrid');
     const docLabel = filename ? `${isDirty ? '● ' : ''}${filename} — ` : '';
     const desktopTitle = `${docLabel}T·Grid - TextGrid Editor`;
     document.title = isUnmodifiedDefaultSample ? defaultWebTitle : desktopTitle;
@@ -328,11 +328,12 @@ export const Topbar: React.FC<TopbarProps> = ({
         </div>
       ) : (
         <div className="tabbar">
-          <span className="brand tabbar-brand">
+          <h1 className="brand tabbar-brand">
             <BrandLogoIcon size={16} />
             <strong className="brand-mark">T·Grid</strong>
             <span className="brand-sub">TextGrid Editor</span>
-          </span>
+            <span className="sr-only"> — Praat TextGrid 编辑器与语音标注出图工具</span>
+          </h1>
           {tabStrip}
         </div>
       )}

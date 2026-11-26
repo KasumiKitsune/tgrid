@@ -46,3 +46,18 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+      - name: Notify IndexNow (Bing / Yandex)
+        continue-on-error: true
+        run: |
+          sleep 15
+          curl -fsS -X POST "https://api.indexnow.org/indexnow" \
+            -H "Content-Type: application/json; charset=utf-8" \
+            -d '{
+              "host": "kasumikitsune.github.io",
+              "key": "c8a4f19d6b3e4720a5d2e8b19c6f3a04",
+              "keyLocation": "https://kasumikitsune.github.io/tgrid/c8a4f19d6b3e4720a5d2e8b19c6f3a04.txt",
+              "urlList": [
+                "https://kasumikitsune.github.io/tgrid/",
+                "https://kasumikitsune.github.io/tgrid/guide.html"
+              ]
+            }'

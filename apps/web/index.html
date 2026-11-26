@@ -48,7 +48,7 @@
           "price": "0",
           "priceCurrency": "USD"
         },
-        "softwareVersion": "0.1.0",
+        "softwareVersion": "0.1.1",
         "downloadUrl": "https://github.com/KasumiKitsune/tgrid/releases/latest",
         "license": "https://opensource.org/licenses/MIT",
         "url": "https://kasumikitsune.github.io/tgrid/",
@@ -61,20 +61,23 @@
   </script>
 </head>
 <body>
-  <div id="root"></div>
-  <noscript>
-    <main style="max-width:680px;margin:48px auto;padding:0 20px;font-family:system-ui,-apple-system,sans-serif;line-height:1.7;color:#141413;">
+  <div id="root">
+    <main style="max-width:720px;margin:48px auto;padding:0 20px;font-family:system-ui,-apple-system,sans-serif;line-height:1.75;color:#141413;">
       <h1>T·Grid — Praat TextGrid 编辑器与语音标注出图工具</h1>
-      <p>T·Grid 是一款面向语言学与语音学研究的免费开源 Praat TextGrid / Collection 标注编辑器，所有音频与标注文件均在本地解析处理，不上传至服务器。</p>
+      <p>T·Grid 是一款面向语言学与语音学研究的免费开源 Praat TextGrid / Collection 标注编辑器，所有音频与标注文件均在浏览器本地解析处理，不上传至服务器。</p>
       <ul>
         <li>完整读写 Praat 标准文本、短文本、二进制 TextGrid 与 Collection 集合文件</li>
         <li>内置波形、宽带语谱图、基频（F0）与共振峰（F1–F3）轨迹可视化及 ±40 ms 声学微距放大镜</li>
         <li>支持云龙国际音标与 Praat 三字符输入方案及交互式虚拟音标键盘</li>
-        <li>提供面向学术论文的纯矢量等值轮廓 SVG、图文分离 ZIP 包、高清 PNG 与中英双语图例导出</li>
+        <li>提供面向学术论文的纯矢量等值轮廓 SVG、图文分离 ZIP 包、高清 PNG、声纹海报与中英双语图例导出</li>
       </ul>
-      <p>请启用浏览器的 JavaScript 以使用在线编辑器，或前往 <a href="https://github.com/KasumiKitsune/tgrid">GitHub 仓库</a> 下载 Windows / macOS 桌面端安装包。</p>
+      <p>
+        正在加载在线编辑器… 如需离线使用或浏览完整说明，可查看
+        <a href="./guide.html">功能介绍与使用指南</a>
+        或前往 <a href="https://github.com/KasumiKitsune/tgrid">GitHub 仓库</a> 下载 Windows / macOS 桌面端安装包。
+      </p>
     </main>
-  </noscript>
+  </div>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>
