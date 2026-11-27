@@ -2,6 +2,7 @@ import type { TextGrid } from '../../bridge/types';
 import { isTauriRuntime } from '../../bridge/PlatformBridge';
 import { prefetchTrigraphCache } from '../../layout/richText';
 import { ensureIpaFontsLoaded, injectIpaFontsIntoSvg } from '../../utils/ipaFontEmbed';
+import { buildSinglePageJpegPdf } from '../../utils/pdfWriter';
 import {
   computeEffectivePngScale,
   getBaseStem,
@@ -591,115 +592,132 @@ export async function copyPosterPngToClipboard(
 }
 
 /**
- * Native OS Print / Save-as-PDF via an isolated hidden iframe carrying the pure vector SVG.
- * Detects `beforeprint` / `afterprint` or synchronous dialog blocking so silent suppression is reported cleanly.
+ * Direct high-DPI PDF 1.4 export without triggering any OS / browser print dialog.
+ * Rasterizes the font-embedded SVG at print resolution (≥ 3×, respecting 4× user setting
+ * and browser canvas safety caps), encodes as high-quality RGB JPEG, and wraps into a
+ * spec-compliant single-page PDF matching the poster's exact physical pt dimensions.
  */
-export async function printPosterPdf(input: PosterRenderInput): Promise<{ printTriggered: boolean }> {
+export async function exportPosterPdf(input: PosterRenderInput): Promise<{
+  savedPath: string | null;
+  filename: string;
+  bytes: number;
+  width: number;
+  height: number;
+  widthMm: number;
+  heightMm: number;
+  effectiveScale: number;
+  scaleCapped: boolean;
+}> {
   const res = await renderPoster({ ...input, previewMode: false });
   const embeddedSvg = await injectIpaFontsIntoSvg(res.svgMarkup);
-  const wMm = (res.widthPt * 25.4) / 72;
-  const hMm = (res.heightPt * 25.4) / 72;
-  const cleanSvg = embeddedSvg.replace(/^<\?xml[^>]*\?>\s*/i, '');
+  const requestedScale = Math.max(input.config.pngScale, 3);
+  const { effectiveScale, scaleCapped } = computeEffectivePngScale(
+    res.widthPt,
+    res.heightPt,
+    requestedScale
+  );
+  const w = Math.max(1, Math.round(res.widthPt * effectiveScale));
+  const h = Math.max(1, Math.round(res.heightPt * effectiveScale));
 
-  const iframe = document.createElement('iframe');
-  iframe.setAttribute('aria-hidden', 'true');
-  iframe.style.position = 'fixed';
-  iframe.style.left = '-9999px';
-  iframe.style.top = '0';
-  iframe.style.width = '1px';
-  iframe.style.height = '1px';
-  iframe.style.border = '0';
-  iframe.style.opacity = '0';
-  iframe.style.pointerEvents = 'none';
-  document.body.appendChild(iframe);
+  const url = URL.createObjectURL(new Blob([embeddedSvg], { type: 'image/svg+xml;charset=utf-8' }));
 
-  let cleaned = false;
-  const cleanup = () => {
-    if (cleaned) return;
-    cleaned = true;
-    try {
-      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
-    } catch {
-      // ignore
-    }
+  const jpegBytes = await new Promise<Uint8Array>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          URL.revokeObjectURL(url);
+          reject(new Error('无法创建 2D 画布上下文'));
+          return;
+        }
+        // Paint opaque white paper base so transparent-background posters never turn black in JPEG
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error('PDF 图像编码失败'));
+              return;
+            }
+            blob
+              .arrayBuffer()
+              .then((buf) => resolve(new Uint8Array(buf)))
+              .catch(reject);
+          },
+          'image/jpeg',
+          0.96
+        );
+      } catch (err) {
+        URL.revokeObjectURL(url);
+        reject(err);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      let detail = '';
+      try {
+        const parsed = new DOMParser().parseFromString(embeddedSvg, 'image/svg+xml');
+        const errNode = parsed.querySelector('parsererror');
+        if (errNode?.textContent) {
+          detail = ` (${errNode.textContent.replace(/\s+/g, ' ').trim().slice(0, 140)})`;
+        }
+      } catch {
+        // ignore
+      }
+      reject(new Error(`海报 PDF 渲染失败${detail}`));
+    };
+    img.src = url;
+  });
+
+  const stem = buildPosterFileStem(input.filename, input.config.template, input.config.framing);
+  const pdfBytes = buildSinglePageJpegPdf({
+    jpegBytes,
+    pixelWidth: w,
+    pixelHeight: h,
+    pageWidthPt: res.widthPt,
+    pageHeightPt: res.heightPt,
+    title: res.autoCopy.title || stem
+  });
+  const fname = `${stem}.pdf`;
+  const widthMm = Math.round((res.widthPt * 25.4) / 72);
+  const heightMm = Math.round((res.heightPt * 25.4) / 72);
+
+  if (isTauriRuntime()) {
+    const savedPath = await input.bridge.saveNativeFileDialog(
+      fname,
+      [{ name: '便携文档 (PDF)', extensions: ['pdf'] }],
+      pdfBytes,
+      { title: '保存声纹海报 (PDF)' }
+    );
+    return {
+      savedPath,
+      filename: fname,
+      bytes: pdfBytes.length,
+      width: w,
+      height: h,
+      widthMm,
+      heightMm,
+      effectiveScale,
+      scaleCapped
+    };
+  }
+
+  triggerBlobDownload(new Blob([pdfBytes], { type: 'application/pdf' }), fname);
+  return {
+    savedPath: null,
+    filename: fname,
+    bytes: pdfBytes.length,
+    width: w,
+    height: h,
+    widthMm,
+    heightMm,
+    effectiveScale,
+    scaleCapped
   };
-
-  try {
-    const doc = iframe.contentDocument || iframe.contentWindow?.document;
-    const win = iframe.contentWindow;
-    if (!doc || !win) {
-      cleanup();
-      throw new Error('无法初始化打印视图');
-    }
-    doc.open();
-    doc.write(`<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8" />
-<title>${buildPosterFileStem(input.filename, input.config.template, input.config.framing)}</title>
-<style>
-  @page { size: ${wMm.toFixed(1)}mm ${hMm.toFixed(1)}mm; margin: 0; }
-  html, body {
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    height: 100%;
-    background: transparent;
-    overflow: hidden;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-  svg {
-    display: block;
-    width: 100vw;
-    height: 100vh;
-    max-width: 100%;
-    max-height: 100%;
-  }
-</style>
-</head>
-<body>${cleanSvg}</body>
-</html>`);
-    doc.close();
-
-    // Wait briefly for embedded data-URI fonts & raster images inside iframe to settle
-    try {
-      await Promise.race([
-        doc.fonts?.ready ?? Promise.resolve(),
-        new Promise<void>((resolve) => setTimeout(resolve, 1200))
-      ]);
-    } catch {
-      // ignore font check error in print iframe
-    }
-    await new Promise<void>((resolve) => setTimeout(resolve, 160));
-
-    let printTriggered = false;
-    const onPrintStart = () => {
-      printTriggered = true;
-    };
-    const onAfterPrint = () => {
-      printTriggered = true;
-      cleanup();
-    };
-    win.addEventListener('beforeprint', onPrintStart, { once: true });
-    win.addEventListener('afterprint', onAfterPrint, { once: true });
-
-    const callStart = performance.now();
-    win.focus();
-    win.print();
-    const callElapsed = performance.now() - callStart;
-    if (callElapsed >= 200) {
-      printTriggered = true;
-    }
-
-    if (!printTriggered) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 450));
-    }
-
-    setTimeout(cleanup, printTriggered ? 60_000 : 1_500);
-    return { printTriggered };
-  } catch (err) {
-    cleanup();
-    throw err;
-  }
 }

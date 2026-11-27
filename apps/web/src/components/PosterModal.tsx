@@ -3,11 +3,11 @@ import { getPlatformBridge, isTauriRuntime } from '../bridge/PlatformBridge';
 import { formatByteSize } from '../render/exporter';
 import {
   copyPosterPngToClipboard,
+  exportPosterPdf,
   exportPosterPng,
   exportPosterSvg,
   getDefaultPosterTierSelection,
   loadPosterPrefs,
-  printPosterPdf,
   renderPosterPreview,
   resolvePosterTimeRange,
   savePosterPrefs
@@ -587,22 +587,26 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
     }
   };
 
-  const handlePrintPdf = async () => {
+  const handleExportPdf = async () => {
     if (busyAction) return;
     setBusyAction('pdf');
     try {
-      const res = await printPosterPdf(buildInput(false));
-      if (res.printTriggered) {
-        const msg = '已打开系统打印对话框（可选择「另存为 PDF」）';
+      const res = await exportPosterPdf(buildInput(false));
+      const sizeStr = formatByteSize(res.bytes);
+      const msg = isTauriRuntime()
+        ? `已保存海报 PDF (${res.filename} · ${sizeStr})`
+        : `已下载海报 PDF (${res.filename} · ${sizeStr})`;
+      if (isTauriRuntime()) {
+        if (res.savedPath) {
+          flashReceipt(msg);
+          showToast(msg, false, makeRevealAction(res.savedPath));
+        }
+      } else {
         flashReceipt(msg);
         showToast(msg);
-      } else {
-        const msg = '未检测到打印弹窗，可能被浏览器拦截或当前环境不支持打印，请改用「导出 SVG / PNG」';
-        flashReceipt(msg, true);
-        showToast(msg, true);
       }
     } catch (err) {
-      const msg = `调用打印失败：${String(err)}（可改用「导出 SVG / PNG」）`;
+      const msg = `保存 PDF 失败：${String(err)}`;
       flashReceipt(msg, true);
       showToast(msg, true);
     } finally {
@@ -1304,7 +1308,7 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
             aria-live="polite"
           >
             {busyAction === 'pdf'
-              ? '正在准备矢量海报打印视图…'
+              ? '正在生成高分辨率 PDF 文件…'
               : busyAction === 'copy'
                 ? '正在光栅化高分辨率 PNG 并写入剪贴板…'
                 : busyAction
@@ -1338,8 +1342,9 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
                 <UiIcon name="copy" size={13} />
                 <span>复制 PNG</span>
               </button>
-              <button type="button" disabled={Boolean(busyAction)} onClick={() => void handlePrintPdf()}>
-                <span>打印 PDF</span>
+              <button type="button" disabled={Boolean(busyAction)} onClick={() => void handleExportPdf()}>
+                <UiIcon name="exportPdf" size={13} />
+                <span>保存 PDF</span>
               </button>
               <button type="button" disabled={Boolean(busyAction)} onClick={() => void handleExportSvg()}>
                 <UiIcon name="exportSvg" size={13} />

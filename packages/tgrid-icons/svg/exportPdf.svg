@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .epdf-root {
+      transform-origin: 8px 8px;
+      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .epdf-top {
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .epdf-bottom {
+      stroke: #374151;
+      stroke-width: 1.45;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition:
+        transform 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+        stroke 0.2s ease;
+    }
+    .epdf-page {
+      stroke: #374151;
+      stroke-width: 1.45;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: stroke 0.2s ease;
+    }
+    .epdf-fold {
+      stroke: #374151;
+      stroke-width: 1.35;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: stroke 0.2s ease;
+    }
+    .epdf-band {
+      fill: rgba(37, 99, 235, 0);
+      transition: fill 0.22s ease;
+    }
+    .epdf-type {
+      stroke: #374151;
+      stroke-width: 1.3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transform-origin: 8px 9.2px;
+      transition:
+        transform 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+        stroke 0.2s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .epdf-top { transform: translateY(-0.2px); }
+    svg:hover .epdf-bottom {
+      stroke: #111827;
+      transform: translateY(0.2px);
+    }
+    svg:hover .epdf-page { stroke: #111827; }
+    svg:hover .epdf-fold { stroke: #111827; }
+    svg:hover .epdf-band { fill: rgba(37, 99, 235, 0.14); }
+    svg:hover .epdf-type {
+      stroke: #2563eb;
+      transform: scale(1.03);
+    }
+    svg:active .epdf-root { transform: scale(0.91); }
+  </style>
+
+  <g class="epdf-root">
+    <!-- 悬停腰封淡蓝光带 -->
+    <rect class="epdf-band" x="1.35" y="6.65" width="13.3" height="5.1" rx="1.25" />
+    <!-- 折角文档上半檐 -->
+    <g class="epdf-top">
+      <path class="epdf-page" d="M2.75 5.3 V3.15 C2.75 2.4 3.35 1.8 4.1 1.8 H10.05 L13.25 5.0 V5.3" />
+      <path class="epdf-fold" d="M10.05 1.8 V4.15 C10.05 4.62 10.43 5.0 10.9 5.0 H13.25" />
+    </g>
+    <!-- 文档底托 -->
+    <path class="epdf-bottom" d="M2.75 12.95 C2.75 13.64 3.31 14.2 4.0 14.2 H12.0 C12.69 14.2 13.25 13.64 13.25 12.95" />
+    <!-- 像素级手调几何矢量 P · D · F -->
+    <g class="epdf-type">
+      <path d="M2.25 10.85 V7.55 H3.75 C4.33 7.55 4.75 7.95 4.75 8.5 C4.75 9.05 4.33 9.45 3.75 9.45 H2.25" />
+      <path d="M6.85 7.55 V10.85 H8.05 C8.98 10.85 9.6 10.15 9.6 9.2 C9.6 8.25 8.98 7.55 8.05 7.55 H6.85 Z" />
+      <path d="M11.7 10.85 V7.55 H13.75 M11.7 9.35 H13.3" />
+    </g>
+  </g>
+</svg>
