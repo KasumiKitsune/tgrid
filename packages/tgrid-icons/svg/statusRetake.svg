@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .sr-root {
+      transform-origin: 8px 8px;
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .sr-bg {
+      fill: #dc2626;
+      fill-opacity: 0.08;
+      transition: fill 0.2s ease, fill-opacity 0.2s ease;
+    }
+    .sr-arrow {
+      stroke: #dc2626;
+      stroke-width: 1.45;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transform-origin: 8px 8px;
+      transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+    .sr-dot {
+      fill: #dc2626;
+      transform-origin: 8px 8px;
+      transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), fill 0.2s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .sr-bg {
+      fill: #b91c1c;
+      fill-opacity: 0.15;
+    }
+    svg:hover .sr-arrow {
+      stroke: #b91c1c;
+      transform: rotate(24deg);
+    }
+    svg:hover .sr-dot {
+      fill: #b91c1c;
+      transform: scale(1.14);
+    }
+
+    svg:active .sr-root {
+      transform: scale(0.91);
+    }
+    svg:active .sr-bg {
+      fill: #b91c1c;
+      fill-opacity: 0.2;
+    }
+    svg:active .sr-arrow {
+      stroke: #b91c1c;
+      transform: rotate(36deg);
+    }
+    svg:active .sr-dot {
+      fill: #b91c1c;
+      transform: scale(0.92);
+    }
+  </style>
+
+  <g class="sr-root">
+    <!-- 红色状态徽章浅底纹 -->
+    <circle class="sr-bg" cx="8" cy="8" r="5.6" />
+    <!-- 顺时针重录回环箭头 -->
+    <g class="sr-arrow">
+      <path d="M12.94 10.63 A5.6 5.6 0 1 1 12.55 4.75" />
+      <path d="M12.55 2.55 V4.75 H10.35" />
+    </g>
+    <!-- 居中 REC 录音标识点 -->
+    <circle class="sr-dot" cx="8" cy="8" r="1.7" />
+  </g>
+</svg>

@@ -36,6 +36,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
   const clearExportPresetRange = useEditorStore((s) => s.clearExportPresetRange);
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const collectionActiveIdx = useEditorStore((s) => s.collectionActiveIdx);
+  const corpusActiveEntryId = useEditorStore((s) => s.corpusActiveEntryId);
   const tg = useEditorStore((s) => s.tg);
   const filename = useEditorStore((s) => s.filename);
   const wrapMode = useEditorStore((s) => s.wrapMode);
@@ -86,8 +87,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
 
   const docKey = useMemo(
     () =>
-      `${activeTabId}|${collectionActiveIdx}|${filename}|${tg.tiers.map((t) => `${t.kind}:${t.name}`).join('|')}|${tg.xmin}|${tg.xmax}`,
-    [activeTabId, collectionActiveIdx, filename, tg.tiers, tg.xmin, tg.xmax]
+      `${activeTabId}|${collectionActiveIdx}|${corpusActiveEntryId ?? ''}|${filename}|${tg.tiers.map((t) => `${t.kind}:${t.name}`).join('|')}|${tg.xmin}|${tg.xmax}`,
+    [activeTabId, collectionActiveIdx, corpusActiveEntryId, filename, tg.tiers, tg.xmin, tg.xmax]
   );
 
   // Sync tier selection & range fallback when document changes or modal opens

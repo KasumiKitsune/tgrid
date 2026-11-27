@@ -184,6 +184,31 @@ export interface NativeOpenedFile {
   bytes: Uint8Array;
 }
 
+export interface CorpusScannedAudioFile {
+  relPath: string;
+  stem: string;
+  duration: number | null;
+  sizeBytes: number;
+  modifiedMs: number;
+}
+
+export interface CorpusScannedFileEntry {
+  relPath: string;
+  stem: string;
+  sizeBytes: number;
+  modifiedMs: number;
+}
+
+export interface CorpusDirScanResult {
+  dirPath: string;
+  dirName: string;
+  audioFiles: CorpusScannedAudioFile[];
+  textGridFiles: CorpusScannedFileEntry[];
+  hasProjectFile: boolean;
+  projectFileRelPath: string;
+  wordListFiles: string[];
+}
+
 export interface PlatformBridge {
   readonly kind: 'tauri' | 'wasm';
   init(): Promise<void>;
@@ -209,6 +234,7 @@ export interface PlatformBridge {
   summarizeAudio(samples: Float32Array, sampleRate: number): Promise<AudioSummary>;
   loadPcmSession(samples: Float32Array, sampleRate: number, offset: number): Promise<AudioAnalysisSummary>;
   loadWavSession(bytes: Uint8Array, offset: number): Promise<AudioAnalysisSummary>;
+  loadWavFileSession(path: string, offset: number): Promise<AudioAnalysisSummary | null>;
   removeAudioSession(sessionId: number): Promise<void>;
   clearAudioSession(): Promise<void>;
   renderSpectrogramRgba(
@@ -251,7 +277,11 @@ export interface PlatformBridge {
     options?: { title?: string }
   ): Promise<string | null>;
   readNativeFile(path: string): Promise<NativeOpenedFile | null>;
+  readNativeFileIfExists(path: string): Promise<Uint8Array | null>;
   writeNativeFile(path: string, bytes: Uint8Array): Promise<boolean>;
+  writeNativeFileAtomic(path: string, bytes: Uint8Array): Promise<boolean>;
+  openNativeDirectoryDialog(options?: { title?: string }): Promise<string | null>;
+  scanCorpusDir(dir: string): Promise<CorpusDirScanResult | null>;
   findCompanionAudio(tgPath: string): Promise<string | null>;
   revealInExplorer(path: string): Promise<boolean>;
   openExternalUrl(url: string): Promise<void>;

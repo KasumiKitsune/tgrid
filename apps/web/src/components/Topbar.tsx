@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { isTauriRuntime } from '../bridge/PlatformBridge';
 import { formatKeyCombo, getEffectiveShortcutHint } from '../shortcuts/registry';
 import { useEditorStore } from '../store/useEditorStore';
-import type { BuiltinSample } from '../data/samples';
+import type { BuiltinSampleId } from '../data/samples';
+import { CorpusFolderIcon } from '../corpus/corpusIcons';
 import { BrandLogoIcon, ChevronIcon, CloseIcon, TGridIcon, UiIcon } from './Icons';
 
 export type ExportActionKind =
@@ -21,8 +22,9 @@ export type ExportActionKind =
 
 interface TopbarProps {
   onOpenTextGridPicker: () => void;
+  onOpenCorpusFolder: () => void;
   onOpenAudioPicker: () => void;
-  onLoadSample: (id: BuiltinSample['id']) => void;
+  onLoadSample: (id: BuiltinSampleId) => void;
   onExportAction: (kind: ExportActionKind) => void;
   onNewTab: () => void;
   onSwitchTab: (tabId: string) => void;
@@ -31,6 +33,7 @@ interface TopbarProps {
 
 export const Topbar: React.FC<TopbarProps> = ({
   onOpenTextGridPicker,
+  onOpenCorpusFolder,
   onOpenAudioPicker,
   onLoadSample,
   onExportAction,
@@ -60,6 +63,7 @@ export const Topbar: React.FC<TopbarProps> = ({
   const openFindBar = useEditorStore((s) => s.openFindBar);
   const setShortcutsOpen = useEditorStore((s) => s.setShortcutsOpen);
   const customShortcuts = useEditorStore((s) => s.customShortcuts);
+  const showCorpusStatusMarks = useEditorStore((s) => s.showCorpusStatusMarks);
 
   const openFilesHint = getEffectiveShortcutHint('open-files', customShortcuts);
   const openAudioHint = getEffectiveShortcutHint('open-audio', customShortcuts);
@@ -202,9 +206,26 @@ export const Topbar: React.FC<TopbarProps> = ({
       >
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
-          const tooltip = tab.currentFilePath
-            ? `${tab.currentFilePath}${tab.isDirty ? ' (未保存)' : ''}`
-            : `${tab.filename}${tab.isDirty ? ' (未保存)' : ''}`;
+          const isCorpus = tab.kind === 'corpus' && Boolean(tab.corpus);
+          const corpusTotal = isCorpus ? tab.corpus!.items.length : 0;
+          let corpusDone = 0;
+          if (isCorpus) {
+            for (let i = 0; i < tab.corpus!.items.length; i++) {
+              if (tab.corpus!.items[i].status === 'done') corpusDone += 1;
+            }
+          }
+          const displayTitle = isCorpus ? tab.corpus!.projectName : tab.filename;
+          const progressText = showCorpusStatusMarks
+            ? `${corpusDone}/${corpusTotal}`
+            : `${corpusTotal}`;
+          const progressTitle = showCorpusStatusMarks
+            ? `已完成 ${corpusDone} / 共 ${corpusTotal} 条`
+            : `共 ${corpusTotal} 条`;
+          const tooltip = isCorpus
+            ? `${tab.corpus!.projectName} (${progressText})${tab.filename ? ` · 当前：${tab.filename}` : ''}${tab.isDirty ? ' (待保存)' : ''}`
+            : tab.currentFilePath
+              ? `${tab.currentFilePath}${tab.isDirty ? ' (未保存)' : ''}`
+              : `${tab.filename}${tab.isDirty ? ' (未保存)' : ''}`;
           return (
             <div
               key={tab.id}
@@ -212,7 +233,7 @@ export const Topbar: React.FC<TopbarProps> = ({
               tabIndex={isActive ? 0 : -1}
               aria-selected={isActive}
               data-tab-active={isActive ? 'true' : undefined}
-              className={`tab-item ${isActive ? 'active' : ''}`}
+              className={`tab-item ${isActive ? 'active' : ''} ${isCorpus ? 'is-corpus' : ''}`}
               title={tooltip}
               onClick={() => onSwitchTab(tab.id)}
               onKeyDown={(e) => {
@@ -234,19 +255,30 @@ export const Topbar: React.FC<TopbarProps> = ({
               }}
             >
               {tab.isDirty && <span className="dirty-dot" aria-label="有未保存的修改" />}
-              {tab.audioName && (
-                <span className="tab-audio-ind" title={`已载入录音：${tab.audioName}`}>
-                  <UiIcon name="waveform" size={11} />
+              {isCorpus ? (
+                <span className="tab-corpus-ind" title={`文件夹项目：${tab.corpus!.projectName}`}>
+                  <CorpusFolderIcon size={12} />
                 </span>
+              ) : (
+                tab.audioName && (
+                  <span className="tab-audio-ind" title={`已载入录音：${tab.audioName}`}>
+                    <UiIcon name="waveform" size={11} />
+                  </span>
+                )
               )}
               <span className="tab-label" title={tooltip}>
-                {tab.filename}
+                {displayTitle}
               </span>
+              {isCorpus && (
+                <span className="tab-corpus-progress" title={progressTitle}>
+                  {progressText}
+                </span>
+              )}
               <button
                 type="button"
                 className="tab-close-btn"
                 title={`关闭标签页 (${formatKeyCombo('Mod+W')})`}
-                aria-label={`关闭 ${tab.filename}`}
+                aria-label={`关闭 ${displayTitle}`}
                 tabIndex={-1}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -388,7 +420,7 @@ export const Topbar: React.FC<TopbarProps> = ({
             onClick={onOpenTextGridPicker}
           >
             <UiIcon name="folder" size={14} />
-            <span>打开文件</span>
+            <span>打开 TextGrid</span>
           </button>
           <button
             type="button"
@@ -397,6 +429,14 @@ export const Topbar: React.FC<TopbarProps> = ({
           >
             <UiIcon name="waveform" size={14} />
             <span>打开录音</span>
+          </button>
+          <button
+            type="button"
+            title="打开文件夹，批量标注录音与 TextGrid"
+            onClick={onOpenCorpusFolder}
+          >
+            <CorpusFolderIcon size={14} />
+            <span>打开文件夹</span>
           </button>
 
           <div className={`menu-wrap ${openMenu === 'samples' ? 'open' : ''}`}>
@@ -416,6 +456,12 @@ export const Topbar: React.FC<TopbarProps> = ({
                 <span className="btn-lead">
                   <UiIcon name="waveform" size={13} />
                   <span>双人对话与声谱（含录音）</span>
+                </span>
+              </button>
+              <button type="button" onClick={() => { setOpenMenu(null); onLoadSample('corpus'); }}>
+                <span className="btn-lead">
+                  <CorpusFolderIcon size={13} />
+                  <span>文件夹批量标注示例（5 条）</span>
                 </span>
               </button>
               <button type="button" onClick={() => { setOpenMenu(null); onLoadSample('poem'); }}>

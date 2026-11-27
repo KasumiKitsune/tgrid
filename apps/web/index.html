@@ -48,7 +48,7 @@
           "price": "0",
           "priceCurrency": "USD"
         },
-        "softwareVersion": "0.1.1",
+        "softwareVersion": "0.2.0",
         "downloadUrl": "https://github.com/KasumiKitsune/tgrid/releases/latest",
         "license": "https://opensource.org/licenses/MIT",
         "url": "https://kasumikitsune.github.io/tgrid/",
@@ -59,10 +59,404 @@
     ]
   }
   </script>
+  <style>
+    html, body, #root {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #EAE7E0;
+      color: #141413;
+      font-family: "Inter", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .tg-seo-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    .tg-splash, .tg-splash *, .tg-splash *::before, .tg-splash *::after {
+      box-sizing: border-box;
+      border-radius: 0;
+    }
+    .tg-splash {
+      --tg-desk: #EAE7E0;
+      --tg-bar: #FAF9F6;
+      --tg-sheet: #FFFFFF;
+      --tg-subtle: #F2F0EA;
+      --tg-ink: #141413;
+      --tg-muted: #57544D;
+      --tg-faint: #767269;
+      --tg-rule: #D3CFC5;
+      --tg-rule-strong: #C6C2B8;
+      --tg-rule-hover: #8C887F;
+      --tg-blue: #1D4ED8;
+      --tg-blue-logo: #2563EB;
+      --tg-blue-soft: #EEF3FF;
+      --tg-purple: #7C3AED;
+      --tg-red: #B91C1C;
+      --tg-logo-base: #ECEAE3;
+      --tg-logo-muted: #D2CEC2;
+      --tg-font-sans: "Inter", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+      --tg-font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      user-select: none;
+      background-color: var(--tg-desk);
+      background-image:
+        linear-gradient(to right, rgba(20, 20, 19, 0.036) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(20, 20, 19, 0.036) 1px, transparent 1px);
+      background-size: 32px 32px;
+      background-position: center center;
+    }
+    .tg-sc-box {
+      width: 100%;
+      max-width: 484px;
+      background: var(--tg-sheet);
+      border: 1px solid var(--tg-rule-strong);
+    }
+    .tg-sc-head {
+      height: 32px;
+      background: var(--tg-subtle);
+      border-bottom: 1px solid var(--tg-rule);
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .tg-sc-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .tg-sc-brand strong {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: var(--tg-ink);
+    }
+    .tg-sc-brand span {
+      font-size: 11px;
+      color: var(--tg-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tg-sc-meta {
+      font-family: var(--tg-font-mono);
+      font-size: 10px;
+      color: var(--tg-faint);
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+    .tg-sc-body {
+      padding: 16px 18px 14px;
+      background: var(--tg-sheet);
+      overflow: hidden;
+    }
+    .tg-sc-svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .tg-sc-playhead {
+      will-change: transform;
+      animation: tgScSweep 2.8s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+    }
+    @keyframes tgScSweep {
+      0% { transform: translateX(0px); }
+      100% { transform: translateX(380px); }
+    }
+    .tg-sc-hl-1 { animation: tgScHl1 2.8s linear infinite; }
+    .tg-sc-hl-2 { animation: tgScHl2 2.8s linear infinite; }
+    .tg-sc-hl-3 { animation: tgScHl3 2.8s linear infinite; }
+    @keyframes tgScHl1 {
+      0%, 6% { opacity: 0; }
+      14%, 30% { opacity: 1; }
+      38%, 100% { opacity: 0; }
+    }
+    @keyframes tgScHl2 {
+      0%, 32% { opacity: 0; }
+      40%, 62% { opacity: 1; }
+      70%, 100% { opacity: 0; }
+    }
+    @keyframes tgScHl3 {
+      0%, 64% { opacity: 0; }
+      72%, 90% { opacity: 1; }
+      97%, 100% { opacity: 0; }
+    }
+    .tg-sc-track {
+      height: 2px;
+      background: var(--tg-rule);
+      position: relative;
+      overflow: hidden;
+    }
+    .tg-sc-fill {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 100%;
+      background: var(--tg-blue);
+      transform-origin: left center;
+      will-change: transform;
+      animation: tgScProg 2.8s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+    }
+    @keyframes tgScProg {
+      0% { transform: scaleX(0); }
+      100% { transform: scaleX(1); }
+    }
+    .tg-sc-foot {
+      height: 34px;
+      background: var(--tg-bar);
+      border-top: 1px solid var(--tg-rule);
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 11.5px;
+    }
+    .tg-sc-status {
+      color: var(--tg-muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .tg-sc-meter {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+    }
+    .tg-sc-meter i {
+      display: block;
+      width: 3px;
+      height: 9px;
+      background: var(--tg-rule-hover);
+      opacity: 0.35;
+      will-change: opacity;
+    }
+    .tg-sc-meter i:nth-child(1) { animation: tgScBar 1.2s ease-in-out 0s infinite; }
+    .tg-sc-meter i:nth-child(2) { animation: tgScBar 1.2s ease-in-out 0.2s infinite; }
+    .tg-sc-meter i:nth-child(3) { animation: tgScBar 1.2s ease-in-out 0.4s infinite; }
+    @keyframes tgScBar {
+      0%, 100% { opacity: 0.3; }
+      45% { opacity: 1; }
+    }
+    .tg-sc-tags {
+      font-family: var(--tg-font-mono);
+      font-size: 10.5px;
+      color: var(--tg-faint);
+      white-space: nowrap;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .tg-sc-playhead { animation: none; transform: translateX(172px); }
+      .tg-sc-hl-1, .tg-sc-hl-3 { animation: none; opacity: 0; }
+      .tg-sc-hl-2 { animation: none; opacity: 1; }
+      .tg-sc-fill { animation: none; transform: scaleX(0.45); }
+      .tg-sc-meter i { animation: none; opacity: 0.35; }
+      .tg-sc-meter i:nth-child(2) { opacity: 1; }
+    }
+  </style>
+  <noscript>
+    <style>
+      html, body, #root { height: auto; overflow: auto; }
+      .tg-splash { display: none !important; }
+      .tg-seo-only {
+        position: static !important;
+        width: auto !important;
+        height: auto !important;
+        margin: 48px auto !important;
+        max-width: 720px;
+        padding: 28px 32px !important;
+        overflow: visible !important;
+        clip: auto !important;
+        white-space: normal !important;
+        background: #FFFFFF;
+        border: 1px solid #C6C2B8;
+        border-top: 2px solid #141413;
+        line-height: 1.75;
+        color: #141413;
+      }
+      .tg-seo-only h1 { margin-top: 0; font-size: 20px; }
+      .tg-seo-only a { color: #1D4ED8; }
+    </style>
+  </noscript>
 </head>
 <body>
   <div id="root">
-    <main style="max-width:720px;margin:48px auto;padding:0 20px;font-family:system-ui,-apple-system,sans-serif;line-height:1.75;color:#141413;">
+    <div class="tg-splash" role="status" aria-live="polite" aria-label="正在加载 T·Grid 编辑器">
+      <div class="tg-sc-box">
+        <div class="tg-sc-head">
+          <div class="tg-sc-brand">
+            <svg viewBox="0 0 40 40" width="16" height="16" aria-hidden="true">
+              <rect x="0.5" y="0.5" width="39" height="39" fill="var(--tg-logo-base)" stroke="var(--tg-rule-strong)" stroke-width="1" />
+              <path d="M7 7 H33 V13 H23 V33 H17 V13 H7 Z" fill="var(--tg-ink)" />
+              <rect x="7" y="15" width="8" height="5" fill="var(--tg-blue-logo)" />
+              <rect x="7" y="22" width="8" height="11" fill="var(--tg-logo-muted)" />
+              <rect x="25" y="15" width="8" height="11" fill="var(--tg-logo-muted)" />
+              <rect x="25" y="28" width="8" height="5" fill="var(--tg-purple)" />
+            </svg>
+            <strong>T·Grid</strong>
+            <span>语音标注与出图工具</span>
+          </div>
+          <span class="tg-sc-meta">PRAAT TEXTGRID</span>
+        </div>
+
+        <div class="tg-sc-body" aria-hidden="true">
+          <svg class="tg-sc-svg" viewBox="0 0 448 164" width="448" height="164">
+            <defs>
+              <linearGradient id="tg-sc-trail" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#1D4ED8" stop-opacity="0" />
+                <stop offset="100%" stop-color="#1D4ED8" stop-opacity="0.14" />
+              </linearGradient>
+              <clipPath id="tg-sc-clip">
+                <rect x="52" y="16" width="380" height="136" />
+              </clipPath>
+            </defs>
+
+            <g font-family="var(--tg-font-mono)" font-size="9.5" fill="var(--tg-faint)">
+              <text x="4" y="12">TIME</text>
+              <text x="4" y="45">WAVE</text>
+              <text x="4" y="108">TIER 1</text>
+              <text x="4" y="138">TIER 2</text>
+            </g>
+
+            <g stroke="var(--tg-rule)" stroke-width="1">
+              <line x1="52" y1="16" x2="432" y2="16" />
+              <line x1="52" y1="10" x2="52" y2="16" stroke="var(--tg-rule-hover)" />
+              <line x1="90" y1="13" x2="90" y2="16" />
+              <line x1="128" y1="13" x2="128" y2="16" />
+              <line x1="166" y1="13" x2="166" y2="16" />
+              <line x1="204" y1="13" x2="204" y2="16" />
+              <line x1="242" y1="10" x2="242" y2="16" stroke="var(--tg-rule-hover)" />
+              <line x1="280" y1="13" x2="280" y2="16" />
+              <line x1="318" y1="13" x2="318" y2="16" />
+              <line x1="356" y1="13" x2="356" y2="16" />
+              <line x1="394" y1="13" x2="394" y2="16" />
+              <line x1="432" y1="10" x2="432" y2="16" stroke="var(--tg-rule-hover)" />
+            </g>
+            <g font-family="var(--tg-font-mono)" font-size="9" fill="var(--tg-faint)">
+              <text x="52" y="8">0.00</text>
+              <text x="232" y="8">0.50</text>
+              <text x="406" y="8">1.00 s</text>
+            </g>
+
+            <rect x="52" y="16" width="380" height="50" fill="var(--tg-bar)" stroke="var(--tg-rule)" stroke-width="1" />
+            <line x1="52" y1="41" x2="432" y2="41" stroke="var(--tg-rule)" stroke-width="1" />
+
+            <g stroke="var(--tg-ink)" stroke-width="1.2" opacity="0.82">
+              <line x1="76" y1="39" x2="76" y2="43" />
+              <line x1="82" y1="35" x2="82" y2="47" />
+              <line x1="88" y1="28" x2="88" y2="54" />
+              <line x1="94" y1="24" x2="94" y2="58" />
+              <line x1="100" y1="26" x2="100" y2="56" />
+              <line x1="106" y1="21" x2="106" y2="61" />
+              <line x1="112" y1="29" x2="112" y2="53" />
+              <line x1="118" y1="33" x2="118" y2="49" />
+              <line x1="124" y1="37" x2="124" y2="45" />
+              <line x1="168" y1="38" x2="168" y2="44" />
+              <line x1="174" y1="31" x2="174" y2="51" />
+              <line x1="180" y1="22" x2="180" y2="60" />
+              <line x1="186" y1="19" x2="186" y2="63" />
+              <line x1="192" y1="25" x2="192" y2="57" />
+              <line x1="198" y1="20" x2="198" y2="62" />
+              <line x1="204" y1="23" x2="204" y2="59" />
+              <line x1="210" y1="27" x2="210" y2="55" />
+              <line x1="216" y1="21" x2="216" y2="61" />
+              <line x1="222" y1="26" x2="222" y2="56" />
+              <line x1="228" y1="30" x2="228" y2="52" />
+              <line x1="234" y1="34" x2="234" y2="48" />
+              <line x1="240" y1="38" x2="240" y2="44" />
+              <line x1="292" y1="37" x2="292" y2="45" />
+              <line x1="298" y1="30" x2="298" y2="52" />
+              <line x1="304" y1="24" x2="304" y2="58" />
+              <line x1="310" y1="21" x2="310" y2="61" />
+              <line x1="316" y1="26" x2="316" y2="56" />
+              <line x1="322" y1="23" x2="322" y2="59" />
+              <line x1="328" y1="28" x2="328" y2="54" />
+              <line x1="334" y1="32" x2="334" y2="50" />
+              <line x1="340" y1="36" x2="340" y2="46" />
+              <line x1="346" y1="39" x2="346" y2="43" />
+              <line x1="384" y1="36" x2="384" y2="46" />
+              <line x1="390" y1="31" x2="390" y2="51" />
+              <line x1="396" y1="34" x2="396" y2="48" />
+              <line x1="402" y1="38" x2="402" y2="44" />
+            </g>
+
+            <g stroke="var(--tg-rule-hover)" stroke-width="1" fill="none" opacity="0.68">
+              <path d="M72 66 L72 74 L68 82 L68 90" />
+              <path d="M132 66 L132 74 L148 82 L148 90" />
+              <path d="M162 66 L162 74 L176 82 L176 90" />
+              <path d="M248 66 L248 74 L274 82 L274 90" />
+              <path d="M286 66 L286 74 L302 82 L302 90" />
+              <path d="M354 66 L354 74 L374 82 L374 90" />
+            </g>
+
+            <rect x="52" y="90" width="380" height="30" fill="var(--tg-sheet)" stroke="var(--tg-rule)" stroke-width="1" />
+            <rect class="tg-sc-hl-1" x="68.5" y="90.5" width="79" height="29" fill="var(--tg-blue-soft)" stroke="var(--tg-blue)" stroke-width="1" />
+            <rect class="tg-sc-hl-2" x="176.5" y="90.5" width="97" height="29" fill="var(--tg-blue-soft)" stroke="var(--tg-blue)" stroke-width="1" />
+            <rect class="tg-sc-hl-3" x="302.5" y="90.5" width="71" height="29" fill="var(--tg-blue-soft)" stroke="var(--tg-blue)" stroke-width="1" />
+
+            <g stroke="var(--tg-rule-strong)" stroke-width="1">
+              <line x1="68" y1="90" x2="68" y2="120" />
+              <line x1="148" y1="90" x2="148" y2="120" />
+              <line x1="176" y1="90" x2="176" y2="120" />
+              <line x1="274" y1="90" x2="274" y2="120" />
+              <line x1="302" y1="90" x2="302" y2="120" />
+              <line x1="374" y1="90" x2="374" y2="120" />
+            </g>
+            <g font-family="var(--tg-font-sans)" font-size="11.5" fill="var(--tg-muted)" text-anchor="middle">
+              <text x="108" y="109">tɕʰ</text>
+              <text x="225" y="109">uən</text>
+              <text x="338" y="109">ɕjɑu</text>
+            </g>
+
+            <rect x="52" y="120" width="380" height="30" fill="var(--tg-bar)" stroke="var(--tg-rule)" stroke-width="1" />
+            <g stroke="var(--tg-purple)" stroke-width="1.2">
+              <line x1="108" y1="120" x2="108" y2="132" opacity="0.7" />
+              <polygon points="108,131 112,135 108,139 104,135" fill="var(--tg-sheet)" />
+              <line x1="225" y1="120" x2="225" y2="132" opacity="0.7" />
+              <polygon points="225,131 229,135 225,139 221,135" fill="var(--tg-purple)" />
+              <line x1="338" y1="120" x2="338" y2="132" opacity="0.7" />
+              <polygon points="338,131 342,135 338,139 334,135" fill="var(--tg-sheet)" />
+            </g>
+
+            <g clip-path="url(#tg-sc-clip)">
+              <g class="tg-sc-playhead">
+                <rect x="12" y="16" width="40" height="134" fill="url(#tg-sc-trail)" />
+                <line x1="52" y1="16" x2="52" y2="150" stroke="var(--tg-red)" stroke-width="1.5" />
+                <polygon points="48,16 56,16 52,21" fill="var(--tg-red)" />
+              </g>
+            </g>
+          </svg>
+        </div>
+
+        <div class="tg-sc-track" aria-hidden="true">
+          <div class="tg-sc-fill"></div>
+        </div>
+
+        <div class="tg-sc-foot">
+          <span class="tg-sc-status">
+            <span class="tg-sc-meter" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span>正在加载编辑器…</span>
+          </span>
+          <span class="tg-sc-tags">TextGrid · IPA · SVG</span>
+        </div>
+      </div>
+    </div>
+
+    <main class="tg-seo-only">
       <h1>T·Grid — Praat TextGrid 编辑器与语音标注出图工具</h1>
       <p>T·Grid 是一款面向语言学与语音学研究的免费开源 Praat TextGrid / Collection 标注编辑器，所有音频与标注文件均在浏览器本地解析处理，不上传至服务器。</p>
       <ul>

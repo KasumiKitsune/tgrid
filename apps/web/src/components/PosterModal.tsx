@@ -125,6 +125,7 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
   const setOpen = useEditorStore((s) => s.setPosterOpen);
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const collectionActiveIdx = useEditorStore((s) => s.collectionActiveIdx);
+  const corpusActiveEntryId = useEditorStore((s) => s.corpusActiveEntryId);
   const tg = useEditorStore((s) => s.tg);
   const filename = useEditorStore((s) => s.filename);
   const viewDomain = useEditorStore((s) => s.viewDomain);
@@ -220,7 +221,7 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
       setPreviewRes(null);
       return;
     }
-    const docKey = `${activeTabId}|${collectionActiveIdx}|${filename}|${tg.tiers.map((t) => `${t.kind}:${t.name}`).join(',')}|${tg.xmin}|${tg.xmax}`;
+    const docKey = `${activeTabId}|${collectionActiveIdx}|${corpusActiveEntryId ?? ''}|${filename}|${tg.tiers.map((t) => `${t.kind}:${t.name}`).join(',')}|${tg.xmin}|${tg.xmax}`;
     const previewContextKey = `${docKey}|${audioName}|${analysis?.sessionId ?? ''}|${audioBuffer ? 1 : 0}`;
     if (previewContextKey !== lastPreviewContextKeyRef.current) {
       lastPreviewContextKeyRef.current = previewContextKey;
@@ -261,6 +262,7 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
     open,
     activeTabId,
     collectionActiveIdx,
+    corpusActiveEntryId,
     filename,
     audioName,
     analysis?.sessionId,

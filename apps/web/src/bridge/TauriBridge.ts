@@ -6,6 +6,7 @@ import type {
   CollectionItem,
   ContourBox,
   ContourPath,
+  CorpusDirScanResult,
   EngineInfo,
   IpaCandidate,
   IpaConvertResult,
@@ -177,6 +178,11 @@ export class TauriBridge implements PlatformBridge {
     });
   }
 
+  async loadWavFileSession(path: string, offset: number): Promise<AudioAnalysisSummary | null> {
+    if (!hasTauriInternals()) return null;
+    return invoke<AudioAnalysisSummary>('load_wav_file_session', { path, offset });
+  }
+
   async removeAudioSession(sessionId: number): Promise<void> {
     await invoke('remove_audio_session', { sessionId });
   }
@@ -305,11 +311,47 @@ export class TauriBridge implements PlatformBridge {
     return { path, name: getBaseName(path), bytes: new Uint8Array(raw) };
   }
 
+  async readNativeFileIfExists(path: string): Promise<Uint8Array | null> {
+    if (!hasTauriInternals()) return null;
+    const raw = await invoke<number[] | null>('read_local_file_if_exists', { path });
+    return raw ? new Uint8Array(raw) : null;
+  }
+
   async writeNativeFile(path: string, bytes: Uint8Array): Promise<boolean> {
     if (!hasTauriInternals()) return false;
     await invoke('write_local_file', { path, bytes: Array.from(bytes) });
     rememberDirFromPath(path);
     return true;
+  }
+
+  async writeNativeFileAtomic(path: string, bytes: Uint8Array): Promise<boolean> {
+    if (!hasTauriInternals()) return false;
+    await invoke('write_local_file_atomic', { path, bytes: Array.from(bytes) });
+    return true;
+  }
+
+  async openNativeDirectoryDialog(options?: { title?: string }): Promise<string | null> {
+    if (!hasTauriInternals()) return null;
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const lastDir = loadLastDir();
+    const selected = await open({
+      title: options?.title ?? '选择文件夹',
+      directory: true,
+      multiple: false,
+      defaultPath: lastDir || undefined
+    });
+    if (!selected || Array.isArray(selected)) return null;
+    try {
+      localStorage.setItem(LAST_DIR_KEY, selected);
+    } catch {
+      // ignore storage errors
+    }
+    return selected;
+  }
+
+  async scanCorpusDir(dir: string): Promise<CorpusDirScanResult | null> {
+    if (!hasTauriInternals()) return null;
+    return invoke<CorpusDirScanResult>('scan_corpus_dir', { dir });
   }
 
   async findCompanionAudio(tgPath: string): Promise<string | null> {

@@ -1,3 +1,5 @@
+@import './corpus.css';
+
 #app {
   display: flex;
   flex-direction: column;
@@ -696,6 +698,59 @@ button.active:not(.sidebar-rail-btn):not(.export-tier-chip),
   z-index: 50;
 }
 
+.transportbar .transport-play-btn {
+  min-width: 68px;
+  padding: 0 11px 0 9px;
+  gap: 5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+  color: #FFFFFF;
+  --tgi-stroke: currentColor;
+  --tgi-stroke-hover: currentColor;
+  --tgi-accent: currentColor;
+}
+
+.transportbar .transport-play-btn:hover:not(:disabled) {
+  background: #1E40AF;
+  background: color-mix(in srgb, var(--accent-blue) 86%, var(--ink));
+  border-color: #1E40AF;
+  border-color: color-mix(in srgb, var(--accent-blue) 86%, var(--ink));
+  color: #FFFFFF;
+}
+
+.transportbar .transport-play-btn:active:not(:disabled) {
+  background: #1E3A8A;
+  background: color-mix(in srgb, var(--accent-blue) 74%, var(--ink));
+  border-color: #1E3A8A;
+  border-color: color-mix(in srgb, var(--accent-blue) 74%, var(--ink));
+  color: #FFFFFF;
+}
+
+.transportbar .transport-play-btn:focus-visible {
+  outline: 1.5px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.transportbar .transport-play-btn.is-playing {
+  background: var(--accent-blue-soft);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.transportbar .transport-play-btn.is-playing:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-blue-soft) 78%, var(--accent-blue) 14%);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.transportbar .transport-play-btn.is-playing:active:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-blue-soft) 68%, var(--accent-blue) 22%);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
 .time-readout {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -940,6 +995,15 @@ button.active:not(.sidebar-rail-btn):not(.export-tier-chip),
   position: relative;
 }
 
+.workspace-center {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* Main Stage (Workbench Viewport, decoupled from ExportModal paper card) */
 .stage {
   flex: 1 1 auto;
@@ -948,6 +1012,7 @@ button.active:not(.sidebar-rail-btn):not(.export-tier-chip),
   padding: 8px 0 24px 10px;
   display: flex;
   align-items: flex-start;
+  justify-content: safe center;
   position: relative;
 }
 
@@ -2895,6 +2960,11 @@ button.active .export-btn-sub {
   button.icon-btn {
     width: 26px;
     padding: 0;
+  }
+  .transportbar .transport-play-btn {
+    min-width: 58px;
+    padding: 0 8px 0 7px;
+    gap: 4px;
   }
   button.compact {
     height: 23px;
@@ -6230,6 +6300,13 @@ html[data-ui-compact="1"] .edit-strip {
   padding-left: 8px;
   padding-right: 8px;
   gap: 4px 6px;
+}
+
+html[data-ui-compact="1"] .transportbar .transport-play-btn,
+html[data-ui-narrow="1"] .transportbar .transport-play-btn {
+  min-width: 58px;
+  padding: 0 8px 0 7px;
+  gap: 4px;
 }
 
 html[data-ui-compact="1"] .export-split,

@@ -105,6 +105,12 @@ fn load_wav_session(bytes: Vec<u8>, offset: f64) -> Result<AudioAnalysisSummary,
 }
 
 #[tauri::command]
+fn load_wav_file_session(path: String, offset: f64) -> Result<AudioAnalysisSummary, String> {
+    let bytes = std::fs::read(&path).map_err(|e| format!("无法读取音频文件 {path}: {e}"))?;
+    tg_dsp::load_wav_session(&bytes, offset).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn remove_audio_session(session_id: u32) -> bool {
     tg_dsp::remove_audio_session(session_id)
 }
@@ -198,14 +204,299 @@ fn find_zero_crossing(
     tg_dsp::session_zero_crossing(session_id, t, max_window_sec).map_err(|e| e.to_string())
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CorpusScannedAudioFile {
+    rel_path: String,
+    stem: String,
+    duration: Option<f64>,
+    size_bytes: u64,
+    modified_ms: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CorpusScannedFileEntry {
+    rel_path: String,
+    stem: String,
+    size_bytes: u64,
+    modified_ms: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CorpusDirScanResult {
+    dir_path: String,
+    dir_name: String,
+    audio_files: Vec<CorpusScannedAudioFile>,
+    text_grid_files: Vec<CorpusScannedFileEntry>,
+    has_project_file: bool,
+    project_file_rel_path: String,
+    word_list_files: Vec<String>,
+}
+
+fn probe_wav_duration_from_header(path: &std::path::Path, file_size: u64) -> Option<f64> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut buf = [0u8; 4096];
+    let mut read_len = 0usize;
+    while read_len < buf.len() {
+        match file.read(&mut buf[read_len..]) {
+            Ok(0) => break,
+            Ok(n) => read_len += n,
+            Err(_) => return None,
+        }
+    }
+    if read_len < 44 || &buf[0..4] != b"RIFF" || &buf[8..12] != b"WAVE" {
+        return None;
+    }
+
+    let mut pos = 12usize;
+    let mut eff_byte_rate: Option<f64> = None;
+    let mut data_bytes: Option<f64> = None;
+
+    while pos + 8 <= read_len {
+        let chunk_id = &buf[pos..pos + 4];
+        let chunk_size = u32::from_le_bytes([
+            buf[pos + 4],
+            buf[pos + 5],
+            buf[pos + 6],
+            buf[pos + 7],
+        ]);
+        pos += 8;
+
+        if chunk_id == b"fmt " {
+            if pos + 16 > read_len {
+                break;
+            }
+            let num_channels = u16::from_le_bytes([buf[pos + 2], buf[pos + 3]]);
+            let sample_rate = u32::from_le_bytes([
+                buf[pos + 4],
+                buf[pos + 5],
+                buf[pos + 6],
+                buf[pos + 7],
+            ]);
+            let byte_rate = u32::from_le_bytes([
+                buf[pos + 8],
+                buf[pos + 9],
+                buf[pos + 10],
+                buf[pos + 11],
+            ]);
+            let bits_per_sample = u16::from_le_bytes([buf[pos + 14], buf[pos + 15]]);
+
+            if byte_rate > 0 {
+                eff_byte_rate = Some(byte_rate as f64);
+            } else if sample_rate > 0 && num_channels > 0 && bits_per_sample >= 8 {
+                eff_byte_rate =
+                    Some((sample_rate as f64) * (num_channels as f64) * ((bits_per_sample / 8) as f64));
+            }
+        } else if chunk_id == b"data" {
+            let size = if chunk_size > 0 && chunk_size != u32::MAX {
+                chunk_size as f64
+            } else {
+                file_size.saturating_sub(pos as u64) as f64
+            };
+            data_bytes = Some(size);
+            if eff_byte_rate.is_some() {
+                break;
+            }
+        }
+
+        let step = (chunk_size as usize).saturating_add((chunk_size as usize) & 1);
+        pos = match pos.checked_add(step) {
+            Some(next) if next <= read_len => next,
+            _ => break,
+        };
+    }
+
+    let rate = eff_byte_rate?;
+    let bytes = data_bytes?;
+    if rate > 0.0 && bytes > 0.0 {
+        let dur = bytes / rate;
+        if dur.is_finite() && dur > 0.0 {
+            return Some(dur);
+        }
+    }
+    None
+}
+
+#[tauri::command]
+fn scan_corpus_dir(dir: String) -> Result<CorpusDirScanResult, String> {
+    let root = std::path::Path::new(&dir);
+    if !root.is_dir() {
+        return Err(format!("目录不存在或无法访问: {dir}"));
+    }
+
+    let entries =
+        std::fs::read_dir(root).map_err(|e| format!("无法读取目录 {dir}: {e}"))?;
+
+    let mut audio_files: Vec<CorpusScannedAudioFile> = Vec::new();
+    let mut text_grid_files: Vec<CorpusScannedFileEntry> = Vec::new();
+    let mut word_list_files: Vec<String> = Vec::new();
+    let mut has_project_file = false;
+    let mut project_file_rel_path = ".tgrid-project.json".to_string();
+
+    for entry in entries.flatten() {
+        let ep = entry.path();
+        let meta = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        let file_name = entry.file_name().to_string_lossy().into_owned();
+        if file_name.eq_ignore_ascii_case(".tgrid-project.json") {
+            has_project_file = true;
+            project_file_rel_path = file_name;
+            continue;
+        }
+        if file_name.starts_with('.') {
+            continue;
+        }
+
+        let size_bytes = meta.len();
+        let modified_ms = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
+        let ext = ep
+            .extension()
+            .map(|e| e.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        let stem = ep
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if stem.is_empty() {
+            continue;
+        }
+
+        if ext == "wav" {
+            let duration = probe_wav_duration_from_header(&ep, size_bytes);
+            audio_files.push(CorpusScannedAudioFile {
+                rel_path: file_name,
+                stem,
+                duration,
+                size_bytes,
+                modified_ms,
+            });
+        } else if matches!(
+            ext.as_str(),
+            "mp3" | "flac" | "ogg" | "m4a" | "aac" | "opus"
+        ) {
+            audio_files.push(CorpusScannedAudioFile {
+                rel_path: file_name,
+                stem,
+                duration: None,
+                size_bytes,
+                modified_ms,
+            });
+        } else if ext == "textgrid" {
+            text_grid_files.push(CorpusScannedFileEntry {
+                rel_path: file_name,
+                stem,
+                size_bytes,
+                modified_ms,
+            });
+        } else if matches!(ext.as_str(), "csv" | "tsv" | "xlsx") {
+            word_list_files.push(file_name);
+        }
+    }
+
+    audio_files.sort_by(|a, b| a.rel_path.to_lowercase().cmp(&b.rel_path.to_lowercase()));
+    text_grid_files.sort_by(|a, b| a.rel_path.to_lowercase().cmp(&b.rel_path.to_lowercase()));
+    word_list_files.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+
+    let dir_name = root
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| dir.clone());
+
+    Ok(CorpusDirScanResult {
+        dir_path: dir,
+        dir_name,
+        audio_files,
+        text_grid_files,
+        has_project_file,
+        project_file_rel_path,
+        word_list_files,
+    })
+}
+
 #[tauri::command]
 fn read_local_file(path: String) -> Result<Vec<u8>, String> {
     std::fs::read(&path).map_err(|e| format!("无法读取文件 {path}: {e}"))
 }
 
 #[tauri::command]
+fn read_local_file_if_exists(path: String) -> Result<Option<Vec<u8>>, String> {
+    match std::fs::read(&path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("无法读取文件 {path}: {e}")),
+    }
+}
+
+#[tauri::command]
 fn write_local_file(path: String, bytes: Vec<u8>) -> Result<(), String> {
     std::fs::write(&path, &bytes).map_err(|e| format!("无法写入文件 {path}: {e}"))
+}
+
+#[tauri::command]
+fn write_local_file_atomic(path: String, bytes: Vec<u8>) -> Result<(), String> {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Duration;
+
+    static TMP_SEQ: AtomicU64 = AtomicU64::new(1);
+
+    let target = std::path::Path::new(&path);
+    let parent = target.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let fname = target
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "file".to_string());
+    let seq = TMP_SEQ.fetch_add(1, Ordering::Relaxed);
+    let tmp_path = parent.join(format!(".{fname}.tmp.{}.{}", std::process::id(), seq));
+
+    {
+        let mut file = std::fs::File::create(&tmp_path)
+            .map_err(|e| format!("无法创建临时文件 {}: {e}", tmp_path.display()))?;
+        if let Err(e) = file.write_all(&bytes).and_then(|_| file.flush()) {
+            drop(file);
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(format!("无法写入临时文件 {path}: {e}"));
+        }
+        let _ = file.sync_data();
+    }
+
+    let retry_delays = [15u64, 40, 90];
+    let mut last_err: Option<std::io::Error> = None;
+    for attempt in 0..=retry_delays.len() {
+        match std::fs::rename(&tmp_path, target) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                last_err = Some(e);
+                if attempt < retry_delays.len() {
+                    std::thread::sleep(Duration::from_millis(retry_delays[attempt]));
+                }
+            }
+        }
+    }
+
+    let _ = std::fs::remove_file(&tmp_path);
+    Err(format!(
+        "无法保存文件 {path}: {}",
+        last_err
+            .map(|e| e.to_string())
+            .unwrap_or_else(|| "未知错误".to_string())
+    ))
 }
 
 #[tauri::command]
@@ -578,14 +869,18 @@ pub fn run() {
             summarize_audio,
             load_pcm_session,
             load_wav_session,
+            load_wav_file_session,
             remove_audio_session,
             clear_audio_session,
             render_spectrogram_rgba_packed,
             compute_band_contours,
             compute_waveform_path,
             find_zero_crossing,
+            scan_corpus_dir,
             read_local_file,
+            read_local_file_if_exists,
             write_local_file,
+            write_local_file_atomic,
             find_companion_audio,
             reveal_in_explorer,
             open_external_url,
@@ -642,5 +937,54 @@ mod tests {
     fn normalizes_clipboard_newlines() {
         assert_eq!(normalize_clipboard_newlines("a\r\nb\rc\nd"), "a\nb\nc\nd");
         assert_eq!(normalize_clipboard_newlines("plain ʃ 中文"), "plain ʃ 中文");
+    }
+
+    #[test]
+    fn scans_corpus_dir_and_writes_atomically() {
+        let dir = std::env::temp_dir().join(format!("tgrid_corpus_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // Build minimal 16-bit mono 16kHz WAV header claiming 32000 bytes (1.0s)
+        let mut wav = Vec::with_capacity(44);
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36u32 + 32000).to_le_bytes());
+        wav.extend_from_slice(b"WAVE");
+        wav.extend_from_slice(b"fmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&16000u32.to_le_bytes());
+        wav.extend_from_slice(&32000u32.to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&32000u32.to_le_bytes());
+
+        std::fs::write(dir.join("001_ba.WAV"), &wav).unwrap();
+        std::fs::write(dir.join("001_ba.TextGrid"), b"tg").unwrap();
+        std::fs::write(dir.join(".tgrid-project.json"), b"{}").unwrap();
+
+        let res = scan_corpus_dir(dir.to_string_lossy().into_owned()).unwrap();
+        assert_eq!(res.audio_files.len(), 1);
+        assert_eq!(res.text_grid_files.len(), 1);
+        assert!(res.has_project_file);
+        let dur = res.audio_files[0].duration.unwrap();
+        assert!((dur - 1.0).abs() < 1e-6);
+
+        let target = dir.join("001_ba.TextGrid");
+        write_local_file_atomic(target.to_string_lossy().into_owned(), b"updated".to_vec())
+            .unwrap();
+        assert_eq!(
+            read_local_file_if_exists(target.to_string_lossy().into_owned()).unwrap(),
+            Some(b"updated".to_vec())
+        );
+        assert_eq!(
+            read_local_file_if_exists(dir.join("missing.TextGrid").to_string_lossy().into_owned())
+                .unwrap(),
+            None
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

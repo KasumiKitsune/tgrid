@@ -1,0 +1,665 @@
+================================================================================
+T·Grid 字表语料工作区（Phase 1）图标清单与现有参考 SVG 源码
+================================================================================
+
+说明：
+本文档用于汇总 T·Grid Phase 1（文件夹词表批量标注工作区）所需的全部图标：
+- 第一部分：明确区分「@tgrid/icons 已有可直接复用图标」与「需新增的专用图标清单」，
+  每个新增图标均注明建议文件名、组件名、中文用途、出现位置、视觉语义与建议尺寸。
+- 第二部分：总结 T·Grid 现有图标库的绘制与动效规范，并原样附带 12 个最具代表性的
+  现有 SVG 源码（均来自 packages/tgrid-icons/svg/），可直接提供给其他 AI 或设计师
+  生成风格完全一致的新 SVG。
+
+正式接入方式：
+新绘制的 SVG 文件放入 packages/tgrid-icons/svg/<name>.svg 后，运行
+packages/tgrid-icons/scripts/build-icons.mjs 即可自动编译为 @tgrid/icons，
+并在 apps/web/src/corpus/corpusIcons.tsx 中一键切换为 <TGridIcon name="..." />。
+
+
+================================================================================
+第一部分：图标清单
+================================================================================
+
+--------------------------------------------------------------------------------
+1A. @tgrid/icons 已有可直接复用的图标（无需重绘）
+--------------------------------------------------------------------------------
+
+1. folder（packages/tgrid-icons/svg/folder.svg）
+   - 中文用途：打开文件夹 / 词表项目目录（若需与“打开单文件”作更强视觉区分，可另绘
+     下文 1B-1 的 corpusFolder.svg）
+   - 出现位置：顶部工具栏「打开文件夹」按钮、空状态引导
+   - 建议尺寸：14px
+
+2. search（packages/tgrid-icons/svg/search.svg）
+   - 中文用途：搜索词条输入框前缀图标
+   - 出现位置：左侧词条列表顶部搜索框
+   - 建议尺寸：13px
+
+3. CloseIcon（packages/tgrid-icons/svg/CloseIcon.svg）
+   - 中文用途：清空搜索关键字、收起面板关闭按钮
+   - 出现位置：左侧词条列表搜索框右侧清空按钮
+   - 建议尺寸：11px ~ 12px
+
+4. check（packages/tgrid-icons/svg/check.svg）
+   - 中文用途：词条状态「已完成」（绿色圆环对勾，可直接复用）
+   - 出现位置：左侧词条列表行首、筛选栏「已完成」、画布顶部导航条四态切换
+   - 建议尺寸：12px ~ 14px
+
+5. warning（packages/tgrid-icons/svg/warning.svg）
+   - 中文用途：词条状态「存疑」（琥珀色三角感叹号，可直接复用）
+   - 出现位置：左侧词条列表行首、筛选栏「存疑」、画布顶部导航条四态切换
+   - 建议尺寸：12px ~ 14px
+
+6. save（packages/tgrid-icons/svg/save.svg）
+   - 中文用途：保存状态微标（“已保存” / “自动保存已开启”）
+   - 出现位置：画布顶部导航条右侧保存微标、左侧词条栏底部状态行
+   - 建议尺寸：12px ~ 13px
+
+7. export（packages/tgrid-icons/svg/export.svg）
+   - 中文用途：导出修改（如直接复用，可用于 Web 只读模式底部导出按钮；若需突出
+     压缩包语义，可绘制下文 1B-10 的 corpusExportZip.svg）
+   - 出现位置：左侧词条栏底部「导出修改 (.zip)」按钮
+   - 建议尺寸：13px ~ 14px
+
+
+--------------------------------------------------------------------------------
+1B. 需新增的专用图标清单（共 10 个，其中前 8 个为核心必需，后 2 个为增强可选）
+--------------------------------------------------------------------------------
+
+[核心 1] corpusFolder.svg  |  组件名：CorpusFolderIcon
+- 中文用途：词表文件夹项目图标
+- 出现位置：顶部标签栏（区分文件夹项目标签页与单文件标签页）、工具栏「打开文件夹」
+- 视觉语义建议：基于 folder.svg 的双层翻盖文件夹轮廓，在前翻盖中央嵌入 3 条紧凑
+  竖向声波细线或横排列表短线，一眼传达“语音词表目录”含义；悬停时翻盖微斜并亮起
+  主强调蓝（#2563eb）。
+- 建议尺寸：12px（标签页）、14px（工具栏）
+
+[核心 2] corpusSidebarToggle.svg  |  组件名：CorpusSidebarToggleIcon
+- 中文用途：展开 / 收起左侧词条列表栏
+- 出现位置：左侧词条栏标题栏收起按钮、左侧窄导轨展开按钮、画布顶部导航条展开按钮
+- 建议尺寸：14px ~ 16px
+
+[核心 3] statusPending.svg  |  组件名：StatusPendingIcon
+- 中文用途：词条状态「未标」
+- 出现位置：左侧词条列表行首、左侧四态筛选栏、画布顶部导航条四态切换按钮组
+- 建议尺寸：12px ~ 14px
+
+[核心 4] statusRetake.svg  |  组件名：StatusRetakeIcon
+- 中文用途：词条状态「需重录」
+- 出现位置：左侧词条列表行首、左侧四态筛选栏、画布顶部导航条四态切换按钮组
+- 建议尺寸：12px ~ 14px
+
+[核心 5] corpusPrev.svg  |  组件名：CorpusPrevIcon
+- 中文用途：切换到上一条词条
+- 出现位置：画布顶部导航条「上一条」按钮
+- 建议尺寸：13px ~ 14px
+
+[核心 6] corpusNext.svg  |  组件名：CorpusNextIcon
+- 中文用途：切换到下一条词条
+- 出现位置：画布顶部导航条「下一条」按钮
+- 建议尺寸：13px ~ 14px
+
+[核心 7] autoPlay.svg  |  组件名：AutoPlayIcon
+- 中文用途：切条时「自动播放」开关
+- 出现位置：画布顶部导航条「自动播放」开关按钮
+- 建议尺寸：13px ~ 14px
+
+[核心 8] autoSplit.svg  |  组件名：AutoSplitIcon
+- 中文用途：静音「自动切分」开关
+- 出现位置：画布顶部导航条「自动切分」开关按钮
+- 建议尺寸：13px ~ 14px
+
+[可选 9] corpusFilterAll.svg  |  组件名：CorpusFilterAllIcon
+- 中文用途：词条列表「全部」筛选 / 词条队列导轨按钮
+- 出现位置：左侧词条栏收起后的窄导轨入口按钮、四态筛选栏「全部」按钮
+  代表完整词条队列。
+- 建议尺寸：13px ~ 15px
+
+[可选 10] corpusExportZip.svg  |  组件名：CorpusExportZipIcon
+- 中文用途：Web 只读模式「导出修改 (.zip)」按钮图标
+- 出现位置：左侧词条栏底部操作行（Web 降级只读模式）
+- 建议尺寸：13px ~ 14px
+
+备注（四态风格统一提示）：
+目前「已完成」可直接复用 check.svg，「存疑」可直接复用 warning.svg；若设计师希望
+四态在列表中保持完全统一的圆形徽章外形，也可在重绘 statusPending.svg 与
+statusRetake.svg 时一并微调，保持中心视觉重心与 11.6px 外径一致。
+
+
+================================================================================
+第二部分：T·Grid 图标绘制规范与现有参考 SVG 源码
+================================================================================
+
+--------------------------------------------------------------------------------
+2A. T·Grid @tgrid/icons 绘制规范总结（供设计师 / AI 绘图直接遵循）
+--------------------------------------------------------------------------------
+
+1. 画布与安全区
+   - 统一属性：xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"
+     width="16" height="16" fill="none"
+   - 视觉安全区：图形主体严格落在 [2, 14] x [2, 14] 范围内（四周留约 2px 呼吸边），
+     允许悬停动效轻微溢出（overflow: visible）。
+
+2. 线条与几何气质
+   - 线性描边为主，不使用厚重实心色块；仅在悬停态或状态徽章处叠加 8% ~ 16% 透明度
+     的浅色底纹填充，保持克制、精密、学术工具感。
+   - 笔触粗细：主轮廓 stroke-width: 1.4 ~ 1.5；次要装饰线 1.35；小箭头或强调笔画
+     1.55 ~ 1.6。
+   - 端点与拐角：统一 stroke-linecap: round; stroke-linejoin: round;
+     矩形外框微倒圆角 rx="1" ~ "1.5"（注意：外层 UI 按钮是直角，但 16px SVG 内部
+     图标路径采用克制的微圆角端点与转折，避免锯齿生硬）。
+
+3. 语义配色与自动 Token 化规则（packages/tgrid-icons/scripts/build-icons.mjs）
+   T·Grid 的图标编译器会自动把 SVG 内联 <style> 中的标准色值转换为 CSS 变量，
+   从而无缝适配按钮默认态、深底反色态（button.active / button.primary）和主题色。
+   请严格使用以下标准色值之一，或使用 currentColor：
+   - 主描边：#374151  -> var(--tgi-stroke, #374151)
+   - 次描边：#4b5563  -> var(--tgi-stroke-muted, #4b5563)
+   - 弱描边：#6b7280  -> var(--tgi-stroke-subtle, #6b7280)
+   - 极弱线：#9ca3af  -> var(--tgi-stroke-faint, #9ca3af)
+   - 悬停深：#111827  -> var(--tgi-stroke-hover, #111827)
+   - 强调蓝：#2563eb  -> var(--tgi-accent, #2563eb)
+   - 蓝底纹：rgba(37, 99, 235, 0) -> 悬停 rgba(37, 99, 235, 0.08 ~ 0.14)
+   - 成功绿：#16a34a / 悬停 #15803d / 底纹 rgba(22, 163, 74, 0.08 ~ 0.16)
+   - 警示琥珀：#d97706 / 悬停 #b45309 / 底纹 rgba(245, 158, 11, 0.08 ~ 0.16)
+   - 危险红：#dc2626 / 按压 #b91c1c
+
+4. 微动效约定
+   - 支持在内联 <style> 中编写 svg:hover 交互微动效，缓动函数统一为
+     cubic-bezier(0.22, 1, 0.36, 1)（时长 0.2s ~ 0.28s）。
+   - 位移克制在 0.55px ~ 1.2px，不剧烈跳动；无需写循环播放动画。
+   - 严禁嵌入 <text> 依赖系统字体、严禁嵌入位图、严禁出现任何 emoji。
+
+
+--------------------------------------------------------------------------------
+2B. 现有参考 SVG 源码（共 12 个，原样摘自 packages/tgrid-icons/svg/）
+--------------------------------------------------------------------------------
+
+=== [参考 1] folder.svg ===
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .folder-root {
+      transform-origin: 8px 8px;
+      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .folder-back {
+      stroke: #374151;
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: stroke 0.2s ease;
+    }
+    .folder-flap {
+      stroke: #374151;
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: rgba(37, 99, 235, 0);
+      transform-origin: 8px 13px;
+      transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.22s ease, fill 0.22s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .folder-back {
+      stroke: #111827;
+    }
+    svg:hover .folder-flap {
+      stroke: #2563eb;
+      fill: rgba(37, 99, 235, 0.08);
+      transform: skewX(-10deg) scaleY(0.84);
+    }
+    svg:active .folder-root {
+      transform: scale(0.91);
+    }
+  </style>
+
+  <g class="folder-root">
+    <!-- 文件夹后背板 -->
+    <path class="folder-back" d="M2 11.8 V4.1 C2 3.38 2.58 2.8 3.3 2.8 H5.95 C6.38 2.8 6.78 3.01 7.02 3.36 L7.58 4.14 C7.76 4.4 8.05 4.55 8.37 4.55 H12.7 C13.42 4.55 14 5.13 14 5.85 V11.8 C14 12.46 13.46 13 12.8 13 H3.2 C2.54 13 2 12.46 2 11.8 Z" />
+    <!-- 文件夹前翻盖（与折耳留出通透开口缝隙） -->
+    <path class="folder-flap" d="M2 8.1 C2 7.44 2.54 6.9 3.2 6.9 H12.8 C13.46 6.9 14 7.44 14 8.1 V11.8 C14 12.46 13.46 13 12.8 13 H3.2 C2.54 13 2 12.46 2 11.8 Z" />
+  </g>
+</svg>
+
+=== [参考 2] sidebarToggle.svg ===
+<svg class="tg-icon tg-icon--sidebar-toggle" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill, .tg-src-fill, .tg-dst-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-pane-fill {
+      opacity: 0.09;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill, svg:hover .tg-src-fill, svg:hover .tg-dst-fill { opacity: 0.14; }
+    svg:hover .tg-pane-fill { opacity: 0.2; }
+    svg:hover .tg-sub { opacity: 1; }
+    svg:hover .tg-chev { transform: translateX(0.55px); }
+  </style>
+  <!-- 右侧任务窗格微底纹 -->
+  <path class="tg-pane-fill" d="M10.5 2.5H12.75C13.58 2.5 14.25 3.17 14.25 4V12C14.25 12.83 13.58 13.5 12.75 13.5H10.5V2.5Z" fill="currentColor" />
+  <!-- 窗口外框与右侧栏分割线 -->
+  <rect x="1.75" y="2.5" width="12.5" height="11" rx="1.5" stroke="currentColor" stroke-width="1.5" />
+  <path d="M10.5 2.5V13.5" stroke="currentColor" stroke-width="1.5" />
+  <!-- 展开 / 收起方向尖角 -->
+  <path class="tg-sub tg-chev" d="M5.5 6.25L7.25 8L5.5 9.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+</svg>
+
+=== [参考 3] check.svg ===
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .chk-root {
+      transform-origin: 8px 8px;
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .chk-ring {
+      stroke: #16a34a;
+      stroke-width: 1.45;
+      fill: rgba(22, 163, 74, 0.08);
+      transition: stroke 0.2s ease, fill 0.2s ease;
+    }
+    .chk-mark {
+      stroke: #16a34a;
+      stroke-width: 1.55;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transform-origin: 8px 8px;
+      transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), stroke 0.2s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .chk-ring {
+      stroke: #15803d;
+      fill: rgba(22, 163, 74, 0.16);
+    }
+    svg:hover .chk-mark {
+      stroke: #15803d;
+      transform: scale(1.1);
+    }
+    svg:active .chk-root { transform: scale(0.91); }
+  </style>
+
+  <g class="chk-root">
+    <circle class="chk-ring" cx="8" cy="8" r="5.8" />
+    <path class="chk-mark" d="M5.3 8.1 L7.15 9.95 L10.85 6.05" />
+  </g>
+</svg>
+
+=== [参考 4] warning.svg ===
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .warn-root {
+      transform-origin: 8px 8.5px;
+      transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .warn-frame {
+      stroke: #d97706;
+      stroke-width: 1.55;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: rgba(245, 158, 11, 0.08);
+      transition: stroke 0.2s ease, fill 0.2s ease;
+    }
+    .warn-bang {
+      stroke: #d97706;
+      stroke-width: 1.65;
+      stroke-linecap: round;
+      transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), stroke 0.2s ease;
+    }
+    .warn-dot {
+      fill: #d97706;
+      transition: fill 0.2s ease;
+    }
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .warn-frame {
+      stroke: #b45309;
+      fill: rgba(245, 158, 11, 0.16);
+    }
+    svg:hover .warn-bang {
+      stroke: #b45309;
+      transform: translateY(-0.7px);
+    }
+    svg:hover .warn-dot {
+      fill: #b45309;
+    }
+    svg:active .warn-root {
+      transform: scale(0.9);
+    }
+  </style>
+
+  <g class="warn-root">
+    <path class="warn-frame" d="M7.15 2.75 L1.95 12.1 C1.58 12.76 2.06 13.55 2.81 13.55 H13.19 C13.94 13.55 14.42 12.76 14.05 12.1 L8.85 2.75 C8.48 2.08 7.52 2.08 7.15 2.75 Z" />
+    <path class="warn-bang" d="M8 6.1 V9.2" />
+    <circle class="warn-dot" cx="8" cy="11.35" r="0.9" />
+  </g>
+</svg>
+
+=== [参考 5] trash.svg ===
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .trash-root {
+      transform-origin: 8px 8.5px;
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .lid {
+      stroke: #374151;
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transform-origin: 12.6px 4.4px;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+    .bin {
+      stroke: #374151;
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: stroke 0.2s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .lid {
+      stroke: #dc2626;
+      transform: translateY(-0.65px) rotate(10deg);
+    }
+    svg:hover .bin { stroke: #dc2626; }
+    svg:active .trash-root { transform: scale(0.91); }
+  </style>
+
+  <g class="trash-root">
+    <!-- 桶盖与提手 -->
+    <g class="lid">
+      <path d="M6 4.4 V3.2 C6 2.65 6.45 2.2 7 2.2 H9 C9.55 2.2 10 2.65 10 3.2 V4.4" />
+      <path d="M2.6 4.4 H13.4" />
+    </g>
+    <!-- 桶身与双竖肋 -->
+    <g class="bin">
+      <path d="M3.8 4.4 L4.4 12.4 C4.46 13.18 5.1 13.8 5.88 13.8 H10.12 C10.9 13.8 11.54 13.18 11.6 12.4 L12.2 4.4" />
+      <path d="M6.6 7 V11.2" />
+      <path d="M9.4 7 V11.2" />
+    </g>
+  </g>
+</svg>
+
+=== [参考 6] search.svg ===
+<svg class="tg-icon tg-icon--search" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tg-fill, .tg-src-fill, .tg-dst-fill {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .tg-pane-fill {
+      opacity: 0.09;
+      transition: opacity 0.2s ease;
+    }
+    .tg-sub {
+      opacity: 0.72;
+      transition: opacity 0.2s ease, transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    svg:hover .tg-fill, svg:hover .tg-src-fill, svg:hover .tg-dst-fill { opacity: 0.14; }
+    svg:hover .tg-pane-fill { opacity: 0.2; }
+    svg:hover .tg-sub { opacity: 1; }
+    .tg-mag { transform-origin: 7px 7px; transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
+    svg:hover .tg-mag { transform: scale(1.06); }
+  </style>
+  <g class="tg-mag">
+    <!-- 镜片玻璃微底纹 -->
+    <circle class="tg-fill" cx="7" cy="7" r="4.75" fill="currentColor" />
+    <!-- 放大镜镜圈 -->
+    <circle cx="7" cy="7" r="4.75" stroke="currentColor" stroke-width="1.5" />
+    <!-- 45° 镜柄 -->
+    <path class="tg-sub" d="M10.4 10.4L14.25 14.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+  </g>
+</svg>
+
+=== [参考 7] export.svg ===
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .export-root {
+      transform-origin: 8px 8px;
+      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .arrow {
+      stroke: #374151;
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+    .tray {
+      stroke: #374151;
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .arrow {
+      stroke: #2563eb;
+      transform: translateY(1.2px);
+    }
+    svg:hover .tray {
+      stroke: #111827;
+      transform: translateY(0.35px);
+    }
+    svg:active .export-root {
+      transform: scale(0.91);
+    }
+  </style>
+
+  <g class="export-root">
+    <!-- 落入箭头 -->
+    <g class="arrow">
+      <path d="M8 2.4 V9.8" />
+      <path d="M5.2 7.2 L8 10 L10.8 7.2" />
+    </g>
+    <!-- 承接托盘 -->
+    <path class="tray" d="M2.6 10.6 V12.1 C2.6 12.8 3.2 13.4 3.9 13.4 H12.1 C12.8 13.4 13.4 12.8 13.4 12.1 V10.6" />
+  </g>
+</svg>
+
+=== [参考 8] play.svg ===
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .play-line {
+      stroke: #374151;
+      stroke-width: 1.45;
+      stroke-linejoin: round;
+      fill: rgba(37, 99, 235, 0);
+      transform-origin: 8px 8px;
+      transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease, fill 0.2s ease;
+    }
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .play-line {
+      stroke: #2563eb;
+      fill: rgba(37, 99, 235, 0.12);
+      transform: translateX(0.6px);
+    }
+    svg:active .play-line {
+      transform: translateX(0.6px) scale(0.9);
+    }
+  </style>
+
+  <path class="play-line" d="M4.6 3.7 C4.6 3.08 5.28 2.7 5.81 3.03 L12.35 7.33 C12.84 7.65 12.84 8.35 12.35 8.67 L5.81 12.97 C5.28 13.3 4.6 12.92 4.6 12.3 Z" />
+</svg>
+
+=== [参考 9] split.svg ===
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .split-root {
+      transform-origin: 8px 8px;
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .half {
+      stroke: #374151;
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+    .blade {
+      stroke: #374151;
+      stroke-width: 1.45;
+      stroke-linecap: round;
+      transform-origin: 8px 8px;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .half { stroke: #111827; }
+    svg:hover .half-l { transform: translateX(-0.65px); }
+    svg:hover .half-r { transform: translateX(0.65px); }
+    svg:hover .blade { stroke: #2563eb; transform: scaleY(1.08); }
+    svg:active .split-root { transform: scale(0.91); }
+  </style>
+
+  <g class="split-root">
+    <!-- 左半区间 -->
+    <path class="half half-l" d="M5.4 4.3 H3.4 C2.74 4.3 2.2 4.84 2.2 5.5 V10.5 C2.2 11.16 2.74 11.7 3.4 11.7 H5.4" />
+    <!-- 右半区间 -->
+    <path class="half half-r" d="M10.6 4.3 H12.6 C13.26 4.3 13.8 4.84 13.8 5.5 V10.5 C13.8 11.16 13.26 11.7 12.6 11.7 H10.6" />
+    <!-- 中央切分线 -->
+    <path class="blade" d="M8 2.2 V13.8" />
+  </g>
+</svg>
+
+=== [参考 10] waveform.svg ===
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .wave-root {
+      transform-origin: 8px 8px;
+      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .bar {
+      stroke: #374151;
+      stroke-width: 1.6;
+      stroke-linecap: round;
+      transform-origin: 8px 8px;
+      transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), stroke 0.22s ease;
+    }
+    .b1 { transform-origin: 2.6px 8px; transition-delay: 0ms; }
+    .b2 { transform-origin: 5.3px 8px; transition-delay: 35ms; }
+    .b3 { transform-origin: 8px 8px;   transition-delay: 70ms; }
+    .b4 { transform-origin: 10.7px 8px; transition-delay: 35ms; }
+    .b5 { transform-origin: 13.4px 8px; transition-delay: 0ms; }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .b1 { stroke: #111827; transform: scaleY(1.35); }
+    svg:hover .b2 { stroke: #2563eb; transform: scaleY(0.78); }
+    svg:hover .b3 { stroke: #2563eb; transform: scaleY(1.16); }
+    svg:hover .b4 { stroke: #2563eb; transform: scaleY(1.24); }
+    svg:hover .b5 { stroke: #111827; transform: scaleY(1.35); }
+    svg:active .wave-root { transform: scale(0.9); }
+  </style>
+
+  <g class="wave-root">
+    <path class="bar b1" d="M2.6 6.4 V9.6" />
+    <path class="bar b2" d="M5.3 4.2 V11.8" />
+    <path class="bar b3" d="M8 2.6 V13.4" />
+    <path class="bar b4" d="M10.7 4.8 V11.2" />
+    <path class="bar b5" d="M13.4 6.4 V9.6" />
+  </g>
+</svg>
+
+=== [参考 11] fileCollection.svg ===
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .fc-root {
+      transform-origin: 8px 8px;
+      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .fc-file {
+      stroke: #374151;
+      stroke-width: 1.45;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: stroke 0.2s ease;
+    }
+    .fc-wave {
+      stroke: #374151;
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      transform-origin: 7.8px 5.6px;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+    .fc-tier {
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .fc-tier-box {
+      stroke: #374151;
+      stroke-width: 1.35;
+      stroke-linejoin: round;
+      fill: rgba(37, 99, 235, 0);
+      transition: stroke 0.2s ease, fill 0.2s ease;
+    }
+    .fc-tier-div {
+      stroke: #374151;
+      stroke-width: 1.35;
+      stroke-linecap: round;
+      transition: stroke 0.2s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .fc-file { stroke: #111827; }
+    svg:hover .fc-wave {
+      stroke: #2563eb;
+      transform: translateY(-0.2px) scaleY(1.08);
+    }
+    svg:hover .fc-tier { transform: translateY(0.2px); }
+    svg:hover .fc-tier-box {
+      stroke: #111827;
+      fill: rgba(37, 99, 235, 0.13);
+    }
+    svg:hover .fc-tier-div { stroke: #2563eb; }
+    svg:active .fc-root { transform: scale(0.91); }
+  </style>
+
+  <g class="fc-root">
+    <!-- 45° 切角文档轮廓（与 save 外框完全同源） -->
+    <path class="fc-file" d="M3.25 2 H11.15 L14 4.85 V12.75 C14 13.44 13.44 14 12.75 14 H3.25 C2.56 14 2 13.44 2 12.75 V3.25 C2 2.56 2.56 2 3.25 2 Z" />
+    <!-- 上半部：音频对象波形 -->
+    <path class="fc-wave" d="M5.5 5 V6.2 M7.8 4.1 V7.1 M10.1 4.75 V6.45" />
+    <!-- 下半部：TextGrid 区间层对象 -->
+    <g class="fc-tier">
+      <rect class="fc-tier-box" x="4.8" y="9.6" width="6.4" height="2.4" rx="0.55" />
+      <path class="fc-tier-div" d="M7.8 9.6 V12" />
+    </g>
+  </g>
+</svg>
+
+=== [参考 12] up.svg ===
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .up-press {
+      transform-origin: 8px 8px;
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .up-arrow {
+      stroke: #4b5563;
+      stroke-width: 1.55;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .up-arrow {
+      stroke: #2563eb;
+      transform: translateY(-1.2px);
+    }
+    svg:active .up-press { transform: scale(0.9); }
+  </style>
+
+  <g class="up-press">
+    <g class="up-arrow">
+      <path d="M8 13 V3.2" />
+      <path d="M4.2 7 L8 3.1 L11.8 7" />
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .cez-root {
+      transform-origin: 8px 8px;
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .cez-doc {
+      stroke: #374151;
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: stroke 0.2s ease;
+    }
+    .cez-zip {
+      stroke: #4b5563;
+      stroke-width: 1.3;
+      stroke-linecap: round;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+    .cez-z1 { transition-delay: 0ms; }
+    .cez-z2 { transition-delay: 30ms; }
+    .cez-z3 { transition-delay: 60ms; }
+    .cez-z4 { transition-delay: 90ms; }
+    .cez-arrow {
+      stroke: #374151;
+      stroke-width: 1.45;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .cez-doc {
+      stroke: #111827;
+    }
+    svg:hover .cez-zip {
+      stroke: #2563eb;
+    }
+    svg:hover .cez-zip-l { transform: translateX(0.25px); }
+    svg:hover .cez-zip-r { transform: translateX(-0.25px); }
+    svg:hover .cez-arrow {
+      stroke: #2563eb;
+      transform: translateY(1.05px);
+    }
+
+    svg:active .cez-root {
+      transform: scale(0.91);
+    }
+    svg:active .cez-zip-l { transform: translateX(0.35px); }
+    svg:active .cez-zip-r { transform: translateX(-0.35px); }
+    svg:active .cez-arrow {
+      stroke: #2563eb;
+      transform: translateY(1.4px);
+    }
+  </style>
+
+  <g class="cez-root">
+    <!-- 45° 切角压缩包文档轮廓（与 fileCollection / save 同源，右下留出导出箭头呼吸区） -->
+    <path class="cez-doc" d="M7.2 13.8 H3.4 C2.74 13.8 2.2 13.26 2.2 12.6 V3.2 C2.2 2.54 2.74 2 3.4 2 H9.6 L12.4 4.8 V5.3" />
+    <!-- 纵向交替拉链齿（无字体依赖的 .zip 归档语义） -->
+    <path class="cez-zip cez-zip-l cez-z1" d="M4.5 4.3 H5.3" />
+    <path class="cez-zip cez-zip-r cez-z2" d="M5.7 6.5 H6.5" />
+    <path class="cez-zip cez-zip-l cez-z3" d="M4.5 8.7 H5.3" />
+    <path class="cez-zip cez-zip-r cez-z4" d="M5.7 10.9 H6.5" />
+    <!-- 右下角向下导出箭头（与 export.svg 动效同源） -->
+    <g class="cez-arrow">
+      <path d="M11.5 7.6 V13.4" />
+      <path d="M9.3 11.3 L11.5 13.5 L13.7 11.3" />
+    </g>
+  </g>
+</svg>

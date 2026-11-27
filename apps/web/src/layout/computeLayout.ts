@@ -198,6 +198,7 @@ export interface ComputeLayoutOptions {
   floatingBarMode?: boolean;
   allowSingleCompress?: boolean;
   viewportHeight?: number;
+  shortAudioMode?: boolean;
   legendConfig?: {
     mode: 'full' | 'compact' | 'off';
     lang: 'zh' | 'en';
@@ -301,6 +302,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     floatingBarMode = false,
     allowSingleCompress = false,
     viewportHeight = 0,
+    shortAudioMode = false,
     legendConfig = null
   } = options;
 
@@ -332,7 +334,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
   const BAND_GAP =
     isInteractive && floatingBarMode ? Math.max(baseBandGap, 54) : baseBandGap;
   const MIN_COL_W = isTinyView ? 17 : 19;
-  const SILENCE_THRESHOLD = 0.5;
+  const SILENCE_THRESHOLD = shortAudioMode ? 1.5 : 0.5;
   const SILENCE_COLLAPSE_W = isTinyView ? 46 : 52;
 
   const fontFamily = richOpts?.fontFamily || IPA_FONT_STACK;
@@ -407,6 +409,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
 
   const spineT = Array.from(tsSet).sort((a, b) => a - b);
   if (spineT.length === 0) spineT.push(0);
+  const totalDur = Math.max(0, spineT[spineT.length - 1] - spineT[0]);
   const tToIdx = new Map<number, number>();
   spineT.forEach((t, i) => tToIdx.set(t, i));
 
@@ -689,6 +692,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       // Only fold a pause when the document has actual annotations, the column contains no structural
       // anomaly (gap / overlap / zero-duration interval), AND (if audio is loaded) has no audible energy.
       const shouldCollapse =
+        !(shortAudioMode && totalDur <= 2.5) &&
         hasAnyActiveText &&
         !hasActiveText &&
         !hasAnomaly &&
@@ -1073,14 +1077,25 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       }
     }
     let bandContentW = Math.max(40, rawBandW);
+    const isShortSingleBand =
+      shortAudioMode &&
+      isInteractive &&
+      wrapMode === 'auto' &&
+      bands.length === 1 &&
+      totalDur > 0 &&
+      totalDur <= 2.5;
     if (
       !isLinear &&
       bandCols > 0 &&
       (wrapMode === 'single' || (wrapMode === 'auto' && bands.length === 1 && isInteractive))
     ) {
       const rawTargetActive = maxBandContentW - collapsedSum;
-      const targetActive =
-        wrapMode === 'single' || (hasAudio && activeColCount <= 2)
+      const targetActive = isShortSingleBand
+        ? Math.max(
+            0,
+            Math.min(maxBandContentW, Math.max(660, Math.round(totalDur * 520))) - collapsedSum
+          )
+        : wrapMode === 'single' || (hasAudio && activeColCount <= 2)
           ? rawTargetActive
           : Math.min(rawTargetActive, 220 + activeColCount * 145);
       if (activeSum > 0 && targetActive > activeSum) {

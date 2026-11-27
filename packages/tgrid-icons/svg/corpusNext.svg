@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none">
+  <style>
+    .cn-root {
+      transform-origin: 8px 8px;
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .cn-front {
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .cn-card {
+      stroke: #374151;
+      stroke-width: 1.4;
+      fill: rgba(37, 99, 235, 0);
+      transition: stroke 0.2s ease, fill 0.2s ease;
+    }
+    .cn-chev {
+      stroke: #374151;
+      stroke-width: 1.55;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+    .cn-stack {
+      stroke: #6b7280;
+      stroke-width: 1.35;
+      stroke-linecap: round;
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.2s ease;
+    }
+
+    svg { cursor: pointer; overflow: visible; }
+    svg:hover .cn-front {
+      transform: translateX(0.45px);
+    }
+    svg:hover .cn-card {
+      stroke: #111827;
+      fill: rgba(37, 99, 235, 0.08);
+    }
+    svg:hover .cn-chev {
+      stroke: #2563eb;
+      transform: translateX(0.5px);
+    }
+    svg:hover .cn-stack {
+      stroke: #4b5563;
+      transform: translateX(-0.35px);
+    }
+
+    svg:active .cn-root {
+      transform: scale(0.91);
+    }
+    svg:active .cn-front {
+      transform: translateX(0.7px);
+    }
+    svg:active .cn-card {
+      stroke: #2563eb;
+      fill: rgba(37, 99, 235, 0.14);
+    }
+    svg:active .cn-chev {
+      stroke: #2563eb;
+      transform: translateX(0.7px);
+    }
+    svg:active .cn-stack {
+      stroke: #6b7280;
+      transform: translateX(-0.5px);
+    }
+  </style>
+
+  <g class="cn-root">
+    <!-- 左侧叠放词条队列边缘 -->
+    <path class="cn-stack" d="M2.7 4.5 C2.38 4.76 2.2 5.18 2.2 5.65 V10.35 C2.2 10.82 2.38 11.24 2.7 11.5" />
+    <!-- 右侧切入词条卡与方向尖角 -->
+    <g class="cn-front">
+      <rect class="cn-card" x="4.8" y="2.8" width="9" height="10.4" rx="1.6" />
+      <path class="cn-chev" d="M8.25 5.65 L10.65 8 L8.25 10.35" />
+    </g>
+  </g>
+</svg>

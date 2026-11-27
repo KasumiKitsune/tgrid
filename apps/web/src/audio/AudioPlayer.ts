@@ -6,6 +6,28 @@ export interface AudioPlaybackCallbacks {
 // Small schedule lookahead so the WebAudio render thread never misses or clips frame 0
 const SCHEDULE_LOOKAHEAD_SEC = 0.02;
 
+/**
+ * 无副作用的纯音频解码函数：将音频字节解码为 AudioBuffer 并下混为单声道 Float32Array，
+ * 不会打断当前播放状态，也不会覆盖 AudioPlayer 内部缓冲。
+ */
+export async function decodeAudioPure(
+  ctx: AudioContext,
+  bytes: Uint8Array
+): Promise<{ buffer: AudioBuffer; mono: Float32Array }> {
+  const copy = bytes.slice().buffer;
+  const buffer = await ctx.decodeAudioData(copy);
+  const len = buffer.length;
+  const mono = new Float32Array(len);
+  const ch0 = buffer.getChannelData(0);
+  if (buffer.numberOfChannels > 1) {
+    const ch1 = buffer.getChannelData(1);
+    for (let i = 0; i < len; i++) mono[i] = 0.5 * (ch0[i] + ch1[i]);
+  } else {
+    mono.set(ch0);
+  }
+  return { buffer, mono };
+}
+
 export class AudioPlayer {
   private ctx: AudioContext | null = null;
   private buffer: AudioBuffer | null = null;
@@ -165,21 +187,11 @@ export class AudioPlayer {
 
   async decodeAudioBytes(bytes: Uint8Array, offset = 0): Promise<{ buffer: AudioBuffer; mono: Float32Array }> {
     const ctx = this.ensureContext(false);
-    const copy = bytes.slice().buffer;
-    const buffer = await ctx.decodeAudioData(copy);
+    const decoded = await decodeAudioPure(ctx, bytes);
     this.stop(false);
-    this.buffer = buffer;
+    this.buffer = decoded.buffer;
     this.offset = offset;
-    const len = buffer.length;
-    const mono = new Float32Array(len);
-    const ch0 = buffer.getChannelData(0);
-    if (buffer.numberOfChannels > 1) {
-      const ch1 = buffer.getChannelData(1);
-      for (let i = 0; i < len; i++) mono[i] = 0.5 * (ch0[i] + ch1[i]);
-    } else {
-      mono.set(ch0);
-    }
-    return { buffer, mono };
+    return decoded;
   }
 
   loadFromSoundObject(channels: number[][], sampleRate: number, offset = 0): { buffer: AudioBuffer; mono: Float32Array } {

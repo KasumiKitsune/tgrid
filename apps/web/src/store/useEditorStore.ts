@@ -50,6 +50,12 @@ import {
   saveCanvasScale,
   saveUiScale
 } from '../utils/uiScale';
+import type {
+  CorpusFilterState,
+  CorpusItemRecord,
+  CorpusOptions,
+  CorpusProjectState
+} from '../corpus/types';
 
 export type IpaInputMode = 'off' | 'yunlong' | 'praat';
 export type SidebarTab = 'inspector' | 'tiers' | 'history' | 'settings' | 'customize';
@@ -464,8 +470,41 @@ export interface BoundaryMoveOptions {
   actionMeta?: Partial<HistoryActionMeta>;
 }
 
+export interface PendingAutoEditTarget {
+  kind: 'interval';
+  tierIndex: number;
+  itemIndex: number;
+  caretAtEnd?: boolean;
+}
+
+export interface ActivateCorpusEntryPayload {
+  tabId?: string;
+  itemId: string;
+  tg: TextGrid;
+  filename: string;
+  currentFilePath: string | null;
+  currentFileFormat?: TextGridFormat;
+  selection?: EditorSelection;
+  playRange?: { start: number; end: number } | null;
+  audioName: string;
+  audioOffset?: number;
+  audioDuration: number;
+  audioSampleRate: number;
+  analysis: AudioAnalysisSummary | null;
+  loadSeq?: number;
+  itemPatch?: Partial<
+    Pick<
+      CorpusItemRecord,
+      'status' | 'hasTextGrid' | 'ipaPreview' | 'duration' | 'note' | 'updatedAt' | 'label' | 'missing'
+    >
+  >;
+  pendingAutoEditTarget?: PendingAutoEditTarget | null;
+}
+
 export interface TabRecord {
   id: string;
+  kind?: 'single' | 'corpus';
+  corpus?: CorpusProjectState;
   tg: TextGrid;
   collectionTgs: TextGrid[];
   collectionActiveIdx: number;
@@ -492,6 +531,8 @@ export interface TabRecord {
 }
 
 export interface CreateTabOptions {
+  kind?: 'single' | 'corpus';
+  corpus?: CorpusProjectState;
   tg?: TextGrid;
   filename?: string;
   collectionTgs?: TextGrid[];
@@ -505,6 +546,7 @@ export interface CreateTabOptions {
 
 export interface CloseTabResult {
   removedSessionId: number | null;
+  removedCorpusProjectId: string | null;
   removedTabId: string;
   nextActiveTabId: string;
 }
@@ -513,6 +555,8 @@ export interface EditorState {
   // Multi-tab workspace state
   tabs: TabRecord[];
   activeTabId: string;
+  corpusActiveEntryId: string | null;
+  pendingAutoEditTarget: PendingAutoEditTarget | null;
 
   // Active-tab mirrored top-level document fields (fast reactive selectors)
   tg: TextGrid;
@@ -576,6 +620,7 @@ export interface EditorState {
   editInspectorMode: EditInspectorMode;
   autoOpenInspectorOnSelect: boolean;
   showMicroLoupe: boolean;
+  showCorpusStatusMarks: boolean;
   uiScale: number;
   canvasScale: number;
 
@@ -601,6 +646,31 @@ export interface EditorState {
   closeTabImmediate: (tabId: string) => CloseTabResult;
   getDirtyTabs: () => TabRecord[];
   findTabByPath: (filePath: string) => TabRecord | null;
+  findCorpusTabByRootKey: (rootKey: string) => TabRecord | null;
+  openCorpusTab: (corpus: CorpusProjectState, opts?: { activate?: boolean }) => string;
+  activateCorpusEntry: (payload: ActivateCorpusEntryPayload) => void;
+  updateCorpusItemMeta: (
+    itemId: string,
+    patch: Partial<
+      Pick<
+        CorpusItemRecord,
+        'status' | 'hasTextGrid' | 'ipaPreview' | 'duration' | 'note' | 'updatedAt' | 'label' | 'missing'
+      >
+    >,
+    tabId?: string
+  ) => void;
+  setCorpusFilter: (patch: Partial<CorpusFilterState>, tabId?: string) => void;
+  setCorpusOptions: (patch: Partial<CorpusOptions>, tabId?: string) => void;
+  toggleCorpusSidebar: (open?: boolean, tabId?: string) => void;
+  setCorpusSidebarWidth: (width: number, tabId?: string) => void;
+  setCorpusSaveState: (
+    patch: Partial<
+      Pick<CorpusProjectState, 'saveStatus' | 'lastSaveError' | 'dirtyCount' | 'loadSeq' | 'tierTemplate'>
+    >,
+    tabId?: string
+  ) => void;
+  setPendingAutoEditTarget: (target: PendingAutoEditTarget | null) => void;
+  clearPendingAutoEditTarget: () => void;
   markTabSaved: (
     tabId: string,
     meta?: {
@@ -698,6 +768,7 @@ export interface EditorState {
   setEditInspectorMode: (m: EditInspectorMode) => void;
   setAutoOpenInspectorOnSelect: (auto: boolean) => void;
   setShowMicroLoupe: (show: boolean) => void;
+  setShowCorpusStatusMarks: (show: boolean) => void;
   setUiScale: (scale: number) => void;
   setCanvasScale: (scale: number) => void;
   toggleFloatingBarItem: (target: FloatingBarTarget, itemId: string) => void;
@@ -785,6 +856,46 @@ function generateTabId(): string {
   return `tab-${nextTabSeq++}`;
 }
 
+const CORPUS_HISTORY_CACHE_MAX = 6;
+const corpusHistoryCache = new Map<string, HistoryTimeline>();
+
+function getCorpusHistoryCacheKey(tabId: string, itemId: string): string {
+  return `${tabId}::${itemId}`;
+}
+
+function cacheCorpusEntryHistory(tabId: string, itemId: string, timeline: HistoryTimeline): void {
+  const key = getCorpusHistoryCacheKey(tabId, itemId);
+  corpusHistoryCache.delete(key);
+  corpusHistoryCache.set(key, sealTimelineCoalesce(timeline));
+  while (corpusHistoryCache.size > CORPUS_HISTORY_CACHE_MAX) {
+    const oldestKey = corpusHistoryCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    corpusHistoryCache.delete(oldestKey);
+  }
+}
+
+function getCachedCorpusEntryHistory(tabId: string, itemId: string): HistoryTimeline | null {
+  const key = getCorpusHistoryCacheKey(tabId, itemId);
+  const found = corpusHistoryCache.get(key);
+  if (!found) return null;
+  corpusHistoryCache.delete(key);
+  corpusHistoryCache.set(key, found);
+  return found;
+}
+
+function clearCorpusHistoryCacheForTab(tabId: string): void {
+  const prefix = `${tabId}::`;
+  for (const key of Array.from(corpusHistoryCache.keys())) {
+    if (key.startsWith(prefix)) {
+      corpusHistoryCache.delete(key);
+    }
+  }
+}
+
+function clampCorpusSidebarWidth(w: number): number {
+  return Math.max(220, Math.min(440, Math.round(Number.isFinite(w) ? w : 280)));
+}
+
 function computeCollectionDirty(
   activeHistory: HistoryTimeline,
   collectionHistories: Record<number, HistoryTimeline>,
@@ -820,6 +931,8 @@ function createTabRecord(opts?: CreateTabOptions, historyLimit = loadSavedHistor
     collectionTgs.length > 0 ? { [activeIdx]: history } : {};
   return {
     id: generateTabId(),
+    kind: opts?.kind ?? 'single',
+    corpus: opts?.corpus,
     tg,
     collectionTgs,
     collectionActiveIdx: activeIdx,
@@ -849,6 +962,7 @@ function createTabRecord(opts?: CreateTabOptions, historyLimit = loadSavedHistor
 function fieldsFromTab(tab: TabRecord) {
   return {
     activeTabId: tab.id,
+    corpusActiveEntryId: tab.corpus?.activeItemId ?? null,
     tg: tab.tg,
     collectionTgs: tab.collectionTgs,
     collectionActiveIdx: tab.collectionActiveIdx,
@@ -948,6 +1062,14 @@ function remapHiddenOnReorder(
 function loadFollowPlayhead(): boolean {
   try {
     return localStorage.getItem('tg_follow_playhead') !== '0';
+  } catch {
+    return true;
+  }
+}
+
+function loadShowCorpusStatusMarks(): boolean {
+  try {
+    return localStorage.getItem('tg_corpus_show_status') !== '0';
   } catch {
     return true;
   }
@@ -1062,6 +1184,7 @@ const initialTab = createTabRecord(
 export const useEditorStore = create<EditorState>((set, get) => ({
   tabs: [initialTab],
   ...fieldsFromTab(initialTab),
+  pendingAutoEditTarget: null,
   historyLimit: initialHistoryLimit,
   lastHistoryNav: null,
 
@@ -1119,6 +1242,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   editInspectorMode: initialSidebarPrefs.editInspectorMode,
   autoOpenInspectorOnSelect: initialSidebarPrefs.autoOpenInspectorOnSelect,
   showMicroLoupe: initialSidebarPrefs.showMicroLoupe,
+  showCorpusStatusMarks: loadShowCorpusStatusMarks(),
   uiScale: loadSavedUiScale(),
   canvasScale: loadSavedCanvasScale(),
 
@@ -1150,6 +1274,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return {
         tabs: nextTabs,
         ...fieldsFromTab(newTab),
+        pendingAutoEditTarget: null,
         showPlayhead: false,
         playing: false,
         docVersion: s.docVersion + 1
@@ -1173,6 +1298,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return {
         tabs: updatedTabs,
         ...fieldsFromTab(target),
+        pendingAutoEditTarget: null,
         maxFreq: smartMaxFreq,
         showPlayhead: false,
         playing: false,
@@ -1184,10 +1310,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const cur = get();
     const idx = cur.tabs.findIndex((t) => t.id === tabId);
     if (idx === -1) {
-      return { removedSessionId: null, removedTabId: tabId, nextActiveTabId: cur.activeTabId };
+      return {
+        removedSessionId: null,
+        removedCorpusProjectId: null,
+        removedTabId: tabId,
+        nextActiveTabId: cur.activeTabId
+      };
     }
     const target = cur.tabs[idx];
     const removedSessionId = target.analysis?.sessionId ?? null;
+    const removedCorpusProjectId = target.kind === 'corpus' ? (target.corpus?.projectId ?? null) : null;
+    clearCorpusHistoryCacheForTab(tabId);
     const remaining = cur.tabs.filter((t) => t.id !== tabId);
 
     if (remaining.length === 0) {
@@ -1195,11 +1328,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       set((s) => ({
         tabs: [fresh],
         ...fieldsFromTab(fresh),
+        pendingAutoEditTarget: null,
         showPlayhead: false,
         playing: false,
         docVersion: s.docVersion + 1
       }));
-      return { removedSessionId, removedTabId: tabId, nextActiveTabId: fresh.id };
+      return {
+        removedSessionId,
+        removedCorpusProjectId,
+        removedTabId: tabId,
+        nextActiveTabId: fresh.id
+      };
     }
 
     if (tabId === cur.activeTabId) {
@@ -1207,15 +1346,26 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       set((s) => ({
         tabs: remaining,
         ...fieldsFromTab(nextActive),
+        pendingAutoEditTarget: null,
         showPlayhead: false,
         playing: false,
         docVersion: s.docVersion + 1
       }));
-      return { removedSessionId, removedTabId: tabId, nextActiveTabId: nextActive.id };
+      return {
+        removedSessionId,
+        removedCorpusProjectId,
+        removedTabId: tabId,
+        nextActiveTabId: nextActive.id
+      };
     }
 
     set({ tabs: remaining });
-    return { removedSessionId, removedTabId: tabId, nextActiveTabId: cur.activeTabId };
+    return {
+      removedSessionId,
+      removedCorpusProjectId,
+      removedTabId: tabId,
+      nextActiveTabId: cur.activeTabId
+    };
   },
 
   getDirtyTabs: () => get().tabs.filter((t) => t.isDirty),
@@ -1223,8 +1373,280 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   findTabByPath: (filePath) => {
     if (!filePath) return null;
     const key = normalizePathKey(filePath);
-    return get().tabs.find((t) => t.currentFilePath && normalizePathKey(t.currentFilePath) === key) ?? null;
+    return (
+      get().tabs.find(
+        (t) =>
+          t.kind !== 'corpus' &&
+          t.currentFilePath &&
+          normalizePathKey(t.currentFilePath) === key
+      ) ?? null
+    );
   },
+
+  findCorpusTabByRootKey: (rootKey) => {
+    if (!rootKey) return null;
+    const key = normalizePathKey(rootKey);
+    return (
+      get().tabs.find(
+        (t) =>
+          t.kind === 'corpus' &&
+          t.corpus &&
+          (t.corpus.rootKey === rootKey || normalizePathKey(t.corpus.rootKey) === key)
+      ) ?? null
+    );
+  },
+
+  openCorpusTab: (corpus, opts) => {
+    const normalizedCorpus: CorpusProjectState = {
+      ...corpus,
+      sidebarWidth: clampCorpusSidebarWidth(corpus.sidebarWidth)
+    };
+    const newTab = createTabRecord(
+      {
+        kind: 'corpus',
+        corpus: normalizedCorpus,
+        filename: normalizedCorpus.projectName || '文件夹项目',
+        filePath: null,
+        fileFormat: normalizedCorpus.defaultSaveFormat ?? 'longText',
+        isBlankPlaceholder: false,
+        baselineKind: 'open'
+      },
+      get().historyLimit
+    );
+    const shouldActivate = opts?.activate !== false;
+    set((s) => {
+      const updatedTabs = s.tabs.map((t) =>
+        t.id === s.activeTabId ? { ...t, currentTime: s.currentTime } : t
+      );
+      const nextTabs = [...updatedTabs, newTab];
+      if (!shouldActivate) {
+        return { tabs: nextTabs };
+      }
+      return {
+        tabs: nextTabs,
+        ...fieldsFromTab(newTab),
+        mode: 'edit',
+        pendingAutoEditTarget: null,
+        showPlayhead: false,
+        playing: false,
+        lastHistoryNav: null,
+        docVersion: s.docVersion + 1
+      };
+    });
+    return newTab.id;
+  },
+
+  activateCorpusEntry: (payload) =>
+    set((s) => {
+      const targetTabId = payload.tabId ?? s.activeTabId;
+      const target = s.tabs.find((t) => t.id === targetTabId);
+      if (!target || target.kind !== 'corpus' || !target.corpus) return s;
+
+      const prevActiveId = target.corpus.activeItemId;
+      if (prevActiveId && prevActiveId !== payload.itemId) {
+        const prevHistory = target.id === s.activeTabId ? s.history : target.history;
+        cacheCorpusEntryHistory(target.id, prevActiveId, prevHistory);
+      }
+
+      const nextSelection = validateSelectionForTg(payload.tg, payload.selection ?? null);
+      const temporal = clampTabTemporalToTg(
+        payload.tg,
+        Number.isFinite(payload.tg.xmin) ? payload.tg.xmin : 0,
+        payload.playRange ?? null,
+        null
+      );
+      const selTierIdx = extractTierIndex(nextSelection);
+      const nextLastActive =
+        selTierIdx !== null ? clampTierIndex(selTierIdx, payload.tg.tiers.length) : 0;
+
+      let nextHistory: HistoryTimeline | null = null;
+      const cachedHistory = getCachedCorpusEntryHistory(target.id, payload.itemId);
+      if (cachedHistory) {
+        const cachedSnap = getCurrentSnapshot(cachedHistory);
+        if (JSON.stringify(cachedSnap.tg) === JSON.stringify(payload.tg)) {
+          nextHistory = sealTimelineCoalesce(cachedHistory);
+        }
+      }
+      if (!nextHistory) {
+        nextHistory = createHistoryTimeline(
+          'open',
+          payload.filename,
+          {
+            tg: payload.tg,
+            selection: nextSelection,
+            hiddenTierIndices: [],
+            playRange: temporal.playRange
+          },
+          s.historyLimit
+        );
+      }
+
+      let nextItems = target.corpus.items;
+      let nextItemMap = target.corpus.itemMap;
+      if (payload.itemPatch && target.corpus.itemMap[payload.itemId]) {
+        const prevItem = target.corpus.itemMap[payload.itemId];
+        const updatedItem: CorpusItemRecord = { ...prevItem, ...payload.itemPatch };
+        const idx = target.corpus.items.findIndex((it) => it.id === payload.itemId);
+        if (idx >= 0) {
+          nextItems = target.corpus.items.slice();
+          nextItems[idx] = updatedItem;
+        }
+        nextItemMap = { ...target.corpus.itemMap, [payload.itemId]: updatedItem };
+      }
+
+      const nextCorpus: CorpusProjectState = {
+        ...target.corpus,
+        activeItemId: payload.itemId,
+        loadSeq: payload.loadSeq ?? target.corpus.loadSeq,
+        items: nextItems,
+        itemMap: nextItemMap
+      };
+
+      const nextTab: TabRecord = {
+        ...target,
+        tg: payload.tg,
+        filename: payload.filename,
+        currentFilePath: payload.currentFilePath,
+        currentFileFormat: payload.currentFileFormat ?? target.corpus.defaultSaveFormat ?? 'longText',
+        isDirty: isTimelineDirty(nextHistory),
+        baselineKind: 'open',
+        history: nextHistory,
+        viewDomain: null,
+        selection: nextSelection,
+        lastActiveTierIndex: nextLastActive,
+        hiddenTierIndices: [],
+        playRange: temporal.playRange,
+        currentTime: temporal.currentTime,
+        audioName: payload.audioName,
+        audioLoading: false,
+        audioOffset: payload.audioOffset ?? 0,
+        audioDuration: payload.audioDuration,
+        audioSampleRate: payload.audioSampleRate,
+        analysis: payload.analysis,
+        isBlankPlaceholder: false,
+        corpus: nextCorpus
+      };
+
+      const nextTabs = s.tabs.map((t) => (t.id === targetTabId ? nextTab : t));
+      if (targetTabId !== s.activeTabId) {
+        return { tabs: nextTabs };
+      }
+
+      const smartMaxFreq =
+        !s.maxFreqUserSet && payload.audioSampleRate > 0
+          ? ((payload.audioSampleRate >= 16000 ? 8000 : 5000) as 5000 | 8000 | 10000)
+          : s.maxFreq;
+
+      return {
+        tabs: nextTabs,
+        ...fieldsFromTab(nextTab),
+        maxFreq: smartMaxFreq,
+        pendingAutoEditTarget:
+          payload.pendingAutoEditTarget !== undefined ? payload.pendingAutoEditTarget : null,
+        showPlayhead: false,
+        playing: false,
+        lastHistoryNav: null,
+        docVersion: s.docVersion + 1
+      };
+    }),
+
+  updateCorpusItemMeta: (itemId, patch, tabId) =>
+    set((s) => {
+      const targetTabId = tabId ?? s.activeTabId;
+      const target = s.tabs.find((t) => t.id === targetTabId);
+      if (!target || target.kind !== 'corpus' || !target.corpus) return s;
+      const prevItem = target.corpus.itemMap[itemId];
+      if (!prevItem) return s;
+      const updatedItem: CorpusItemRecord = { ...prevItem, ...patch };
+      const idx = target.corpus.items.findIndex((it) => it.id === itemId);
+      const nextItems = target.corpus.items.slice();
+      if (idx >= 0) nextItems[idx] = updatedItem;
+      const nextCorpus: CorpusProjectState = {
+        ...target.corpus,
+        items: nextItems,
+        itemMap: { ...target.corpus.itemMap, [itemId]: updatedItem }
+      };
+      return {
+        tabs: s.tabs.map((t) => (t.id === targetTabId ? { ...t, corpus: nextCorpus } : t))
+      };
+    }),
+
+  setCorpusFilter: (patch, tabId) =>
+    set((s) => {
+      const targetTabId = tabId ?? s.activeTabId;
+      const target = s.tabs.find((t) => t.id === targetTabId);
+      if (!target || target.kind !== 'corpus' || !target.corpus) return s;
+      const nextCorpus: CorpusProjectState = {
+        ...target.corpus,
+        filter: { ...target.corpus.filter, ...patch }
+      };
+      return {
+        tabs: s.tabs.map((t) => (t.id === targetTabId ? { ...t, corpus: nextCorpus } : t))
+      };
+    }),
+
+  setCorpusOptions: (patch, tabId) =>
+    set((s) => {
+      const targetTabId = tabId ?? s.activeTabId;
+      const target = s.tabs.find((t) => t.id === targetTabId);
+      if (!target || target.kind !== 'corpus' || !target.corpus) return s;
+      const nextCorpus: CorpusProjectState = {
+        ...target.corpus,
+        options: { ...target.corpus.options, ...patch }
+      };
+      return {
+        tabs: s.tabs.map((t) => (t.id === targetTabId ? { ...t, corpus: nextCorpus } : t))
+      };
+    }),
+
+  toggleCorpusSidebar: (open, tabId) =>
+    set((s) => {
+      const targetTabId = tabId ?? s.activeTabId;
+      const target = s.tabs.find((t) => t.id === targetTabId);
+      if (!target || target.kind !== 'corpus' || !target.corpus) return s;
+      const nextOpen = open !== undefined ? open : !target.corpus.sidebarOpen;
+      if (nextOpen === target.corpus.sidebarOpen) return s;
+      const nextCorpus: CorpusProjectState = {
+        ...target.corpus,
+        sidebarOpen: nextOpen
+      };
+      return {
+        tabs: s.tabs.map((t) => (t.id === targetTabId ? { ...t, corpus: nextCorpus } : t))
+      };
+    }),
+
+  setCorpusSidebarWidth: (width, tabId) =>
+    set((s) => {
+      const targetTabId = tabId ?? s.activeTabId;
+      const target = s.tabs.find((t) => t.id === targetTabId);
+      if (!target || target.kind !== 'corpus' || !target.corpus) return s;
+      const nextWidth = clampCorpusSidebarWidth(width);
+      if (nextWidth === target.corpus.sidebarWidth) return s;
+      const nextCorpus: CorpusProjectState = {
+        ...target.corpus,
+        sidebarWidth: nextWidth
+      };
+      return {
+        tabs: s.tabs.map((t) => (t.id === targetTabId ? { ...t, corpus: nextCorpus } : t))
+      };
+    }),
+
+  setCorpusSaveState: (patch, tabId) =>
+    set((s) => {
+      const targetTabId = tabId ?? s.activeTabId;
+      const target = s.tabs.find((t) => t.id === targetTabId);
+      if (!target || target.kind !== 'corpus' || !target.corpus) return s;
+      const nextCorpus: CorpusProjectState = {
+        ...target.corpus,
+        ...patch
+      };
+      return {
+        tabs: s.tabs.map((t) => (t.id === targetTabId ? { ...t, corpus: nextCorpus } : t))
+      };
+    }),
+
+  setPendingAutoEditTarget: (pendingAutoEditTarget) => set({ pendingAutoEditTarget }),
+  clearPendingAutoEditTarget: () => set({ pendingAutoEditTarget: null }),
 
   markTabSaved: (tabId, meta) =>
     set((s) => {
@@ -1909,6 +2331,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       saveSidebarPrefs(extractSidebarPrefs(s, { showMicroLoupe }));
       return { showMicroLoupe };
     }),
+  setShowCorpusStatusMarks: (showCorpusStatusMarks) => {
+    try {
+      localStorage.setItem('tg_corpus_show_status', showCorpusStatusMarks ? '1' : '0');
+    } catch {
+      // ignore storage errors
+    }
+    set({ showCorpusStatusMarks });
+  },
   setUiScale: (scale) => {
     const uiScale = clampUiScale(scale);
     saveUiScale(uiScale);

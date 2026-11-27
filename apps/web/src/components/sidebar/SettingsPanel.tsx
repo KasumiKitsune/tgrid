@@ -33,6 +33,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const setAutoOpenInspectorOnSelect = useEditorStore((s) => s.setAutoOpenInspectorOnSelect);
   const showMicroLoupe = useEditorStore((s) => s.showMicroLoupe);
   const setShowMicroLoupe = useEditorStore((s) => s.setShowMicroLoupe);
+  const showCorpusStatusMarks = useEditorStore((s) => s.showCorpusStatusMarks);
+  const setShowCorpusStatusMarks = useEditorStore((s) => s.setShowCorpusStatusMarks);
   const uiScale = useEditorStore((s) => s.uiScale);
   const setUiScale = useEditorStore((s) => s.setUiScale);
   const legendOpen = useEditorStore((s) => s.legendOpen);
@@ -166,6 +168,18 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <input type="checkbox" checked={legendOpen} onChange={() => toggleLegend()} />
             <span>显示底部交互图例</span>
           </label>
+
+          <label className="export-check">
+            <input
+              type="checkbox"
+              checked={showCorpusStatusMarks}
+              onChange={(e) => setShowCorpusStatusMarks(e.target.checked)}
+            />
+            <span>显示词条状态标记</span>
+          </label>
+          <div className="sb-hint">
+            关闭后隐藏列表与顶栏中的未标、已完成、存疑、需重录标记。
+          </div>
 
           <div className="sb-setting-block">
             <div

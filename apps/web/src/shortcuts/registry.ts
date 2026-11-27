@@ -551,6 +551,61 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         rebindable: false
       }
     ]
+  },
+  {
+    id: 'corpus-workflow',
+    title: '字表项目与词条切换',
+    subtitle: '打开文件夹项目时生效 · 输入框内可用',
+    entries: [
+      {
+        id: 'corpus-done-next',
+        keys: ['Alt+Enter'],
+        label: '标记已完成并下一条',
+        description: '保存当前词条、标记为已完成并跳到下一条（音标候选窗未打开时也支持 Mod+Enter）',
+        icon: 'check',
+        scope: 'input'
+      },
+      {
+        id: 'corpus-doubt-next',
+        keys: ['Alt+M'],
+        label: '标记存疑并下一条',
+        description: '保存当前词条、标记为存疑并跳到下一条',
+        icon: 'warning',
+        scope: 'input'
+      },
+      {
+        id: 'corpus-trash-next',
+        keys: ['Alt+X'],
+        label: '标记需重录并下一条',
+        description: '保存当前词条、标记为需重录并跳到下一条',
+        icon: 'trash',
+        scope: 'input'
+      },
+      {
+        id: 'corpus-replay',
+        keys: ['Alt+R'],
+        label: '重播当前选段',
+        description: '在输入框内随时重播当前词条选段',
+        icon: 'play',
+        scope: 'input'
+      },
+      {
+        id: 'corpus-prev',
+        keys: ['Alt+['],
+        label: '上一条词条',
+        description: '保存当前词条并切换到上一条',
+        icon: 'seekBack',
+        scope: 'input'
+      },
+      {
+        id: 'corpus-next',
+        keys: ['Alt+]'],
+        label: '下一条词条',
+        description: '保存当前词条并切换到下一条',
+        icon: 'seekForward',
+        scope: 'input'
+      }
+    ]
   }
 ];
 

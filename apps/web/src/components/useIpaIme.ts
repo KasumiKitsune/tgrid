@@ -385,7 +385,7 @@ export function useIpaIme({
             return;
           }
         }
-        if (isEnterKey(e) && (e.ctrlKey || e.metaKey)) {
+        if (isEnterKey(e) && (e.ctrlKey || e.metaKey) && !e.altKey) {
           e.preventDefault();
           e.stopPropagation();
           const raw = curYlBuf ? curYlBuf : '\\' + (curPrPrefix ?? '');
@@ -393,7 +393,10 @@ export function useIpaIme({
           if (raw) insertAtCaret(raw);
           return;
         }
-        if (e.key === ' ' || (isEnterKey(e) && !e.ctrlKey && !e.metaKey && !e.shiftKey)) {
+        if (
+          (e.key === ' ' && !e.altKey && !e.ctrlKey && !e.metaKey) ||
+          (isEnterKey(e) && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey)
+        ) {
           e.preventDefault();
           const globalIdx = curPopPage * IPA_POPOVER_PAGE_SIZE + curPopIdx;
           if (curYlBuf && curYlCands[globalIdx]) {

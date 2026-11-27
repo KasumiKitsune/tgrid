@@ -87,6 +87,7 @@ interface ScoreStageProps {
   onStopPlayback: () => void;
   onQuickExportSvg: () => void;
   onQuickExportPng: () => void;
+  topBanner?: React.ReactNode;
 }
 
 type InlineTarget =
@@ -432,10 +433,13 @@ function findNearbySpecBoundary(
 }
 
 export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
-  ({ audioBuffer, onStartPlayback, onTogglePlay, onStopPlayback }, ref) => {
+  ({ audioBuffer, onStartPlayback, onTogglePlay, onStopPlayback, topBanner }, ref) => {
     const tabs = useEditorStore((s) => s.tabs);
     const tg = useEditorStore((s) => s.tg);
     const activeTabId = useEditorStore((s) => s.activeTabId);
+    const corpusActiveEntryId = useEditorStore((s) => s.corpusActiveEntryId);
+    const pendingAutoEditTarget = useEditorStore((s) => s.pendingAutoEditTarget);
+    const clearPendingAutoEditTarget = useEditorStore((s) => s.clearPendingAutoEditTarget);
     const docVersion = useEditorStore((s) => s.docVersion);
     const mode = useEditorStore((s) => s.mode);
     const setMode = useEditorStore((s) => s.setMode);
@@ -739,7 +743,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           closeInlineRef.current(true);
           if (cur) stepSelectionRef.current(e.key === 'ArrowUp' ? -1 : 1, 'y', true, cur);
         }
-      } else if (isEnter && !e.shiftKey) {
+      } else if (isEnter && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         e.stopPropagation();
         closeInlineRef.current(true);
@@ -762,7 +766,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       setOpenSubmenuIdx(null);
     }, [ctxMenu, cancelSubmenuClose]);
 
-    // Clear transient UI overlays when switching / closing document tabs
+    // Clear transient UI overlays when switching / closing document tabs or corpus entries
     useEffect(() => {
       pendingDragAnchorRef.current = null;
       pendingInlineOpenRef.current = null;
@@ -774,7 +778,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       setDragPreview(null);
       setIntervalDragPreview(null);
       setLoupeAnchor(null);
-    }, [activeTabId]);
+    }, [activeTabId, corpusActiveEntryId]);
 
     // Close inline editor & drag overlays immediately when entering read-only mode
     useEffect(() => {
@@ -840,6 +844,11 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       };
     }, [tg, docVersion]);
 
+    const activeTab = useMemo(
+      () => tabs.find((t) => t.id === activeTabId) ?? null,
+      [tabs, activeTabId]
+    );
+
     // Compute ScoreLayout
     const layout = useMemo(() => {
       const sidePad = stageW < 480 ? 12 : 24;
@@ -852,6 +861,10 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           : widthAutoFit
             ? availableW
             : targetWidth;
+      const domMin = viewDomain && Number.isFinite(viewDomain.min) ? viewDomain.min : tg.xmin;
+      const domMax = viewDomain && Number.isFinite(viewDomain.max) ? viewDomain.max : tg.xmax;
+      const visibleDur = Number.isFinite(domMax - domMin) ? Math.max(0, domMax - domMin) : 0;
+      const shortAudioMode = activeTab?.kind === 'corpus' && visibleDur > 0 && visibleDur <= 2.5;
       return computeLayout(tg, {
         wrapMode,
         targetWidth: effWidth,
@@ -869,7 +882,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         isInteractive: true,
         floatingBarMode: mode === 'edit' && editInspectorMode === 'floating',
         allowSingleCompress: wrapMode === 'single' && !widthAutoFit,
-        viewportHeight: stageH
+        viewportHeight: stageH,
+        shortAudioMode
       });
     }, [
       tg,
@@ -890,7 +904,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       viewDomain,
       mode,
       editInspectorMode,
-      hiddenTierIndices
+      hiddenTierIndices,
+      activeTab?.kind
     ]);
 
     const layoutRef = useRef<ScoreLayout>(layout);
@@ -1521,13 +1536,25 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       [tg, layout, ipaIme, clearHoverGuide]
     );
 
-    // Open inline editor after a newly created interval commits and layout recomputes
+    // Open inline editor after a newly created interval commits or corpus entry activates
     useEffect(() => {
       const pending = pendingInlineOpenRef.current;
-      if (!pending) return;
-      pendingInlineOpenRef.current = null;
-      openInline(pending);
-    }, [tg, layout, openInline]);
+      if (pending) {
+        pendingInlineOpenRef.current = null;
+        openInline(pending);
+        return;
+      }
+      if (pendingAutoEditTarget) {
+        const target = pendingAutoEditTarget;
+        clearPendingAutoEditTarget();
+        if (mode === 'edit') {
+          openInline(
+            { kind: target.kind, tierIndex: target.tierIndex, itemIndex: target.itemIndex },
+            Boolean(target.caretAtEnd)
+          );
+        }
+      }
+    }, [tg, layout, openInline, pendingAutoEditTarget, clearPendingAutoEditTarget, mode]);
 
     const insertTextIntoInline = useCallback(
       (sym: string, isTieBar = false) => {
@@ -7338,10 +7365,6 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       canvasScale
     ]);
 
-    const activeTab = useMemo(
-      () => tabs.find((t) => t.id === activeTabId) ?? null,
-      [tabs, activeTabId]
-    );
     const showBlankQuickStart = Boolean(
       activeTab?.isBlankPlaceholder && !dismissedBlankTabIds.has(activeTab.id)
     );
@@ -7434,6 +7457,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           overflow: 'hidden'
         }}
       >
+        {topBanner}
         {showBlankQuickStart && activeTab && (
           <div className="blank-quickstart-strip" role="status">
             <div className="blank-quickstart-content">

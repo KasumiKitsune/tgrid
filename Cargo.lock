@@ -3596,7 +3596,7 @@ dependencies = [
 
 [[package]]
 name = "textgrid-editor-desktop"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3609,7 +3609,7 @@ dependencies = [
 
 [[package]]
 name = "tg-core"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3618,7 +3618,7 @@ dependencies = [
 
 [[package]]
 name = "tg-dsp"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "serde",
  "tg-core",
@@ -3627,7 +3627,7 @@ dependencies = [
 
 [[package]]
 name = "tg-wasm"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "js-sys",
  "serde",

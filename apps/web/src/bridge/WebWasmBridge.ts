@@ -33,6 +33,7 @@ import type {
   CollectionItem,
   ContourBox,
   ContourPath,
+  CorpusDirScanResult,
   EngineInfo,
   IpaCandidate,
   IpaConvertResult,
@@ -209,6 +210,10 @@ export class WebWasmBridge implements PlatformBridge {
     return JSON.parse(load_wav_session_json(bytes, offset)) as AudioAnalysisSummary;
   }
 
+  async loadWavFileSession(_path: string, _offset: number): Promise<AudioAnalysisSummary | null> {
+    return null;
+  }
+
   async removeAudioSession(sessionId: number): Promise<void> {
     await this.init();
     remove_audio_session(sessionId);
@@ -313,8 +318,24 @@ export class WebWasmBridge implements PlatformBridge {
     return null;
   }
 
+  async readNativeFileIfExists(_path: string): Promise<Uint8Array | null> {
+    return null;
+  }
+
   async writeNativeFile(_path: string, _bytes: Uint8Array): Promise<boolean> {
     return false;
+  }
+
+  async writeNativeFileAtomic(_path: string, _bytes: Uint8Array): Promise<boolean> {
+    return false;
+  }
+
+  async openNativeDirectoryDialog(_options?: { title?: string }): Promise<string | null> {
+    return null;
+  }
+
+  async scanCorpusDir(_dir: string): Promise<CorpusDirScanResult | null> {
+    return null;
   }
 
   async findCompanionAudio(_tgPath: string): Promise<string | null> {

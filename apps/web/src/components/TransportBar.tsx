@@ -45,6 +45,9 @@ export const TransportBar: React.FC<TransportBarProps> = ({
   const setSidebarOpen = useEditorStore((s) => s.setSidebarOpen);
 
   const scaleToggleHint = getEffectiveShortcutHint('scale-toggle', customShortcuts);
+  const playToggleHint = getEffectiveShortcutHint('play-toggle', customShortcuts);
+  const playShortcutLabel =
+    !playToggleHint || playToggleHint === 'Space' ? '空格' : playToggleHint;
 
   const [rateOpen, setRateOpen] = useState(false);
   const rateWrapRef = useRef<HTMLDivElement>(null);
@@ -97,12 +100,19 @@ export const TransportBar: React.FC<TransportBarProps> = ({
   return (
     <div className="transportbar">
       <div className="bar-group">
-        <button type="button" className="icon-btn" title="播放 / 暂停 (空格)" onClick={onTogglePlay}>
+        <button
+          type="button"
+          className={`transport-play-btn${playing ? ' is-playing' : ''}`}
+          aria-pressed={playing}
+          title={playing ? `暂停 (${playShortcutLabel})` : `播放 (${playShortcutLabel})`}
+          onClick={onTogglePlay}
+        >
           {playing ? (
             <TGridIcon name="transport-pause" size={14} />
           ) : (
             <TGridIcon name="transport-play" size={14} />
           )}
+          <span>{playing ? '暂停' : '播放'}</span>
         </button>
 
         <button type="button" className="icon-btn" title="停止并回到起点" onClick={onStop}>

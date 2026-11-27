@@ -1,4 +1,5 @@
 import type { TextGrid } from '../bridge/types';
+import type { CorpusItemStatus, CorpusTierTemplateItem } from '../corpus/types';
 
 export interface BuiltinSample {
   id: 'dialogue' | 'poem' | 'edge' | 'wild' | 'blank';
@@ -6,6 +7,153 @@ export interface BuiltinSample {
   tg: TextGrid;
   audioUrl?: string;
   audioName?: string;
+}
+
+export type BuiltinSampleId = BuiltinSample['id'] | 'corpus';
+
+export interface BuiltinCorpusSampleItem {
+  id: string;
+  label: string;
+  status: CorpusItemStatus;
+  duration: number;
+  ipaPreview: string;
+  note: string;
+  tg: TextGrid;
+}
+
+export interface BuiltinCorpusSample {
+  rootKey: string;
+  projectName: string;
+  activeItemId: string;
+  tierTemplate: CorpusTierTemplateItem[];
+  items: BuiltinCorpusSampleItem[];
+}
+
+function makeShortCorpusTg(
+  name: string,
+  duration: number,
+  tStart: number,
+  tEnd: number,
+  word: string,
+  ipa: string,
+  mark?: { time: number; text: string }
+): TextGrid {
+  return {
+    name,
+    xmin: 0,
+    xmax: duration,
+    tiers: [
+      {
+        kind: 'intervalTier',
+        name: '字词',
+        xmin: 0,
+        xmax: duration,
+        intervals: [
+          { xmin: 0, xmax: tStart, text: '' },
+          { xmin: tStart, xmax: tEnd, text: word },
+          { xmin: tEnd, xmax: duration, text: '' }
+        ],
+        points: []
+      },
+      {
+        kind: 'intervalTier',
+        name: '音标',
+        xmin: 0,
+        xmax: duration,
+        intervals: [
+          { xmin: 0, xmax: tStart, text: '' },
+          { xmin: tStart, xmax: tEnd, text: ipa },
+          { xmin: tEnd, xmax: duration, text: '' }
+        ],
+        points: []
+      },
+      {
+        kind: 'textTier',
+        name: '备注',
+        xmin: 0,
+        xmax: duration,
+        intervals: [],
+        points: mark ? [{ number: mark.time, mark: mark.text }] : []
+      }
+    ]
+  };
+}
+
+export function createCorpusSample(): BuiltinCorpusSample {
+  const tierTemplate: CorpusTierTemplateItem[] = [
+    { name: '字词', kind: 'intervalTier' },
+    { name: '音标', kind: 'intervalTier' },
+    { name: '备注', kind: 'textTier' }
+  ];
+
+  return {
+    rootKey: 'sample:corpus-wordlist-demo',
+    projectName: '方言字表示例',
+    activeItemId: '001_东',
+    tierTemplate,
+    items: [
+      {
+        id: '001_东',
+        label: '001_东',
+        status: 'done',
+        duration: 1.08,
+        ipaPreview: 'toŋ˥˥',
+        note: '阴平，高平调',
+        tg: makeShortCorpusTg('001_东.TextGrid', 1.08, 0.22, 0.78, '东', 'toŋ˥˥', {
+          time: 0.22,
+          text: '不送气清塞音'
+        })
+      },
+      {
+        id: '002_同',
+        label: '002_同',
+        status: 'done',
+        duration: 1.16,
+        ipaPreview: 'tʰoŋ˧˥',
+        note: '阳平，中升调',
+        tg: makeShortCorpusTg('002_同.TextGrid', 1.16, 0.24, 0.86, '同', 'tʰoŋ˧˥', {
+          time: 0.32,
+          text: '送气段结束'
+        })
+      },
+      {
+        id: '003_听',
+        label: '003_听',
+        status: 'todo',
+        duration: 0.96,
+        ipaPreview: '',
+        note: '待标音标',
+        tg: makeShortCorpusTg('003_听.TextGrid', 0.96, 0.2, 0.72, '听', '', {
+          time: 0.2,
+          text: '待标音标'
+        })
+      },
+      {
+        id: '004_停',
+        label: '004_停',
+        status: 'doubt',
+        duration: 1.24,
+        ipaPreview: 'tʰiŋ˧˧',
+        note: '调值待核对',
+        tg: makeShortCorpusTg('004_停.TextGrid', 1.24, 0.26, 0.92, '停', 'tʰiŋ˧˧', {
+          time: 0.58,
+          text: '调值待核对（33 / 22）'
+        })
+      },
+      {
+        id: '005_厅',
+        label: '005_厅',
+        status: 'trash',
+        duration: 0.88,
+        ipaPreview: 'tʰiŋ˥˥',
+        note: '发音偏轻，建议重录',
+        tg: makeShortCorpusTg('005_厅.TextGrid', 0.88, 0.18, 0.64, '厅', 'tʰiŋ˥˥', {
+          time: 0.4,
+          text: '发音偏轻，建议重录'
+        })
+      }
+    ]
+  };
 }
 
 export function createSample(id: BuiltinSample['id']): BuiltinSample {
