@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { isTauriRuntime } from '../bridge/PlatformBridge';
-import { formatKeyCombo, getEffectiveShortcutHint } from '../shortcuts/registry';
+import { formatKeyCombo } from '../shortcuts/registry';
 import { useEditorStore } from '../store/useEditorStore';
 import type { BuiltinSampleId } from '../data/samples';
 import { CorpusFolderIcon } from '../corpus/corpusIcons';
-import { BrandLogoIcon, ChevronIcon, CloseIcon, TGridIcon, UiIcon } from './Icons';
+import { BrandLogoIcon, CloseIcon, TGridIcon, UiIcon } from './Icons';
+import { RibbonBar } from './RibbonBar';
 
 export type ExportActionKind =
   | 'save'
@@ -20,7 +21,7 @@ export type ExportActionKind =
   | 'col-bin'
   | 'col-text';
 
-interface TopbarProps {
+export interface TopbarProps {
   onOpenTextGridPicker: () => void;
   onOpenCorpusFolder: () => void;
   onOpenAudioPicker: () => void;
@@ -29,6 +30,15 @@ interface TopbarProps {
   onNewTab: () => void;
   onSwitchTab: (tabId: string) => void;
   onRequestCloseTab: (tabId: string) => void;
+  onBatchConvertIpa: (direction: 'toUnicode' | 'toPraat') => void;
+  corpusCanPrev?: boolean;
+  corpusCanNext?: boolean;
+  onCorpusPrev?: () => void;
+  onCorpusNext?: () => void;
+  onToggleCorpusAutoPlay?: () => void;
+  onToggleCorpusAutoVad?: () => void;
+  onExportCorpusZip?: () => void;
+  exportingCorpusZip?: boolean;
 }
 
 export const Topbar: React.FC<TopbarProps> = ({
@@ -39,55 +49,27 @@ export const Topbar: React.FC<TopbarProps> = ({
   onExportAction,
   onNewTab,
   onSwitchTab,
-  onRequestCloseTab
+  onRequestCloseTab,
+  onBatchConvertIpa,
+  corpusCanPrev,
+  corpusCanNext,
+  onCorpusPrev,
+  onCorpusNext,
+  onToggleCorpusAutoPlay,
+  onToggleCorpusAutoVad,
+  onExportCorpusZip,
+  exportingCorpusZip
 }) => {
   const isDesktop = isTauriRuntime();
 
   const tabs = useEditorStore((s) => s.tabs);
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const filename = useEditorStore((s) => s.filename);
-  const currentFilePath = useEditorStore((s) => s.currentFilePath);
   const isDirty = useEditorStore((s) => s.isDirty);
-  const collectionTgs = useEditorStore((s) => s.collectionTgs);
-  const collectionActiveIdx = useEditorStore((s) => s.collectionActiveIdx);
-  const switchCollectionItem = useEditorStore((s) => s.switchCollectionItem);
-  const mode = useEditorStore((s) => s.mode);
-  const setMode = useEditorStore((s) => s.setMode);
-  const legendOpen = useEditorStore((s) => s.legendOpen);
-  const toggleLegend = useEditorStore((s) => s.toggleLegend);
-  const sidebarOpen = useEditorStore((s) => s.sidebarOpen);
-  const sidebarTab = useEditorStore((s) => s.sidebarTab);
-  const setSidebarTab = useEditorStore((s) => s.setSidebarTab);
-  const setSidebarOpen = useEditorStore((s) => s.setSidebarOpen);
-  const toggleSidebarTab = useEditorStore((s) => s.toggleSidebarTab);
-  const openFindBar = useEditorStore((s) => s.openFindBar);
-  const setShortcutsOpen = useEditorStore((s) => s.setShortcutsOpen);
-  const customShortcuts = useEditorStore((s) => s.customShortcuts);
   const showCorpusStatusMarks = useEditorStore((s) => s.showCorpusStatusMarks);
 
-  const openFilesHint = getEffectiveShortcutHint('open-files', customShortcuts);
-  const openAudioHint = getEffectiveShortcutHint('open-audio', customShortcuts);
-  const saveFileHint = getEffectiveShortcutHint('save-file', customShortcuts);
-  const saveAsHint = getEffectiveShortcutHint('save-as', customShortcuts);
-  const exportFigureHint = getEffectiveShortcutHint('export-figure', customShortcuts);
-  const findOpenHint = getEffectiveShortcutHint('find-open', customShortcuts);
-  const replaceOpenHint = getEffectiveShortcutHint('replace-open', customShortcuts);
-  const shortcutsModalHint = getEffectiveShortcutHint('shortcuts-modal', customShortcuts);
-
-  const [openMenu, setOpenMenu] = useState<'col' | 'samples' | 'tools' | 'export' | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
-  const headerRef = useRef<HTMLDivElement>(null);
   const tabstripRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const onDocClick = (e: MouseEvent) => {
-      if (headerRef.current && !headerRef.current.contains(e.target as Node)) {
-        setOpenMenu(null);
-      }
-    };
-    document.addEventListener('click', onDocClick);
-    return () => document.removeEventListener('click', onDocClick);
-  }, []);
 
   // Scroll active tab smoothly into view when switching / opening tabs
   useEffect(() => {
@@ -305,7 +287,7 @@ export const Topbar: React.FC<TopbarProps> = ({
   );
 
   return (
-    <div className="topbar-stack" ref={headerRef}>
+    <div className="topbar-stack">
       {isDesktop ? (
         <div
           className="titlebar"
@@ -372,352 +354,22 @@ export const Topbar: React.FC<TopbarProps> = ({
         </div>
       )}
 
-      <header className="topbar is-desktop-toolbar">
-        <div className="bar-group">
-          {collectionTgs.length > 1 && (
-            <>
-              <div className={`menu-wrap ${openMenu === 'col' ? 'open' : ''}`}>
-                <button
-                  type="button"
-                  className="select-trigger"
-                  title="切换集合中的对象"
-                  onClick={() => setOpenMenu(openMenu === 'col' ? null : 'col')}
-                >
-                  <span>
-                    {collectionActiveIdx + 1}. {collectionTgs[collectionActiveIdx]?.name || 'TextGrid'}
-                  </span>
-                  <ChevronIcon />
-                </button>
-                <div className="dropdown left">
-                  {collectionTgs.map((item, idx) => (
-                    <button
-                      key={`${item.name}-${idx}`}
-                      type="button"
-                      className={idx === collectionActiveIdx ? 'selected' : ''}
-                      onClick={() => {
-                        switchCollectionItem(idx);
-                        setOpenMenu(null);
-                      }}
-                    >
-                      <span>
-                        {idx + 1}. {item.name || `TextGrid ${idx + 1}`}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="sep" />
-            </>
-          )}
-
-          <button
-            type="button"
-            title={
-              openFilesHint
-                ? `打开 TextGrid / Collection / 单层文件 (${openFilesHint})`
-                : '打开 TextGrid / Collection / 单层文件'
-            }
-            onClick={onOpenTextGridPicker}
-          >
-            <UiIcon name="folder" size={14} />
-            <span>打开 TextGrid</span>
-          </button>
-          <button
-            type="button"
-            title={openAudioHint ? `载入配套录音 (${openAudioHint})` : '载入配套录音'}
-            onClick={onOpenAudioPicker}
-          >
-            <UiIcon name="waveform" size={14} />
-            <span>打开录音</span>
-          </button>
-          <button
-            type="button"
-            title="打开文件夹，批量标注录音与 TextGrid"
-            onClick={onOpenCorpusFolder}
-          >
-            <CorpusFolderIcon size={14} />
-            <span>打开文件夹</span>
-          </button>
-
-          <div className={`menu-wrap ${openMenu === 'samples' ? 'open' : ''}`}>
-            <button
-              type="button"
-              className="select-trigger"
-              onClick={() => setOpenMenu(openMenu === 'samples' ? null : 'samples')}
-            >
-              <span className="btn-lead">
-                <UiIcon name="samples" size={14} />
-                <span>示例</span>
-              </span>
-              <ChevronIcon />
-            </button>
-            <div className="dropdown left">
-              <button type="button" onClick={() => { setOpenMenu(null); onLoadSample('dialogue'); }}>
-                <span className="btn-lead">
-                  <UiIcon name="waveform" size={13} />
-                  <span>双人对话与声谱（含录音）</span>
-                </span>
-              </button>
-              <button type="button" onClick={() => { setOpenMenu(null); onLoadSample('corpus'); }}>
-                <span className="btn-lead">
-                  <CorpusFolderIcon size={13} />
-                  <span>文件夹批量标注示例（5 条）</span>
-                </span>
-              </button>
-              <button type="button" onClick={() => { setOpenMenu(null); onLoadSample('poem'); }}>
-                <span className="btn-lead">
-                  <UiIcon name="samples" size={13} />
-                  <span>普通话与音标示例</span>
-                </span>
-              </button>
-              <button type="button" onClick={() => { setOpenMenu(null); onLoadSample('edge'); }}>
-                <span className="btn-lead">
-                  <UiIcon name="samples" size={13} />
-                  <span>完整字符与边界示例</span>
-                </span>
-              </button>
-              <button type="button" onClick={() => { setOpenMenu(null); onLoadSample('wild'); }}>
-                <span className="btn-lead">
-                  <UiIcon name="samples" size={13} />
-                  <span>长停顿与特殊结构示例</span>
-                </span>
-              </button>
-              <div className="menu-divider" />
-              <button type="button" onClick={() => { setOpenMenu(null); onLoadSample('blank'); }}>
-                <span className="btn-lead">
-                  <UiIcon name="tab-add" size={13} />
-                  <span>新建空白文件</span>
-                </span>
-                <span className="shortcut">{formatKeyCombo('Mod+T')}</span>
-              </button>
-            </div>
-          </div>
-
-          <div className={`menu-wrap ${openMenu === 'tools' ? 'open' : ''}`}>
-            <button
-              type="button"
-              className="select-trigger"
-              onClick={() => setOpenMenu(openMenu === 'tools' ? null : 'tools')}
-            >
-              <span className="btn-lead">
-                <UiIcon name="tools" size={14} />
-                <span>工具</span>
-              </span>
-              <ChevronIcon />
-            </button>
-            <div className="dropdown left">
-              <button
-                type="button"
-                onClick={() => {
-                  setOpenMenu(null);
-                  openFindBar(false);
-                }}
-              >
-                <span className="btn-lead">
-                  <UiIcon name="search" size={13} />
-                  <span>查找与替换</span>
-                </span>
-                {findOpenHint && <span className="shortcut">{findOpenHint}</span>}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setOpenMenu(null);
-                  openFindBar(true);
-                }}
-              >
-                <span className="btn-lead">
-                  <UiIcon name="replace" size={13} />
-                  <span>替换标注文本…</span>
-                </span>
-                {replaceOpenHint && <span className="shortcut">{replaceOpenHint}</span>}
-              </button>
-              <div className="menu-divider" />
-              <button
-                type="button"
-                onClick={() => {
-                  setOpenMenu(null);
-                  setSidebarTab('history');
-                  setSidebarOpen(true);
-                }}
-              >
-                <span className="btn-lead">
-                  <UiIcon name="history" size={13} />
-                  <span>操作历史记录</span>
-                </span>
-                <span className="shortcut">Alt+3</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setOpenMenu(null);
-                  setSidebarTab('customize');
-                  setSidebarOpen(true);
-                }}
-              >
-                <span className="btn-lead">
-                  <UiIcon name="customize" size={13} />
-                  <span>自定义悬浮条与快捷键</span>
-                </span>
-                <span className="shortcut">Alt+5</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setOpenMenu(null);
-                  setShortcutsOpen(true);
-                }}
-              >
-                <span className="btn-lead">
-                  <UiIcon name="shortcuts" size={13} />
-                  <span>快捷键指南</span>
-                </span>
-                {shortcutsModalHint && <span className="shortcut">{shortcutsModalHint}</span>}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="bar-group topbar-right">
-          <div className="segmented" role="group">
-            <button
-              type="button"
-              className={mode === 'read' ? 'active' : ''}
-              onClick={() => setMode('read')}
-            >
-              <UiIcon name="readMode" size={13} />
-              <span>只读</span>
-            </button>
-            <button
-              type="button"
-              className={mode === 'edit' ? 'active' : ''}
-              onClick={() => setMode('edit')}
-            >
-              <UiIcon name="edit" size={13} />
-              <span>编辑</span>
-            </button>
-          </div>
-
-          <button
-            type="button"
-            className={legendOpen ? 'active' : ''}
-            aria-expanded={legendOpen}
-            title="在底部显示或隐藏交互式读图图例"
-            onClick={toggleLegend}
-          >
-            <UiIcon name="legend" size={14} />
-            <span>图例</span>
-          </button>
-
-          <button
-            type="button"
-            className={sidebarOpen && sidebarTab === 'settings' ? 'active' : ''}
-            aria-expanded={sidebarOpen && sidebarTab === 'settings'}
-            title="在右侧边栏打开版面、时间精度与声学设置"
-            onClick={() => toggleSidebarTab('settings')}
-          >
-            <UiIcon name="gear" size={14} />
-            <span>设置</span>
-          </button>
-
-          <div className={`menu-wrap ${openMenu === 'export' ? 'open' : ''}`}>
-            <button
-              type="button"
-              className="primary select-trigger"
-              onClick={() => setOpenMenu(openMenu === 'export' ? null : 'export')}
-            >
-              <span className="btn-lead">
-                <UiIcon name="export" size={14} />
-                <span>导出与保存</span>
-              </span>
-              <ChevronIcon />
-            </button>
-            <div className="dropdown">
-              <button type="button" onClick={() => { setOpenMenu(null); onExportAction('save'); }}>
-                <span className="btn-lead">
-                  <UiIcon name="save" size={13} />
-                  <span>{isDesktop && !currentFilePath ? '保存 (.TextGrid)…' : '保存 (.TextGrid)'}</span>
-                </span>
-                {saveFileHint && <span className="shortcut">{saveFileHint}</span>}
-              </button>
-              {isDesktop && (
-                <button type="button" onClick={() => { setOpenMenu(null); onExportAction('save-as'); }}>
-                  <span className="btn-lead">
-                    <UiIcon name="saveAs" size={13} />
-                    <span>另存为…</span>
-                  </span>
-                  {saveAsHint && <span className="shortcut">{saveAsHint}</span>}
-                </button>
-              )}
-              <div className="menu-divider" />
-              <button type="button" onClick={() => { setOpenMenu(null); onExportAction('svg'); }}>
-                <span className="btn-lead">
-                  <UiIcon name="exportSvg" size={13} />
-                  <span>导出矢量图 (.svg)</span>
-                </span>
-              </button>
-              <button type="button" onClick={() => { setOpenMenu(null); onExportAction('png'); }}>
-                <span className="btn-lead">
-                  <UiIcon name="exportPng" size={13} />
-                  <span>导出高清图片 (.png)</span>
-                </span>
-              </button>
-              <button type="button" onClick={() => { setOpenMenu(null); onExportAction('dialog'); }}>
-                <span className="btn-lead">
-                  <UiIcon name="export" size={13} />
-                  <span>自定义导出图像…</span>
-                </span>
-                {exportFigureHint && <span className="shortcut">{exportFigureHint}</span>}
-              </button>
-              <div className="menu-divider" />
-              <button type="button" onClick={() => { setOpenMenu(null); onExportAction('poster'); }}>
-                <span className="btn-lead">
-                  <UiIcon name="exportSvg" size={13} />
-                  <span>导出声纹海报…</span>
-                </span>
-              </button>
-              <div className="menu-divider" />
-              <button type="button" onClick={() => { setOpenMenu(null); onExportAction('long'); }}>
-                <span className="btn-lead">
-                  <UiIcon name="save" size={13} />
-                  <span>保存标准文本 (.TextGrid)</span>
-                </span>
-              </button>
-              <button type="button" onClick={() => { setOpenMenu(null); onExportAction('short'); }}>
-                <span className="btn-lead">
-                  <UiIcon name="save" size={13} />
-                  <span>保存短文本 (.TextGrid)</span>
-                </span>
-              </button>
-              <button type="button" onClick={() => { setOpenMenu(null); onExportAction('binary'); }}>
-                <span className="btn-lead">
-                  <UiIcon name="save" size={13} />
-                  <span>保存二进制 (.TextGrid)</span>
-                </span>
-              </button>
-              <button type="button" onClick={() => { setOpenMenu(null); onExportAction('chrono'); }}>
-                <span className="btn-lead">
-                  <UiIcon name="save" size={13} />
-                  <span>保存按时间排序文本</span>
-                </span>
-              </button>
-              <div className="menu-divider" />
-              <button type="button" onClick={() => { setOpenMenu(null); onExportAction('col-bin'); }}>
-                <span className="btn-lead">
-                  <UiIcon name="fileCollection" size={13} />
-                  <span>保存集合 (.Collection 二进制)</span>
-                </span>
-              </button>
-              <button type="button" onClick={() => { setOpenMenu(null); onExportAction('col-text'); }}>
-                <span className="btn-lead">
-                  <UiIcon name="fileCollection" size={13} />
-                  <span>保存集合 (.Collection 文本)</span>
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+      <RibbonBar
+        onOpenTextGridPicker={onOpenTextGridPicker}
+        onOpenCorpusFolder={onOpenCorpusFolder}
+        onOpenAudioPicker={onOpenAudioPicker}
+        onLoadSample={onLoadSample}
+        onExportAction={onExportAction}
+        onBatchConvertIpa={onBatchConvertIpa}
+        corpusCanPrev={corpusCanPrev}
+        corpusCanNext={corpusCanNext}
+        onCorpusPrev={onCorpusPrev}
+        onCorpusNext={onCorpusNext}
+        onToggleCorpusAutoPlay={onToggleCorpusAutoPlay}
+        onToggleCorpusAutoVad={onToggleCorpusAutoVad}
+        onExportCorpusZip={onExportCorpusZip}
+        exportingCorpusZip={exportingCorpusZip}
+      />
     </div>
   );
 };

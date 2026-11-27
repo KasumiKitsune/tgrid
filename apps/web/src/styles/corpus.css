@@ -672,19 +672,21 @@ button:hover:not(:disabled) .tgi.tgi-corpusSidebarToggle.is-collapsed .cst-chev,
 }
 
 /* ============================================================================
-   Top Canvas Navigation Strip (Inside .stage-inner-wrap, Aligned with EditStrip)
+   Top Canvas Navigation Strip (Forced Single-Line 32px, De-Boxed Minimalist)
    ============================================================================ */
 .corpus-navbar {
-  min-height: 34px;
+  height: 32px;
+  min-height: 32px;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: space-between;
-  gap: 6px 10px;
-  padding: 4px 12px;
+  gap: 8px;
+  padding: 0 10px;
   background: var(--bg-bar);
   border-bottom: 1px solid var(--rule);
   flex-shrink: 0;
+  overflow: hidden;
   user-select: none;
   position: relative;
   z-index: 39;
@@ -692,159 +694,216 @@ button:hover:not(:disabled) .tgi.tgi-corpusSidebarToggle.is-collapsed .cst-chev,
 
 .corpus-navbar-group {
   display: inline-flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
 }
 
 .corpus-navbar-left {
   flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
 }
 
 .corpus-navbar-right {
   flex-shrink: 0;
 }
 
-.corpus-nav-expand-btn {
-  background: var(--bg-sheet);
+.corpus-navbar .sep {
+  height: 14px;
+  margin: 0 2px;
+}
+
+.corpus-navbar .corpus-nav-expand-btn {
+  height: 22px;
+  padding: 0 6px;
+  gap: 4px;
+  font-size: 11.5px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink-muted);
+  flex-shrink: 0;
+  transform: none;
+}
+
+.corpus-navbar .corpus-nav-expand-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: transparent;
+  color: var(--ink);
+}
+
+.corpus-navbar .corpus-nav-expand-btn:active:not(:disabled) {
+  background: var(--bg-active);
+  border-color: transparent;
+  color: var(--ink);
+  transform: none;
+}
+
+.corpus-nav-step-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.corpus-navbar .corpus-nav-step-btn {
+  height: 22px;
+  padding: 0 6px;
+  gap: 4px;
+  font-size: 11.5px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink-muted);
+  transform: none;
+}
+
+.corpus-navbar .corpus-nav-step-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: transparent;
+  color: var(--ink);
+}
+
+.corpus-navbar .corpus-nav-step-btn:active:not(:disabled) {
+  background: var(--bg-active);
+  border-color: transparent;
+  color: var(--ink);
+  transform: none;
 }
 
 .corpus-nav-current {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   min-width: 0;
-  padding: 0 4px;
+  flex: 1 1 auto;
+  overflow: hidden;
+  padding: 0 2px;
 }
 
 .corpus-nav-pos {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
-  color: var(--ink-muted);
-  padding: 1px 6px;
+  color: var(--ink-faint);
+  padding: 0 5px;
+  line-height: 18px;
   background: var(--bg-subtle);
-  border: 1px solid var(--rule);
+  border: none;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .corpus-nav-name {
   font-family: var(--font-sans);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-  max-width: clamp(110px, 24vw, 320px);
+  flex: 1 1 auto;
 }
 
-/* Four-State Quick Toggle Group */
+/* Four-State Quick Toggle Group (Borderless Default, Soft Tinted Selection Only) */
 .corpus-status-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   flex-shrink: 0;
 }
 
-.corpus-status-btn {
+.corpus-navbar .corpus-status-btn {
+  height: 22px;
   gap: 4px;
-  padding: 0 8px;
-  background: var(--bg-sheet);
+  padding: 0 7px;
+  font-size: 11.5px;
+  background: transparent;
+  border: 1px solid transparent;
   color: var(--ink-muted);
   transform: none;
 }
 
-.corpus-status-btn:active:not(:disabled) {
+.corpus-navbar .corpus-status-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: transparent;
+  color: var(--ink);
+}
+
+.corpus-navbar .corpus-status-btn:active:not(:disabled) {
+  background: var(--bg-active);
+  border-color: transparent;
   transform: none;
 }
 
-.corpus-status-btn.is-todo.is-selected {
+.corpus-navbar .corpus-status-btn.is-todo.is-selected {
   background: var(--bg-active);
-  border-color: var(--ink);
+  border-color: var(--rule-hover);
   color: var(--ink);
   font-weight: 600;
   z-index: 2;
 }
 
-.corpus-status-btn.is-done.is-selected {
+.corpus-navbar .corpus-status-btn.is-done.is-selected {
   background: var(--corpus-green-soft);
-  border-color: var(--corpus-green);
+  border-color: #86EFAC;
   color: var(--corpus-green);
   font-weight: 600;
+  --tgi-stroke: var(--corpus-green);
+  --tgi-stroke-hover: var(--corpus-green);
   z-index: 2;
 }
 
-.corpus-status-btn.is-doubt.is-selected {
+.corpus-navbar .corpus-status-btn.is-doubt.is-selected {
   background: var(--accent-amber-soft);
-  border-color: var(--accent-amber);
+  border-color: #FCD34D;
   color: var(--accent-amber);
   font-weight: 600;
+  --tgi-stroke: var(--accent-amber);
+  --tgi-stroke-hover: var(--accent-amber);
   z-index: 2;
 }
 
-.corpus-status-btn.is-trash.is-selected {
+.corpus-navbar .corpus-status-btn.is-trash.is-selected {
   background: var(--accent-red-soft);
-  border-color: var(--accent-red);
+  border-color: #FCA5A5;
   color: var(--accent-red);
   font-weight: 600;
+  --tgi-stroke: var(--accent-red);
+  --tgi-stroke-hover: var(--accent-red);
   z-index: 2;
 }
 
-/* Auto-Play / Auto-Split Toggle Buttons */
-.corpus-toggle-btn {
-  gap: 4px;
-  padding: 0 8px;
-  background: var(--bg-sheet);
-  color: var(--ink-muted);
-  transform: none;
-}
-
-.corpus-toggle-btn:active:not(:disabled) {
-  transform: none;
-}
-
-.corpus-toggle-btn.is-on {
-  background: var(--accent-blue-soft);
-  border-color: var(--accent-blue);
-  color: var(--accent-blue);
-  --tgi-stroke: var(--accent-blue);
-  --tgi-stroke-muted: var(--accent-blue);
-  --tgi-accent: var(--accent-blue);
-}
-
-.corpus-toggle-btn.is-on:hover:not(:disabled) {
-  background: var(--accent-blue-soft);
-  border-color: var(--accent-blue);
-  color: var(--accent-blue);
-}
-
-/* Save Status Micro-Badge */
+/* Save Status Plain-Text Indicator (Borderless & Subtle) */
 .corpus-save-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 24px;
-  padding: 0 7px;
+  height: 22px;
+  padding: 0 2px;
   font-size: 11px;
   white-space: nowrap;
-  background: var(--bg-subtle);
-  border: 1px solid var(--rule);
-  color: var(--ink-muted);
+  background: transparent;
+  border: none;
+  color: var(--ink-faint);
   flex-shrink: 0;
+  --tgi-stroke: currentColor;
+  --tgi-stroke-muted: currentColor;
+  --tgi-stroke-subtle: currentColor;
 }
 
 .corpus-save-badge.is-saving,
 .corpus-save-badge.is-dirty,
 .corpus-save-badge.is-readonly {
-  background: var(--accent-amber-soft);
-  border-color: var(--accent-amber);
+  background: transparent;
+  border: none;
   color: var(--accent-amber);
 }
 
 .corpus-save-badge.is-error {
-  background: var(--accent-red-soft);
-  border-color: var(--accent-red);
+  background: transparent;
+  border: none;
   color: var(--accent-red);
 }
 
@@ -884,23 +943,24 @@ html[data-ui-narrow="1"] .corpus-sidebar:not(.open) .corpus-pane {
 html[data-ui-compact="1"] .corpus-navbar {
   padding-left: 8px;
   padding-right: 8px;
-  gap: 4px 6px;
+  gap: 6px;
+}
+
+html[data-ui-compact="1"] .corpus-status-btn {
+  padding: 0 5px;
+  gap: 3px;
 }
 
 html[data-ui-short="1"] .corpus-navbar {
   flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: none;
+  overflow: hidden;
+  height: 30px;
   min-height: 30px;
-  padding: 3px 8px;
-  gap: 4px 6px;
+  padding: 0 8px;
+  gap: 6px;
 }
 
-html[data-ui-short="1"] .corpus-navbar::-webkit-scrollbar {
-  display: none;
-}
-
-html[data-ui-short="1"] .corpus-navbar-group {
+html[data-ui-short="1"] .corpus-navbar-right {
   flex-wrap: nowrap;
   flex-shrink: 0;
 }

@@ -61,6 +61,7 @@ export type IpaInputMode = 'off' | 'yunlong' | 'praat';
 export type SidebarTab = 'inspector' | 'tiers' | 'history' | 'settings' | 'customize';
 export type EditInspectorMode = 'sidebar' | 'floating';
 export type ExportRangePreset = 'all' | 'view' | 'selection' | 'custom';
+export type RibbonTabId = 'file' | 'annotate' | 'tiers' | 'view' | 'tools' | 'corpus';
 
 export type FloatingBarTarget = 'interval' | 'point' | 'boundary' | 'tier';
 export type FloatingBarPresetKey = 'full' | 'compact' | 'minimal';
@@ -613,6 +614,11 @@ export interface EditorState {
   ipaDockOpen: boolean;
   ipaFloating: boolean;
 
+  // Classic Tiered Ribbon State
+  ribbonTab: RibbonTabId;
+  ribbonCollapsed: boolean;
+  restoreSessionOnStartup: boolean;
+
   // Office-Style Right Sidebar & Edit Inspector Preferences
   sidebarOpen: boolean;
   sidebarTab: SidebarTab;
@@ -761,6 +767,10 @@ export interface EditorState {
   cycleIpaMode: () => void;
   setIpaDockOpen: (open: boolean) => void;
   setIpaFloating: (floating: boolean) => void;
+  setRibbonTab: (tab: RibbonTabId) => void;
+  setRibbonCollapsed: (collapsed: boolean) => void;
+  toggleRibbonCollapsed: () => void;
+  setRestoreSessionOnStartup: (enabled: boolean) => void;
   setSidebarOpen: (open: boolean) => void;
   setSidebarTab: (tab: SidebarTab) => void;
   toggleSidebarTab: (tab: SidebarTab) => void;
@@ -1075,6 +1085,56 @@ function loadShowCorpusStatusMarks(): boolean {
   }
 }
 
+const RIBBON_COLLAPSED_STORAGE_KEY = 'tg_ribbon_collapsed';
+
+function loadRibbonCollapsed(): boolean {
+  try {
+    return localStorage.getItem(RIBBON_COLLAPSED_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function saveRibbonCollapsed(collapsed: boolean): void {
+  try {
+    localStorage.setItem(RIBBON_COLLAPSED_STORAGE_KEY, collapsed ? '1' : '0');
+  } catch {
+    // ignore storage errors
+  }
+}
+
+const RESTORE_SESSION_STORAGE_KEY = 'tg_restore_session_v1';
+const HAS_OPENED_STORAGE_KEY = 'tg_has_opened_v1';
+
+function loadRestoreSessionOnStartup(): boolean {
+  try {
+    return localStorage.getItem(RESTORE_SESSION_STORAGE_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+function saveRestoreSessionOnStartup(enabled: boolean): void {
+  try {
+    localStorage.setItem(RESTORE_SESSION_STORAGE_KEY, enabled ? '1' : '0');
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function consumeIsFirstOpen(): boolean {
+  try {
+    const alreadyOpened = localStorage.getItem(HAS_OPENED_STORAGE_KEY) === '1';
+    if (!alreadyOpened) {
+      localStorage.setItem(HAS_OPENED_STORAGE_KEY, '1');
+      return true;
+    }
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 export function getBoundaryBoundsForTier(tier: TextGrid['tiers'][number], oldT: number) {
   let minAllowed = -Infinity;
   let maxAllowed = Infinity;
@@ -1168,15 +1228,16 @@ function loadSavedVolume(): number {
 
 let toastTimeout: ReturnType<typeof setTimeout> | null = null;
 const initialHistoryLimit = loadSavedHistoryLimit();
-const initialSample = createSample('poem');
+const initialIsFirstOpen = consumeIsFirstOpen();
+const initialSample = createSample(initialIsFirstOpen ? 'poem' : 'blank');
 const initialTab = createTabRecord(
   {
     tg: initialSample.tg,
     filename: initialSample.tg.name,
     filePath: null,
     fileFormat: 'longText',
-    isBlankPlaceholder: false,
-    baselineKind: 'sample'
+    isBlankPlaceholder: !initialIsFirstOpen,
+    baselineKind: initialIsFirstOpen ? 'sample' : 'blank'
   },
   initialHistoryLimit
 );
@@ -1188,7 +1249,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   historyLimit: initialHistoryLimit,
   lastHistoryNav: null,
 
-  mode: 'read',
+  mode: initialIsFirstOpen ? 'read' : 'edit',
   wrapMode: 'auto',
   scaleMode: 'elastic',
   tickPrecision: '3',
@@ -1236,6 +1297,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
   })(),
 
+  ribbonTab: 'annotate',
+  ribbonCollapsed: loadRibbonCollapsed(),
+  restoreSessionOnStartup: loadRestoreSessionOnStartup(),
+
   sidebarOpen: initialSidebarPrefs.sidebarOpen,
   sidebarTab: initialSidebarPrefs.sidebarTab,
   sidebarWidth: initialSidebarPrefs.sidebarWidth,
@@ -1274,6 +1339,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return {
         tabs: nextTabs,
         ...fieldsFromTab(newTab),
+        ...(newTab.kind !== 'corpus' && s.ribbonTab === 'corpus'
+          ? { ribbonTab: 'annotate' as RibbonTabId }
+          : {}),
         pendingAutoEditTarget: null,
         showPlayhead: false,
         playing: false,
@@ -1298,6 +1366,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return {
         tabs: updatedTabs,
         ...fieldsFromTab(target),
+        ...(target.kind !== 'corpus' && s.ribbonTab === 'corpus'
+          ? { ribbonTab: 'annotate' as RibbonTabId }
+          : {}),
         pendingAutoEditTarget: null,
         maxFreq: smartMaxFreq,
         showPlayhead: false,
@@ -1328,6 +1399,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       set((s) => ({
         tabs: [fresh],
         ...fieldsFromTab(fresh),
+        ...(s.ribbonTab === 'corpus' ? { ribbonTab: 'annotate' as RibbonTabId } : {}),
         pendingAutoEditTarget: null,
         showPlayhead: false,
         playing: false,
@@ -1346,6 +1418,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       set((s) => ({
         tabs: remaining,
         ...fieldsFromTab(nextActive),
+        ...(nextActive.kind !== 'corpus' && s.ribbonTab === 'corpus'
+          ? { ribbonTab: 'annotate' as RibbonTabId }
+          : {}),
         pendingAutoEditTarget: null,
         showPlayhead: false,
         playing: false,
@@ -2292,6 +2367,21 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // ignore
     }
     set({ ipaFloating });
+  },
+  setRibbonTab: (ribbonTab) => set({ ribbonTab }),
+  setRibbonCollapsed: (ribbonCollapsed) => {
+    saveRibbonCollapsed(ribbonCollapsed);
+    set({ ribbonCollapsed });
+  },
+  toggleRibbonCollapsed: () =>
+    set((s) => {
+      const next = !s.ribbonCollapsed;
+      saveRibbonCollapsed(next);
+      return { ribbonCollapsed: next };
+    }),
+  setRestoreSessionOnStartup: (restoreSessionOnStartup) => {
+    saveRestoreSessionOnStartup(restoreSessionOnStartup);
+    set({ restoreSessionOnStartup });
   },
   setSidebarOpen: (sidebarOpen) =>
     set((s) => {

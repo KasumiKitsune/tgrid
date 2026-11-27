@@ -14,6 +14,8 @@ export interface CorpusWorkspaceAdapter {
   readonly mode: CorpusWorkspaceMode;
   readonly writable: boolean;
   readonly readOnlyReason?: string;
+  /** 仅 Tauri 桌面端返回本地目录绝对路径，Web 端为 undefined */
+  readonly nativeDirPath?: string;
 
   scan(): Promise<CorpusDirScanResult>;
   readFile(relPath: string): Promise<Uint8Array>;
@@ -237,6 +239,10 @@ class TauriCorpusAdapter implements CorpusWorkspaceAdapter {
     this.rootKey = `tauri:${normalized.replace(/\\/g, '/').toLowerCase()}`;
     const parts = normalized.split(/[\\/]/).filter(Boolean);
     this.projectName = parts[parts.length - 1] || dirPath;
+  }
+
+  get nativeDirPath(): string {
+    return this.dirPath;
   }
 
   resolveNativePath(relPath: string): string {

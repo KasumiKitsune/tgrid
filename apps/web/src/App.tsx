@@ -61,9 +61,13 @@ import {
 import { resolveF0RangeOverride } from './utils/f0Range';
 import { isComposingEvent, isEditableTarget, matchesShortcut } from './shortcuts/registry';
 import { applyUiScaleToDom, stepCanvasScale, syncUiScaleViewportAttrs } from './utils/uiScale';
+import {
+  loadPersistedSession,
+  savePersistedSession,
+  type PersistedSessionTab
+} from './utils/sessionPersistence';
 import { Topbar, type ExportActionKind } from './components/Topbar';
 import { TransportBar } from './components/TransportBar';
-import { EditStrip } from './components/EditStrip';
 import { LegendDock } from './components/LegendDock';
 import { CorpusSidebar, filterCorpusItems } from './components/CorpusSidebar';
 import { CorpusNavBar } from './components/CorpusNavBar';
@@ -119,6 +123,8 @@ export function App() {
   const corpusAutoSaveTimerRef = useRef<number | null>(null);
   const corpusProjectSaveTimersRef = useRef<Map<string, number>>(new Map());
   const corpusAudioInflightRef = useRef<Map<string, Promise<CorpusAudioCacheEntry | null>>>(new Map());
+  const sessionRestoredRef = useRef(false);
+  const sessionSaveTimerRef = useRef<number | null>(null);
 
   const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
   const [dropActive, setDropActive] = useState(false);
@@ -136,6 +142,7 @@ export function App() {
   const isDirty = useEditorStore((s) => s.isDirty);
   const docVersion = useEditorStore((s) => s.docVersion);
   const showCorpusStatusMarks = useEditorStore((s) => s.showCorpusStatusMarks);
+  const restoreSessionOnStartup = useEditorStore((s) => s.restoreSessionOnStartup);
   const activeTab = useMemo(() => tabs.find((t) => t.id === activeTabId) ?? null, [tabs, activeTabId]);
   const activeCorpus = activeTab?.kind === 'corpus' ? (activeTab.corpus ?? null) : null;
 
@@ -269,6 +276,10 @@ export function App() {
         window.clearTimeout(timer);
       }
       corpusProjectSaveTimersRef.current.clear();
+      if (sessionSaveTimerRef.current !== null) {
+        window.clearTimeout(sessionSaveTimerRef.current);
+        sessionSaveTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -740,22 +751,29 @@ export function App() {
   );
 
   const openCorpusWithAdapter = useCallback(
-    async (adapter: CorpusWorkspaceAdapter) => {
+    async (
+      adapter: CorpusWorkspaceAdapter,
+      opts?: { preferredItemId?: string | null; silent?: boolean }
+    ): Promise<string | null> => {
       const st = useEditorStore.getState();
       const existingTab = st.findCorpusTabByRootKey(adapter.rootKey);
       if (existingTab) {
         disposeCorpusAdapter(adapter.projectId);
         handleSwitchTab(existingTab.id);
-        showToast(`已切换至已打开的文件夹：${existingTab.corpus?.projectName ?? adapter.projectName}`);
-        return;
+        if (!opts?.silent) {
+          showToast(`已切换至已打开的文件夹：${existingTab.corpus?.projectName ?? adapter.projectName}`);
+        }
+        return existingTab.id;
       }
 
       try {
         const scan = await adapter.scan();
         if (scan.audioFiles.length === 0 && scan.textGridFiles.length === 0) {
           disposeCorpusAdapter(adapter.projectId);
-          showToast('该文件夹中未找到音频或 TextGrid 文件', true);
-          return;
+          if (!opts?.silent) {
+            showToast('该文件夹中未找到音频或 TextGrid 文件', true);
+          }
+          return null;
         }
 
         let existingProject = null;
@@ -822,20 +840,33 @@ export function App() {
           void persistCorpusProjectIndex(tabId, true);
         }
 
-        if (reconciled.activeItemId) {
-          await switchCorpusEntry(tabId, reconciled.activeItemId, {
-            autoFocus: true,
+        const preferredItem = opts?.preferredItemId
+          ? reconciled.itemMap[opts.preferredItemId]
+          : null;
+        const initialItemId =
+          preferredItem && !preferredItem.missing ? preferredItem.id : reconciled.activeItemId;
+
+        if (initialItemId) {
+          await switchCorpusEntry(tabId, initialItemId, {
+            autoFocus: !opts?.silent,
+            autoPlayOverride: opts?.silent ? false : undefined,
             skipFlushPrev: true
           });
         }
 
-        const doneCount = reconciled.items.filter((it) => it.status === 'done').length;
-        showToast(
-          `已打开文件夹：${reconciled.projectName}（已完成 ${doneCount} / 共 ${reconciled.items.length} 条）`
-        );
+        if (!opts?.silent) {
+          const doneCount = reconciled.items.filter((it) => it.status === 'done').length;
+          showToast(
+            `已打开文件夹：${reconciled.projectName}（已完成 ${doneCount} / 共 ${reconciled.items.length} 条）`
+          );
+        }
+        return tabId;
       } catch (err) {
         disposeCorpusAdapter(adapter.projectId);
-        showToast(`打开文件夹失败：${String(err)}`, true);
+        if (!opts?.silent) {
+          showToast(`打开文件夹失败：${String(err)}`, true);
+        }
+        return null;
       }
     },
     [flushActiveEdits, handleSwitchTab, persistCorpusProjectIndex, showToast, switchCorpusEntry]
@@ -1337,15 +1368,99 @@ export function App() {
     [isDesktop, makeRevealAction, markTabSaved, saveCorpusEntrySilent, showToast]
   );
 
+  const handleToggleCorpusAutoPlay = useCallback(() => {
+    const st = useEditorStore.getState();
+    const tab = st.tabs.find((t) => t.id === st.activeTabId);
+    if (!tab || tab.kind !== 'corpus' || !tab.corpus) return;
+    st.setCorpusOptions({ autoPlay: !tab.corpus.options.autoPlay });
+    void persistCorpusProjectIndex(tab.id, false);
+  }, [persistCorpusProjectIndex]);
+
+  const handleToggleCorpusAutoVad = useCallback(() => {
+    const st = useEditorStore.getState();
+    const tab = st.tabs.find((t) => t.id === st.activeTabId);
+    if (!tab || tab.kind !== 'corpus' || !tab.corpus) return;
+    st.setCorpusOptions({ autoVad: !tab.corpus.options.autoVad });
+    void persistCorpusProjectIndex(tab.id, false);
+  }, [persistCorpusProjectIndex]);
+
+  const persistDesktopSessionNow = useCallback(() => {
+    if (!isDesktop || !sessionRestoredRef.current) return;
+    if (sessionSaveTimerRef.current !== null) {
+      window.clearTimeout(sessionSaveTimerRef.current);
+      sessionSaveTimerRef.current = null;
+    }
+    const st = useEditorStore.getState();
+    if (!st.restoreSessionOnStartup) return;
+
+    const entries: PersistedSessionTab[] = [];
+    let activeIndex = -1;
+
+    for (const tab of st.tabs) {
+      if (tab.kind === 'corpus' && tab.corpus) {
+        const adapter = getCorpusAdapter(tab.corpus.projectId);
+        const dirPath = adapter?.nativeDirPath;
+        if (!dirPath) continue;
+        if (tab.id === st.activeTabId) {
+          activeIndex = entries.length;
+        }
+        entries.push({
+          kind: 'corpus',
+          dirPath,
+          activeItemId: tab.corpus.activeItemId
+        });
+      } else if (tab.currentFilePath) {
+        if (tab.id === st.activeTabId) {
+          activeIndex = entries.length;
+        }
+        entries.push({
+          kind: 'single',
+          filePath: tab.currentFilePath
+        });
+      }
+    }
+
+    savePersistedSession({
+      version: 1,
+      activeIndex: activeIndex >= 0 ? activeIndex : 0,
+      tabs: entries
+    });
+  }, [isDesktop]);
+
+  useEffect(() => {
+    if (!isDesktop || !sessionRestoredRef.current || !restoreSessionOnStartup) return;
+    if (sessionSaveTimerRef.current !== null) {
+      window.clearTimeout(sessionSaveTimerRef.current);
+    }
+    sessionSaveTimerRef.current = window.setTimeout(() => {
+      sessionSaveTimerRef.current = null;
+      persistDesktopSessionNow();
+    }, 300);
+    return () => {
+      if (sessionSaveTimerRef.current !== null) {
+        window.clearTimeout(sessionSaveTimerRef.current);
+        sessionSaveTimerRef.current = null;
+      }
+    };
+  }, [
+    isDesktop,
+    tabs,
+    activeTabId,
+    activeCorpus?.activeItemId,
+    restoreSessionOnStartup,
+    persistDesktopSessionNow
+  ]);
+
   const destroyDesktopWindow = useCallback(async () => {
     if (!isDesktop) return;
+    persistDesktopSessionNow();
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
       await getCurrentWindow().destroy();
     } catch {
       // ignore
     }
-  }, [isDesktop]);
+  }, [isDesktop, persistDesktopSessionNow]);
 
   const handleUnsavedCancel = useCallback(() => {
     if (unsavedBusyRef.current) return;
@@ -1401,7 +1516,10 @@ export function App() {
   }, [closeTabAndCleanup, destroyDesktopWindow, handleExportCorpusZip, handleSwitchTab, saveTabAsTextGrid]);
 
   const openFilePayloads = useCallback(
-    async (files: IncomingFilePayload[], opts?: { replaceActiveTab?: boolean }) => {
+    async (
+      files: IncomingFilePayload[],
+      opts?: { replaceActiveTab?: boolean; silent?: boolean }
+    ): Promise<string[]> => {
       const bridge = getPlatformBridge();
       const docFiles = files.filter((f) => !AUDIO_EXT_RE.test(f.name));
       const audioFiles = files.filter((f) => AUDIO_EXT_RE.test(f.name));
@@ -1409,6 +1527,8 @@ export function App() {
       const ordered = [...docFiles, ...audioFiles];
 
       let replaceFirst = Boolean(opts?.replaceActiveTab);
+      const silent = Boolean(opts?.silent);
+      const openedTabIds: string[] = [];
 
       for (const file of ordered) {
         const lower = file.name.toLowerCase();
@@ -1417,9 +1537,9 @@ export function App() {
           try {
             const targetTabId = useEditorStore.getState().activeTabId;
             await loadAudioBytesForTab(targetTabId, file.bytes, file.name, 0);
-            showToast(`已载入录音：${file.name}`);
+            if (!silent) showToast(`已载入录音：${file.name}`);
           } catch (err) {
-            showToast(`音频解码失败：${String(err)}`, true);
+            if (!silent) showToast(`音频解码失败：${String(err)}`, true);
           }
           continue;
         }
@@ -1429,7 +1549,8 @@ export function App() {
           const existing = useEditorStore.getState().findTabByPath(file.path);
           if (existing) {
             handleSwitchTab(existing.id);
-            showToast('已切换至已打开的标签页');
+            if (!silent) showToast('已切换至已打开的标签页');
+            openedTabIds.push(existing.id);
             replaceFirst = false;
             continue;
           }
@@ -1468,10 +1589,10 @@ export function App() {
                 playerRef.current!.setBuffer(buffer, firstSound.xmin);
                 setAudioBuffer(buffer);
               }
-              showToast(`已从 Praat 文件载入音频：${firstSound.name || file.name}`);
+              if (!silent) showToast(`已从 Praat 文件载入音频：${firstSound.name || file.name}`);
               continue;
             }
-            showToast('文件中未包含 TextGrid 对象', true);
+            if (!silent) showToast('文件中未包含 TextGrid 对象', true);
             continue;
           }
           await prefetchTrigraphCache(tgs[0], bridge);
@@ -1520,6 +1641,7 @@ export function App() {
             });
             syncPlayerForTab(targetTabId);
           }
+          openedTabIds.push(targetTabId);
 
           if (firstSound) {
             const sr = firstSound.dx > 0 ? 1 / firstSound.dx : 16000;
@@ -1541,7 +1663,7 @@ export function App() {
               playerRef.current!.setBuffer(buffer, firstSound.xmin);
               setAudioBuffer(buffer);
             }
-            showToast(`已载入集合：${tgs.length} 个 TextGrid + 配套音频`);
+            if (!silent) showToast(`已载入集合：${tgs.length} 个 TextGrid + 配套音频`);
           } else {
             let autoPairedAudioName: string | null = null;
             if (isDesktop && file.path && !hasExplicitAudio) {
@@ -1559,20 +1681,24 @@ export function App() {
               }
             }
 
-            if (autoPairedAudioName) {
-              showToast(`已自动配对加载同名音频: ${autoPairedAudioName}`);
-            } else {
-              showToast(
-                tgs.length > 1
-                  ? `已载入集合：${file.name}（含 ${tgs.length} 个 TextGrid）`
-                  : `已载入：${file.name}`
-              );
+            if (!silent) {
+              if (autoPairedAudioName) {
+                showToast(`已自动配对加载同名音频: ${autoPairedAudioName}`);
+              } else {
+                showToast(
+                  tgs.length > 1
+                    ? `已载入集合：${file.name}（含 ${tgs.length} 个 TextGrid）`
+                    : `已载入：${file.name}`
+                );
+              }
             }
           }
         } catch (err) {
-          showToast(`解析失败：${String(err)}`, true);
+          if (!silent) showToast(`解析失败：${String(err)}`, true);
         }
       }
+
+      return openedTabIds;
     },
     [
       evictTabAudio,
@@ -1660,12 +1786,13 @@ export function App() {
     audioInputRef.current?.click();
   }, [isDesktop, openFilePayloads, showToast]);
 
-  // Initialize bridge (WASM or Tauri), prefetch trigraphs, and load launch file arg if provided
+  // Initialize bridge (WASM or Tauri), prefetch trigraphs, and load launch file arg or restore last desktop session
   useEffect(() => {
     let active = true;
     const bridge = getPlatformBridge();
     void bridge.init().then(async () => {
       if (!active) return;
+
       if (isDesktop) {
         try {
           const launchPath = await bridge.getLaunchFileArg();
@@ -1673,20 +1800,133 @@ export function App() {
             const opened = await bridge.readNativeFile(launchPath);
             if (opened && active) {
               await openFilePayloads([opened], { replaceActiveTab: true });
+              if (active) {
+                sessionRestoredRef.current = true;
+              }
               return;
             }
           }
         } catch {
-          // Fall back to default initial sample if launch arg failed
+          // Fall back to session restore or initial sample if launch arg failed
+        }
+
+        if (active && useEditorStore.getState().restoreSessionOnStartup) {
+          const savedSession = loadPersistedSession();
+          if (savedSession && savedSession.tabs.length > 0) {
+            const initialSt = useEditorStore.getState();
+            const initialTab = initialSt.tabs.length === 1 ? initialSt.tabs[0] : null;
+            const initialBlankId =
+              initialTab &&
+              initialTab.kind !== 'corpus' &&
+              initialTab.isBlankPlaceholder &&
+              !initialTab.isDirty &&
+              !initialTab.audioName
+                ? initialTab.id
+                : null;
+
+            const restoredTabIds: Array<string | null> = [];
+            let restoredCount = 0;
+
+            for (const entry of savedSession.tabs) {
+              if (!active) return;
+              if (entry.kind === 'single') {
+                try {
+                  const opened = await bridge.readNativeFile(entry.filePath);
+                  if (!opened || !active) {
+                    restoredTabIds.push(null);
+                    continue;
+                  }
+                  const ids = await openFilePayloads([opened], {
+                    replaceActiveTab: restoredCount === 0 && Boolean(initialBlankId),
+                    silent: true
+                  });
+                  if (ids.length > 0) {
+                    restoredTabIds.push(ids[0]);
+                    restoredCount++;
+                  } else {
+                    restoredTabIds.push(null);
+                  }
+                } catch {
+                  restoredTabIds.push(null);
+                }
+              } else {
+                try {
+                  const adapter = await openTauriCorpusAdapter(bridge, entry.dirPath);
+                  if (!adapter || !active) {
+                    restoredTabIds.push(null);
+                    continue;
+                  }
+                  const tabId = await openCorpusWithAdapter(adapter, {
+                    preferredItemId: entry.activeItemId ?? null,
+                    silent: true
+                  });
+                  if (tabId) {
+                    restoredTabIds.push(tabId);
+                    restoredCount++;
+                  } else {
+                    restoredTabIds.push(null);
+                  }
+                } catch {
+                  restoredTabIds.push(null);
+                }
+              }
+            }
+
+            if (!active) return;
+
+            if (restoredCount > 0) {
+              if (initialBlankId) {
+                const stillBlank = useEditorStore
+                  .getState()
+                  .tabs.find(
+                    (t) =>
+                      t.id === initialBlankId &&
+                      t.kind !== 'corpus' &&
+                      t.isBlankPlaceholder &&
+                      !t.isDirty &&
+                      !t.audioName
+                  );
+                if (stillBlank && useEditorStore.getState().tabs.length > 1) {
+                  closeTabAndCleanup(initialBlankId);
+                }
+              }
+
+              const targetTabId =
+                restoredTabIds[savedSession.activeIndex] ??
+                restoredTabIds.find((id): id is string => Boolean(id)) ??
+                null;
+              if (targetTabId && useEditorStore.getState().tabs.some((t) => t.id === targetTabId)) {
+                handleSwitchTab(targetTabId);
+              }
+
+              sessionRestoredRef.current = true;
+              persistDesktopSessionNow();
+              showToast(`已恢复上次未关闭的 ${restoredCount} 个标签页`);
+              return;
+            }
+          }
+        }
+
+        if (active) {
+          sessionRestoredRef.current = true;
         }
       }
+
       await prefetchTrigraphCache(useEditorStore.getState().tg, bridge);
       if (active) useEditorStore.getState().bumpDocVersion();
     });
     return () => {
       active = false;
     };
-  }, [isDesktop, openFilePayloads]);
+  }, [
+    isDesktop,
+    closeTabAndCleanup,
+    handleSwitchTab,
+    openCorpusWithAdapter,
+    openFilePayloads,
+    persistDesktopSessionNow,
+    showToast
+  ]);
 
   // Trigger IPA WebFont load & re-measure Canvas text layout once ready (eliminates cold-start width drift)
   useEffect(() => {
@@ -1786,6 +2026,7 @@ export function App() {
         const win = getCurrentWindow();
         unlisten = await win.onCloseRequested((event) => {
           flushActiveEdits();
+          persistDesktopSessionNow();
           const curTabs = useEditorStore.getState().tabs;
           const corpusTabs = curTabs.filter((t) => t.kind === 'corpus' && t.corpus);
           const hasDirtyCorpus = corpusTabs.some(
@@ -1840,6 +2081,7 @@ export function App() {
     destroyDesktopWindow,
     flushActiveEdits,
     persistCorpusProjectIndex,
+    persistDesktopSessionNow,
     saveCorpusEntrySilent
   ]);
 
@@ -2830,18 +3072,18 @@ export function App() {
         onNewTab={handleNewTab}
         onSwitchTab={handleSwitchTab}
         onRequestCloseTab={requestCloseTab}
+        onBatchConvertIpa={(dir) => void handleBatchConvertIpa(dir)}
+        corpusCanPrev={activeCorpusNav?.canPrev}
+        corpusCanNext={activeCorpusNav?.canNext}
+        onCorpusPrev={activeCorpus ? () => void handleCorpusStep(-1) : undefined}
+        onCorpusNext={activeCorpus ? () => void handleCorpusStep(1) : undefined}
+        onToggleCorpusAutoPlay={activeCorpus ? handleToggleCorpusAutoPlay : undefined}
+        onToggleCorpusAutoVad={activeCorpus ? handleToggleCorpusAutoVad : undefined}
+        onExportCorpusZip={
+          activeCorpus && !activeCorpus.writable ? () => void handleExportCorpusZip() : undefined
+        }
+        exportingCorpusZip={exportingCorpusZip}
       />
-
-      <TransportBar
-        onTogglePlay={handleTogglePlay}
-        onStop={handleStopPlayback}
-        onRateChange={handleRateChange}
-        onVolumeChange={handleVolumeChange}
-        onClearAudio={() => void clearAudio()}
-        onOpenAudio={() => void handleOpenAudioPicker()}
-      />
-
-      <EditStrip />
 
       <div className="workspace-body">
         {activeCorpus && (
@@ -2898,24 +3140,21 @@ export function App() {
                     onPrev={() => void handleCorpusStep(-1)}
                     onNext={() => void handleCorpusStep(1)}
                     onSetStatus={(status) => void handleCorpusSetStatus(status)}
-                    onToggleAutoPlay={() => {
-                      useEditorStore
-                        .getState()
-                        .setCorpusOptions({ autoPlay: !activeCorpus.options.autoPlay });
-                      void persistCorpusProjectIndex(activeTabId, false);
-                    }}
-                    onToggleAutoVad={() => {
-                      useEditorStore
-                        .getState()
-                        .setCorpusOptions({ autoVad: !activeCorpus.options.autoVad });
-                      void persistCorpusProjectIndex(activeTabId, false);
-                    }}
                   />
                 ) : undefined
               }
             />
             <FindReplaceBar />
           </div>
+
+          <TransportBar
+            onTogglePlay={handleTogglePlay}
+            onStop={handleStopPlayback}
+            onRateChange={handleRateChange}
+            onVolumeChange={handleVolumeChange}
+            onClearAudio={() => void clearAudio()}
+            onOpenAudio={() => void handleOpenAudioPicker()}
+          />
 
           <IpaDock
             onInsertSymbol={(sym, isTieBar) => {

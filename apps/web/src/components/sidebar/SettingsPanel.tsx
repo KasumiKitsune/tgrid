@@ -35,6 +35,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const setShowMicroLoupe = useEditorStore((s) => s.setShowMicroLoupe);
   const showCorpusStatusMarks = useEditorStore((s) => s.showCorpusStatusMarks);
   const setShowCorpusStatusMarks = useEditorStore((s) => s.setShowCorpusStatusMarks);
+  const restoreSessionOnStartup = useEditorStore((s) => s.restoreSessionOnStartup);
+  const setRestoreSessionOnStartup = useEditorStore((s) => s.setRestoreSessionOnStartup);
   const uiScale = useEditorStore((s) => s.uiScale);
   const setUiScale = useEditorStore((s) => s.setUiScale);
   const legendOpen = useEditorStore((s) => s.legendOpen);
@@ -180,6 +182,22 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <div className="sb-hint">
             关闭后隐藏列表与顶栏中的未标、已完成、存疑、需重录标记。
           </div>
+
+          {isDesktop && (
+            <>
+              <label className="export-check">
+                <input
+                  type="checkbox"
+                  checked={restoreSessionOnStartup}
+                  onChange={(e) => setRestoreSessionOnStartup(e.target.checked)}
+                />
+                <span>启动时恢复上次未关闭的工作</span>
+              </label>
+              <div className="sb-hint">
+                重新打开应用时自动恢复上次未关闭的本地文件与文件夹标签页；手动关闭的标签页不会恢复。
+              </div>
+            </>
+          )}
 
           <div className="sb-setting-block">
             <div

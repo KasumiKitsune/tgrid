@@ -98,8 +98,8 @@ export const TransportBar: React.FC<TransportBarProps> = ({
   };
 
   return (
-    <div className="transportbar">
-      <div className="bar-group">
+    <div className="transportbar" role="region" aria-label="播放控制条">
+      <div className="bar-group transport-left">
         <button
           type="button"
           className={`transport-play-btn${playing ? ' is-playing' : ''}`}
@@ -127,7 +127,7 @@ export const TransportBar: React.FC<TransportBarProps> = ({
           onClick={() => setLoop(!loop)}
         >
           <UiIcon name="loop" size={13} />
-          <span>循环</span>
+          <span className="transport-btn-label">循环</span>
         </button>
 
         <button
@@ -138,14 +138,13 @@ export const TransportBar: React.FC<TransportBarProps> = ({
           onClick={() => setFollowPlayhead(!followPlayhead)}
         >
           <UiIcon name="followPlayhead" size={13} />
-          <span>跟随</span>
+          <span className="transport-btn-label">跟随</span>
         </button>
 
         <div ref={rateWrapRef} className={`menu-wrap ${rateOpen ? 'open' : ''}`}>
           <button
             type="button"
-            className="select-trigger"
-            style={{ width: 62 }}
+            className="select-trigger transport-rate-trigger"
             title="播放倍速"
             onClick={() => setRateOpen(!rateOpen)}
           >
@@ -176,12 +175,18 @@ export const TransportBar: React.FC<TransportBarProps> = ({
         </span>
 
         {playRange && (
-          <span className="audio-tag">
+          <span
+            className="audio-tag transport-range-tag"
+            title={`选区范围 ${playRange.start.toFixed(3)} – ${playRange.end.toFixed(3)} s`}
+          >
             {playRange.start.toFixed(3)} – {playRange.end.toFixed(3)} s
           </span>
         )}
         {!playRange && viewDomain && (
-          <span className="audio-tag zoom-badge">
+          <span
+            className="audio-tag zoom-badge transport-range-tag"
+            title={`当前视窗 ${viewDomain.min.toFixed(3)} – ${viewDomain.max.toFixed(3)} s`}
+          >
             视窗 {viewDomain.min.toFixed(3)} – {viewDomain.max.toFixed(3)} s
           </span>
         )}
@@ -194,7 +199,7 @@ export const TransportBar: React.FC<TransportBarProps> = ({
             onClick={() => setViewDomain({ min: zoomableRange!.start, max: zoomableRange!.end })}
           >
             <UiIcon name="zoomIn" size={13} />
-            <span>放大选区</span>
+            <span className="transport-zoom-label">放大选区</span>
           </button>
         )}
 
@@ -206,7 +211,7 @@ export const TransportBar: React.FC<TransportBarProps> = ({
             onClick={() => setViewDomain(null)}
           >
             <UiIcon name="zoomReset" size={13} />
-            <span>显示全长</span>
+            <span className="transport-zoom-label">显示全长</span>
           </button>
         )}
       </div>
@@ -263,7 +268,7 @@ export const TransportBar: React.FC<TransportBarProps> = ({
               title="正在下载并解析配套录音…"
             >
               <UiIcon name="waveform" size={13} />
-              <span>正在载入录音…</span>
+              <span className="transport-audio-empty-text">正在载入录音…</span>
             </button>
           ) : (
             <button
@@ -273,7 +278,7 @@ export const TransportBar: React.FC<TransportBarProps> = ({
               onClick={onOpenAudio}
             >
               <UiIcon name="waveform" size={13} />
-              <span>未载入录音</span>
+              <span className="transport-audio-empty-text">未载入录音</span>
             </button>
           )
         ) : (
@@ -282,7 +287,7 @@ export const TransportBar: React.FC<TransportBarProps> = ({
               <button
                 type="button"
                 className="audio-tag audio-tag-btn"
-                title="点击在右侧边栏打开音频与语谱图设置"
+                title={`${audioName} (${audioDuration.toFixed(2)}s) — 点击在右侧边栏打开音频与语谱图设置`}
                 onClick={() => {
                   setSidebarTab('settings');
                   setSidebarOpen(true);

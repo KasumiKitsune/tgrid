@@ -1,7 +1,5 @@
 import React, { useMemo } from 'react';
 import {
-  AutoPlayIcon,
-  AutoSplitIcon,
   CORPUS_STATUS_META,
   CORPUS_STATUS_ORDER,
   CorpusNextIcon,
@@ -33,10 +31,10 @@ export interface CorpusNavBarProps {
   onNext: () => void;
   /** 一键设置当前词条状态 */
   onSetStatus: (status: CorpusItemStatus) => void;
-  /** 切换切条后自动播放开关 */
-  onToggleAutoPlay: () => void;
-  /** 切换静音自动切分开关 */
-  onToggleAutoVad: () => void;
+  /** @deprecated 已迁入顶部「词表」页签，保留可选以兼容旧调用 */
+  onToggleAutoPlay?: () => void;
+  /** @deprecated 已迁入顶部「词表」页签，保留可选以兼容旧调用 */
+  onToggleAutoVad?: () => void;
 }
 
 export const CorpusNavBar: React.FC<CorpusNavBarProps> = ({
@@ -50,9 +48,7 @@ export const CorpusNavBar: React.FC<CorpusNavBarProps> = ({
   onToggleSidebar,
   onPrev,
   onNext,
-  onSetStatus,
-  onToggleAutoPlay,
-  onToggleAutoVad
+  onSetStatus
 }) => {
   const activeItem = corpus.activeItemId ? corpus.itemMap[corpus.activeItemId] ?? null : null;
 
@@ -85,7 +81,7 @@ export const CorpusNavBar: React.FC<CorpusNavBarProps> = ({
     saveBadgeTone = 'error';
     saveBadgeTitle = corpus.lastSaveError || '自动保存失败，请检查文件是否被占用';
   } else if (corpus.saveStatus === 'saving') {
-    saveBadgeLabel = '保存中';
+    saveBadgeLabel = '保存中…';
     saveBadgeTone = 'saving';
     saveBadgeTitle = '正在自动写入标注文件';
   } else if (!corpus.writable) {
@@ -117,10 +113,10 @@ export const CorpusNavBar: React.FC<CorpusNavBarProps> = ({
           </>
         )}
 
-        <div className="segmented" role="group" aria-label="切换词条">
+        <div className="corpus-nav-step-group" role="group" aria-label="切换词条">
           <button
             type="button"
-            className="compact"
+            className="compact corpus-nav-step-btn"
             disabled={!resolvedCanPrev}
             title="上一条词条 (Alt+[)"
             onClick={onPrev}
@@ -130,7 +126,7 @@ export const CorpusNavBar: React.FC<CorpusNavBarProps> = ({
           </button>
           <button
             type="button"
-            className="compact"
+            className="compact corpus-nav-step-btn"
             disabled={!resolvedCanNext}
             title="下一条词条 (Alt+])"
             onClick={onNext}
@@ -149,62 +145,42 @@ export const CorpusNavBar: React.FC<CorpusNavBarProps> = ({
         </div>
       </div>
 
-      {showStatusMarks && (
-        <div
-          className="segmented corpus-status-group"
-          role="group"
-          aria-label="词条标注状态"
-          onMouseDown={(e) => e.preventDefault()}
-        >
-          {CORPUS_STATUS_ORDER.map((status) => {
-            const meta = CORPUS_STATUS_META[status];
-            const isSelected = activeItem?.status === status;
-            const tooltip = meta.shortcut
-              ? `标记为${meta.label} (${meta.shortcut} 标记并下一条)`
-              : `标记为${meta.label}`;
-            return (
-              <button
-                key={status}
-                type="button"
-                className={`compact corpus-status-btn is-${status} ${isSelected ? 'is-selected' : ''}`}
-                disabled={!activeItem}
-                aria-pressed={isSelected}
-                title={tooltip}
-                onClick={() => onSetStatus(status)}
-              >
-                <CorpusStatusIcon status={status} size={12} />
-                <span>{meta.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
       <div
         className="corpus-navbar-group corpus-navbar-right"
         onMouseDown={(e) => e.preventDefault()}
       >
-        <button
-          type="button"
-          className={`compact corpus-toggle-btn ${corpus.options.autoPlay ? 'is-on' : ''}`}
-          aria-pressed={corpus.options.autoPlay}
-          title="切换词条后自动播放当前语音段"
-          onClick={onToggleAutoPlay}
-        >
-          <AutoPlayIcon size={13} />
-          <span>自动播放</span>
-        </button>
-
-        <button
-          type="button"
-          className={`compact corpus-toggle-btn ${corpus.options.autoVad ? 'is-on' : ''}`}
-          aria-pressed={corpus.options.autoVad}
-          title="打开无标注文件的音频时，自动按静音切分起止边界"
-          onClick={onToggleAutoVad}
-        >
-          <AutoSplitIcon size={13} />
-          <span>自动切分</span>
-        </button>
+        {showStatusMarks && (
+          <>
+            <div
+              className="corpus-status-group"
+              role="group"
+              aria-label="词条标注状态"
+            >
+              {CORPUS_STATUS_ORDER.map((status) => {
+                const meta = CORPUS_STATUS_META[status];
+                const isSelected = activeItem?.status === status;
+                const tooltip = meta.shortcut
+                  ? `标记为${meta.label} (${meta.shortcut} 标记并下一条)`
+                  : `标记为${meta.label}`;
+                return (
+                  <button
+                    key={status}
+                    type="button"
+                    className={`compact corpus-status-btn is-${status} ${isSelected ? 'is-selected' : ''}`}
+                    disabled={!activeItem}
+                    aria-pressed={isSelected}
+                    title={tooltip}
+                    onClick={() => onSetStatus(status)}
+                  >
+                    <CorpusStatusIcon status={status} size={12} />
+                    <span>{meta.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="sep corpus-navbar-sep" />
+          </>
+        )}
 
         <span
           className={`corpus-save-badge is-${saveBadgeTone}`}
