@@ -27,6 +27,13 @@ export type HistoryActionType =
   | 'move-shared-boundary'
   | 'edit-interval-edge'
   | 'slide-interval'
+  | 'move-block'
+  | 'resize-block'
+  | 'remap-block'
+  | 'multi-clear-text'
+  | 'multi-merge'
+  | 'multi-align'
+  | 'multi-transform'
   | 'move-point'
   | 'snap-zero-crossing'
   // 4. 删除与合并

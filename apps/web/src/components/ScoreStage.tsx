@@ -20,6 +20,7 @@ import {
 } from '../layout/computeLayout';
 import {
   MONO_FONT_STACK,
+  decodeTrigraphGlossSync,
   formatPraatDouble,
   measurePx,
   prefetchTrigraphCache,
@@ -29,13 +30,16 @@ import { svgEl } from '../layout/legendCore';
 import {
   renderInteractiveOverlay,
   renderScoreSvg,
+  type BlockTierPreviewSlice,
   type DragPreviewState,
   type EdgeSnapVisual,
   type EditorSelection,
-  type IntervalDragPreviewState
+  type IntervalDragPreviewState,
+  type MultiUnitPreviewBox
 } from '../render/renderScoreSvg';
 import { resolveDualEdgeSnap, resolveSnap, type SnapResult } from '../interaction/snapEngine';
 import {
+  IS_MAC,
   formatKeyCombo,
   getEffectiveShortcutHint,
   isComposingEvent,
@@ -65,7 +69,36 @@ import {
   type SidebarTab
 } from '../store/useEditorStore';
 import { resolveF0RangeOverride } from '../utils/f0Range';
+import {
+  resolveSplitSourceText,
+  splitTextByDelimiter,
+  splitTextIntoChars
+} from '../utils/intervalSplit';
+import {
+  inferSmartSplit,
+  type AcousticSegmentClass,
+  type SmartSplitCandidate,
+  type SmartSplitGranularity
+} from '../utils/smartSplit';
+import { alignSplitBoundariesAcoustically } from '../utils/acousticSplitClient';
 import { formatAlignMicroFeedback } from '../utils/qaDiagnostics';
+import {
+  BLOCK_ALIGN_EPS,
+  computeBlockSafeBounds,
+  findAlignedBlock,
+  remapInteriorBoundaries,
+  remapTimestampInBlock,
+  resolveBlockForBoundaryDrag,
+  type AlignedBlock
+} from '../utils/blockTransform';
+import {
+  analyzeMultiSelection,
+  computeMultiSyncDeltaBounds,
+  isIntervalInMultiSelection,
+  resolveMultiBoundaryAction,
+  type MultiSelectionUnit,
+  type MultiSyncAction
+} from '../utils/multiSelection';
 import type { TextGrid } from '../bridge/types';
 import { SubmenuChevronIcon, UiIcon, type IconName } from './Icons';
 import { ScrubNumberInput } from './ScrubNumberInput';
@@ -105,6 +138,47 @@ interface ContextMenuItem {
   divider?: boolean;
   action?: () => void;
   children?: ContextMenuItem[];
+}
+
+interface SmartSplitBarState {
+  tierIndex: number;
+  startItemIndex: number;
+  currentCount: number;
+  originalXmin: number;
+  originalXmax: number;
+  activeCandidate: SmartSplitCandidate;
+  alternatives: SmartSplitCandidate[];
+  usedAcoustic: boolean;
+  useAcousticPref: boolean;
+  docVersionAtCommit: number;
+  tabId: string;
+  corpusEntryId: string | null;
+  busy: boolean;
+}
+
+function collectPeerTexts(
+  intervals: readonly { text: string }[],
+  selfIndex: number,
+  maxEachSide = 20
+): string[] {
+  const peers: string[] = [];
+  let leftCount = 0;
+  for (let idx = selfIndex - 1; idx >= 0 && leftCount < maxEachSide; idx--) {
+    const t = intervals[idx]?.text.trim();
+    if (t) {
+      peers.push(t);
+      leftCount++;
+    }
+  }
+  let rightCount = 0;
+  for (let idx = selfIndex + 1; idx < intervals.length && rightCount < maxEachSide; idx++) {
+    const t = intervals[idx]?.text.trim();
+    if (t) {
+      peers.push(t);
+      rightCount++;
+    }
+  }
+  return peers;
 }
 
 const FLOATING_FIELD_IDS = new Set([
@@ -417,9 +491,20 @@ function findNearbySpecBoundary(
 
   for (const ti of candidates) {
     const tier = tg.tiers[ti];
-    for (const iv of tier.intervals) {
-      for (const bt of [iv.xmin, iv.xmax]) {
-        if (!Number.isFinite(bt) || bt <= tier.xmin || bt >= tier.xmax || bt < band.startT || bt > band.endT) {
+    const lastIdx = tier.intervals.length - 1;
+    for (let ii = 0; ii < tier.intervals.length; ii++) {
+      const iv = tier.intervals[ii];
+      const edges: Array<{ bt: number; isOuterStart: boolean; isOuterEnd: boolean }> = [
+        { bt: iv.xmin, isOuterStart: ii === 0 && Math.abs(iv.xmin - tier.xmin) <= 1e-9, isOuterEnd: false },
+        { bt: iv.xmax, isOuterStart: false, isOuterEnd: ii === lastIdx && Math.abs(iv.xmax - tier.xmax) <= 1e-9 }
+      ];
+      for (const { bt, isOuterStart, isOuterEnd } of edges) {
+        if (!Number.isFinite(bt) || bt < band.startT || bt > band.endT) {
+          continue;
+        }
+        const isInterior = bt > tier.xmin + 1e-9 && bt < tier.xmax - 1e-9;
+        const isGrabbableOuter = (isOuterStart || isOuterEnd) && iv.text.trim() !== '';
+        if (!isInterior && !isGrabbableOuter) {
           continue;
         }
         const bx = band.linearXForTime(bt);
@@ -458,6 +543,13 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const setStageAvailableWidth = useEditorStore((s) => s.setStageAvailableWidth);
     const selection = useEditorStore((s) => s.selection);
     const setSelection = useEditorStore((s) => s.setSelection);
+    const multiSelection = useEditorStore((s) => s.multiSelection);
+    const toggleMultiSelectInterval = useEditorStore((s) => s.toggleMultiSelectInterval);
+    const clearMultiSelection = useEditorStore((s) => s.clearMultiSelection);
+    const clearMultiSelectionText = useEditorStore((s) => s.clearMultiSelectionText);
+    const mergeMultiSelection = useEditorStore((s) => s.mergeMultiSelection);
+    const alignMultiSelectionBounds = useEditorStore((s) => s.alignMultiSelectionBounds);
+    const syncTransformMultiSelection = useEditorStore((s) => s.syncTransformMultiSelection);
     const lastActiveTierIndex = useEditorStore((s) => s.lastActiveTierIndex);
     const hiddenTierIndices = useEditorStore((s) => s.hiddenTierIndices);
     const playRange = useEditorStore((s) => s.playRange);
@@ -506,6 +598,12 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const redo = useEditorStore((s) => s.redo);
     const splitInterval = useEditorStore((s) => s.splitInterval);
     const splitIntervalEqualN = useEditorStore((s) => s.splitIntervalEqualN);
+    const splitIntervalWithCuts = useEditorStore((s) => s.splitIntervalWithCuts);
+    const replaceJustSplitInterval = useEditorStore((s) => s.replaceJustSplitInterval);
+    const splitIntervalByChars = useEditorStore((s) => s.splitIntervalByChars);
+    const splitIntervalByDelimiter = useEditorStore((s) => s.splitIntervalByDelimiter);
+    const smartSplitUseAcoustic = useEditorStore((s) => s.smartSplitUseAcoustic);
+    const setSmartSplitUseAcoustic = useEditorStore((s) => s.setSmartSplitUseAcoustic);
     const mergeIntervalWith = useEditorStore((s) => s.mergeIntervalWith);
     const deleteBoundaryAt = useEditorStore((s) => s.deleteBoundaryAt);
     const deleteBoundaryAcrossAllTiers = useEditorStore((s) => s.deleteBoundaryAcrossAllTiers);
@@ -522,9 +620,12 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const alignMicroBoundaries = useEditorStore((s) => s.alignMicroBoundaries);
     const moveTierBoundary = useEditorStore((s) => s.moveTierBoundary);
     const moveSharedTimestamp = useEditorStore((s) => s.moveSharedTimestamp);
+    const transformAlignedBlock = useEditorStore((s) => s.transformAlignedBlock);
     const lastHistoryNav = useEditorStore((s) => s.lastHistoryNav);
     const showToast = useEditorStore((s) => s.showToast);
     const [splitEqualDialog, setSplitEqualDialog] = useState<SplitEqualDialogState | null>(null);
+    const [smartSplitBar, setSmartSplitBar] = useState<SmartSplitBarState | null>(null);
+    const smartSplitRunSeqRef = useRef(0);
 
     const stageRef = useRef<HTMLElement>(null);
     const sheetRef = useRef<HTMLDivElement>(null);
@@ -571,6 +672,40 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       clientY: number;
     } | null>(null);
     const pendingInlineOpenRef = useRef<InlineTarget | null>(null);
+    const lastBlockAnchorRef = useRef<{
+      tabId: string;
+      tierIndex: number;
+      itemIndex: number;
+      xmin: number;
+      xmax: number;
+      text: string;
+    } | null>(null);
+    const lastSubBoundaryHintAtRef = useRef<number>(0);
+
+    const multiAnalysis = useMemo(() => {
+      const primaryRef =
+        selection?.kind === 'interval'
+          ? { tierIndex: selection.tierIndex, itemIndex: selection.itemIndex }
+          : null;
+      return analyzeMultiSelection(tg, multiSelection, primaryRef, playRange);
+    }, [tg, multiSelection, selection, playRange]);
+
+    useEffect(() => {
+      if (selection?.kind === 'interval') {
+        const tier = tg.tiers[selection.tierIndex];
+        const iv = tier?.kind === 'intervalTier' ? tier.intervals[selection.itemIndex] : null;
+        if (iv && iv.text !== '' && iv.xmax > iv.xmin) {
+          lastBlockAnchorRef.current = {
+            tabId: activeTabId,
+            tierIndex: selection.tierIndex,
+            itemIndex: selection.itemIndex,
+            xmin: iv.xmin,
+            xmax: iv.xmax,
+            text: iv.text
+          };
+        }
+      }
+    }, [selection, tg, activeTabId]);
 
     const [stageW, setStageW] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1200));
     const [stageH, setStageH] = useState(() => (typeof window !== 'undefined' ? window.innerHeight : 800));
@@ -778,7 +913,344 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       setDragPreview(null);
       setIntervalDragPreview(null);
       setLoupeAnchor(null);
+      setSmartSplitBar(null);
     }, [activeTabId, corpusActiveEntryId]);
+
+    // Auto-dismiss post-split floating bar after 5s of idle
+    useEffect(() => {
+      if (!smartSplitBar || smartSplitBar.busy) return;
+      const timer = window.setTimeout(() => {
+        setSmartSplitBar(null);
+      }, 5000);
+      return () => window.clearTimeout(timer);
+    }, [smartSplitBar]);
+
+    // Dismiss post-split floating bar immediately on any new document edit or read-only mode
+    useEffect(() => {
+      if (!smartSplitBar) return;
+      if (
+        docVersion !== smartSplitBar.docVersionAtCommit ||
+        activeTabId !== smartSplitBar.tabId ||
+        corpusActiveEntryId !== smartSplitBar.corpusEntryId ||
+        mode === 'read'
+      ) {
+        setSmartSplitBar(null);
+      }
+    }, [smartSplitBar, docVersion, activeTabId, corpusActiveEntryId, mode]);
+
+    const runSmartSplit = useCallback(
+      async (
+        tierIndex: number,
+        itemIndex: number,
+        ivSnapshot: { xmin: number; xmax: number; text: string },
+        candidate: SmartSplitCandidate,
+        alternatives: SmartSplitCandidate[],
+        useAcoustic: boolean
+      ): Promise<boolean> => {
+        if (candidate.texts.length < 2 || ivSnapshot.xmax <= ivSnapshot.xmin) return false;
+        const seq = ++smartSplitRunSeqRef.current;
+        const startState = useEditorStore.getState();
+        const startTabId = startState.activeTabId;
+        const startCorpusEntryId = startState.corpusActiveEntryId;
+
+        let cuts: number[] | null = null;
+        let usedAcoustic = false;
+
+        if (useAcoustic && audioBuffer) {
+          try {
+            const res = await alignSplitBoundariesAcoustically({
+              audioBuffer,
+              xmin: ivSnapshot.xmin,
+              xmax: ivSnapshot.xmax,
+              granularity: candidate.granularity,
+              durationWeights: candidate.durationWeights,
+              acousticClasses: candidate.acousticClasses
+            });
+            if (res && res.usedAcoustic && res.cuts.length === candidate.texts.length - 1) {
+              cuts = res.cuts;
+              usedAcoustic = true;
+            }
+          } catch {
+            cuts = null;
+            usedAcoustic = false;
+          }
+
+          if (seq !== smartSplitRunSeqRef.current) return false;
+          const latest = useEditorStore.getState();
+          if (
+            latest.activeTabId !== startTabId ||
+            latest.corpusActiveEntryId !== startCorpusEntryId
+          ) {
+            return false;
+          }
+          const curTier = latest.tg.tiers[tierIndex];
+          if (!curTier || curTier.kind !== 'intervalTier') return false;
+          const curIv = curTier.intervals[itemIndex];
+          if (
+            !curIv ||
+            curIv.xmin !== ivSnapshot.xmin ||
+            curIv.xmax !== ivSnapshot.xmax ||
+            curIv.text !== ivSnapshot.text
+          ) {
+            return false;
+          }
+        }
+
+        const modeWord = usedAcoustic ? '声学拆分为' : '拆分为';
+        const ok = splitIntervalWithCuts(tierIndex, itemIndex, candidate.texts, cuts, {
+          title: `智能拆分（${candidate.strategyLabel}）`,
+          detailPrefix: `${candidate.strategyLabel}${modeWord}`,
+          toastLabel: `已${candidate.strategyLabel}${modeWord}`
+        });
+        if (!ok) return false;
+
+        if (alternatives.length > 0 || usedAcoustic) {
+          const postState = useEditorStore.getState();
+          setSmartSplitBar({
+            tierIndex,
+            startItemIndex: itemIndex,
+            currentCount: candidate.texts.length,
+            originalXmin: ivSnapshot.xmin,
+            originalXmax: ivSnapshot.xmax,
+            activeCandidate: candidate,
+            alternatives,
+            usedAcoustic,
+            useAcousticPref: useAcoustic,
+            docVersionAtCommit: postState.docVersion,
+            tabId: postState.activeTabId,
+            corpusEntryId: postState.corpusActiveEntryId,
+            busy: false
+          });
+        } else {
+          setSmartSplitBar(null);
+        }
+        return true;
+      },
+      [audioBuffer, splitIntervalWithCuts]
+    );
+
+    const runManualTextSplit = useCallback(
+      async (
+        dlg: SplitEqualDialogState,
+        texts: string[],
+        granularity: SmartSplitGranularity,
+        strategyLabel: string,
+        useAcoustic: boolean,
+        meta: { title: string; detailPrefix: string; toastLabel: string }
+      ): Promise<boolean> => {
+        if (texts.length < 2 || dlg.xmax <= dlg.xmin) return false;
+        const seq = ++smartSplitRunSeqRef.current;
+        const startState = useEditorStore.getState();
+        const startTabId = startState.activeTabId;
+        const startCorpusEntryId = startState.corpusActiveEntryId;
+
+        let cuts: number[] | null = null;
+        let usedAcoustic = false;
+
+        if (useAcoustic && audioBuffer) {
+          const durationWeights = texts.map(() => 1);
+          const acousticClasses: AcousticSegmentClass[] = texts.map(() => 'syllable');
+          try {
+            const res = await alignSplitBoundariesAcoustically({
+              audioBuffer,
+              xmin: dlg.xmin,
+              xmax: dlg.xmax,
+              granularity,
+              durationWeights,
+              acousticClasses
+            });
+            if (res && res.usedAcoustic && res.cuts.length === texts.length - 1) {
+              cuts = res.cuts;
+              usedAcoustic = true;
+            }
+          } catch {
+            cuts = null;
+            usedAcoustic = false;
+          }
+
+          if (seq !== smartSplitRunSeqRef.current) return false;
+          const latest = useEditorStore.getState();
+          if (
+            latest.activeTabId !== startTabId ||
+            latest.corpusActiveEntryId !== startCorpusEntryId
+          ) {
+            return false;
+          }
+          const curTier = latest.tg.tiers[dlg.tierIndex];
+          if (!curTier || curTier.kind !== 'intervalTier') return false;
+          const curIv = curTier.intervals[dlg.itemIndex];
+          if (
+            !curIv ||
+            curIv.xmin !== dlg.xmin ||
+            curIv.xmax !== dlg.xmax ||
+            curIv.text !== dlg.text
+          ) {
+            return false;
+          }
+        }
+
+        const finalMeta = usedAcoustic
+          ? {
+              title: `${meta.title}（声学）`,
+              detailPrefix: `${strategyLabel}声学拆分为`,
+              toastLabel: `已${strategyLabel}声学拆分为`
+            }
+          : meta;
+
+        const ok = splitIntervalWithCuts(dlg.tierIndex, dlg.itemIndex, texts, cuts, finalMeta);
+        if (!ok) return false;
+
+        if (usedAcoustic) {
+          const postState = useEditorStore.getState();
+          const syntheticCandidate: SmartSplitCandidate = {
+            id: `manual-${granularity}`,
+            strategyLabel,
+            menuLabel: `智能拆分：${strategyLabel}（${texts.length} 段）`,
+            switchLabel: `改为${strategyLabel} ${texts.length} 段`,
+            granularity,
+            texts,
+            durationWeights: texts.map(() => 1),
+            acousticClasses: texts.map(() => 'syllable'),
+            confidence: 1,
+            reason: ''
+          };
+          setSmartSplitBar({
+            tierIndex: dlg.tierIndex,
+            startItemIndex: dlg.itemIndex,
+            currentCount: texts.length,
+            originalXmin: dlg.xmin,
+            originalXmax: dlg.xmax,
+            activeCandidate: syntheticCandidate,
+            alternatives: [],
+            usedAcoustic: true,
+            useAcousticPref: true,
+            docVersionAtCommit: postState.docVersion,
+            tabId: postState.activeTabId,
+            corpusEntryId: postState.corpusActiveEntryId,
+            busy: false
+          });
+        } else {
+          setSmartSplitBar(null);
+        }
+        return true;
+      },
+      [audioBuffer, splitIntervalWithCuts]
+    );
+
+    const handleSmartSplitSwitch = useCallback(
+      async (nextCandidate: SmartSplitCandidate) => {
+        const bar = smartSplitBar;
+        if (!bar || bar.busy) return;
+        const seq = ++smartSplitRunSeqRef.current;
+
+        let cuts: number[] | null = null;
+        let usedAcoustic = false;
+
+        if (bar.useAcousticPref && audioBuffer) {
+          setSmartSplitBar((prev) => (prev ? { ...prev, busy: true } : null));
+          try {
+            const res = await alignSplitBoundariesAcoustically({
+              audioBuffer,
+              xmin: bar.originalXmin,
+              xmax: bar.originalXmax,
+              granularity: nextCandidate.granularity,
+              durationWeights: nextCandidate.durationWeights,
+              acousticClasses: nextCandidate.acousticClasses
+            });
+            if (res && res.usedAcoustic && res.cuts.length === nextCandidate.texts.length - 1) {
+              cuts = res.cuts;
+              usedAcoustic = true;
+            }
+          } catch {
+            cuts = null;
+            usedAcoustic = false;
+          }
+
+          if (seq !== smartSplitRunSeqRef.current) return;
+          const latest = useEditorStore.getState();
+          if (
+            latest.docVersion !== bar.docVersionAtCommit ||
+            latest.activeTabId !== bar.tabId ||
+            latest.corpusActiveEntryId !== bar.corpusEntryId
+          ) {
+            setSmartSplitBar(null);
+            return;
+          }
+        }
+
+        const modeWord = usedAcoustic ? '声学拆分为' : '拆分为';
+        const ok = replaceJustSplitInterval(
+          bar.tierIndex,
+          bar.startItemIndex,
+          bar.currentCount,
+          bar.originalXmin,
+          bar.originalXmax,
+          nextCandidate.texts,
+          cuts,
+          {
+            title: `切换拆分（${nextCandidate.strategyLabel}）`,
+            detailPrefix: `${nextCandidate.strategyLabel}${modeWord}`,
+            toastLabel: `已切换为${nextCandidate.strategyLabel}${modeWord}`
+          }
+        );
+
+        if (!ok) {
+          setSmartSplitBar(null);
+          return;
+        }
+
+        const postState = useEditorStore.getState();
+        const nextAlts = [
+          bar.activeCandidate,
+          ...bar.alternatives.filter((alt) => alt.id !== nextCandidate.id)
+        ];
+        setSmartSplitBar({
+          ...bar,
+          currentCount: nextCandidate.texts.length,
+          activeCandidate: nextCandidate,
+          alternatives: nextAlts,
+          usedAcoustic,
+          docVersionAtCommit: postState.docVersion,
+          busy: false
+        });
+      },
+      [smartSplitBar, audioBuffer, replaceJustSplitInterval]
+    );
+
+    const handleSmartSplitRevertEqual = useCallback(() => {
+      const bar = smartSplitBar;
+      if (!bar || bar.busy || !bar.usedAcoustic) return;
+      const ok = replaceJustSplitInterval(
+        bar.tierIndex,
+        bar.startItemIndex,
+        bar.currentCount,
+        bar.originalXmin,
+        bar.originalXmax,
+        bar.activeCandidate.texts,
+        null,
+        {
+          title: '时间退回等分',
+          detailPrefix: `${bar.activeCandidate.strategyLabel}等分为`,
+          toastLabel: '已时间退回等分为'
+        }
+      );
+      if (!ok) {
+        setSmartSplitBar(null);
+        return;
+      }
+      if (bar.alternatives.length > 0) {
+        const postState = useEditorStore.getState();
+        setSmartSplitBar({
+          ...bar,
+          usedAcoustic: false,
+          useAcousticPref: false,
+          docVersionAtCommit: postState.docVersion,
+          busy: false
+        });
+      } else {
+        setSmartSplitBar(null);
+      }
+    }, [smartSplitBar, replaceJustSplitInterval]);
 
     // Close inline editor & drag overlays immediately when entering read-only mode
     useEffect(() => {
@@ -1103,6 +1575,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         f0RangeOverride,
         mode,
         selection,
+        multiSelection,
         playRange,
         currentTime,
         showPlayhead,
@@ -1130,6 +1603,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       const layer = svg.querySelector('#selection-playhead-layer');
       renderInteractiveOverlay(layer, layout, {
         selection,
+        multiSelection,
         playRange,
         currentTime,
         showPlayhead,
@@ -1140,6 +1614,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     }, [
       layout,
       selection,
+      multiSelection,
       playRange,
       currentTime,
       showPlayhead,
@@ -2339,6 +2814,218 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       [mode, playRange, tg, layout, showToast, maybeAutoOpenInspector, createIntervalInEmptySlot]
     );
 
+    const resolveRemapAnchor = useCallback(
+      (
+        targetRange: { start: number; end: number } | null
+      ): { tierIndex: number; itemIndex: number; xmin: number; xmax: number; text: string } | null => {
+        const hiddenSet = new Set(hiddenTierIndices);
+        const allHidden = tg.tiers.length > 0 && tg.tiers.every((_, i) => hiddenSet.has(i));
+        const isVis = (ti: number) => allHidden || !hiddenSet.has(ti);
+
+        // 1. Currently selected non-empty interval
+        if (selection?.kind === 'interval' && isVis(selection.tierIndex)) {
+          const tier = tg.tiers[selection.tierIndex];
+          const iv = tier?.kind === 'intervalTier' ? tier.intervals[selection.itemIndex] : null;
+          if (iv && iv.text !== '' && iv.xmax > iv.xmin) {
+            return {
+              tierIndex: selection.tierIndex,
+              itemIndex: selection.itemIndex,
+              xmin: iv.xmin,
+              xmax: iv.xmax,
+              text: iv.text
+            };
+          }
+        }
+
+        // 2. Remembered recent non-empty interval (preserved when sweeping spectrogram playRange)
+        const remembered = lastBlockAnchorRef.current;
+        if (remembered && remembered.tabId === activeTabId && isVis(remembered.tierIndex)) {
+          const tier = tg.tiers[remembered.tierIndex];
+          if (tier?.kind === 'intervalTier') {
+            const direct = tier.intervals[remembered.itemIndex];
+            if (
+              direct &&
+              direct.text !== '' &&
+              Math.abs(direct.xmin - remembered.xmin) <= BLOCK_ALIGN_EPS &&
+              Math.abs(direct.xmax - remembered.xmax) <= BLOCK_ALIGN_EPS
+            ) {
+              return {
+                tierIndex: remembered.tierIndex,
+                itemIndex: remembered.itemIndex,
+                xmin: direct.xmin,
+                xmax: direct.xmax,
+                text: direct.text
+              };
+            }
+            const fallbackIdx = tier.intervals.findIndex(
+              (iv) =>
+                iv.text === remembered.text &&
+                iv.text !== '' &&
+                Math.abs(iv.xmin - remembered.xmin) <= BLOCK_ALIGN_EPS &&
+                Math.abs(iv.xmax - remembered.xmax) <= BLOCK_ALIGN_EPS
+            );
+            if (fallbackIdx !== -1) {
+              const found = tier.intervals[fallbackIdx];
+              return {
+                tierIndex: remembered.tierIndex,
+                itemIndex: fallbackIdx,
+                xmin: found.xmin,
+                xmax: found.xmax,
+                text: found.text
+              };
+            }
+          }
+        }
+
+        // 3. Fallback: best overlapping visible non-empty interval on the coarsest visible tier
+        if (targetRange && targetRange.end > targetRange.start) {
+          let best: {
+            tierIndex: number;
+            itemIndex: number;
+            xmin: number;
+            xmax: number;
+            text: string;
+            score: number;
+          } | null = null;
+          for (let ti = 0; ti < tg.tiers.length; ti++) {
+            if (!isVis(ti)) continue;
+            const tier = tg.tiers[ti];
+            if (tier.kind !== 'intervalTier') continue;
+            for (let ii = 0; ii < tier.intervals.length; ii++) {
+              const iv = tier.intervals[ii];
+              if (iv.text === '' || iv.xmax <= iv.xmin) continue;
+              const overlap = Math.min(iv.xmax, targetRange.end) - Math.max(iv.xmin, targetRange.start);
+              if (overlap <= 0) continue;
+              const block = findAlignedBlock(
+                tg,
+                { xmin: iv.xmin, xmax: iv.xmax, tierIndex: ti, itemIndex: ii },
+                hiddenTierIndices
+              );
+              const score =
+                (block ? block.intervalSlices.length * 10 : 0) +
+                overlap / Math.max(1e-6, iv.xmax - iv.xmin) -
+                ti * 0.05;
+              if (!best || score > best.score) {
+                best = {
+                  tierIndex: ti,
+                  itemIndex: ii,
+                  xmin: iv.xmin,
+                  xmax: iv.xmax,
+                  text: iv.text,
+                  score
+                };
+              }
+            }
+          }
+          if (best) {
+            return {
+              tierIndex: best.tierIndex,
+              itemIndex: best.itemIndex,
+              xmin: best.xmin,
+              xmax: best.xmax,
+              text: best.text
+            };
+          }
+        }
+
+        return null;
+      },
+      [tg, selection, hiddenTierIndices, activeTabId]
+    );
+
+    const remapBlockToPlayRange = useCallback(
+      (tierIndex: number, itemIndex: number, bandIdx?: number) => {
+        if (mode !== 'edit' || !playRange || playRange.end - playRange.start < 0.001) return false;
+        const targetStart = Number(playRange.start.toFixed(6));
+        const targetEnd = Number(playRange.end.toFixed(6));
+        const res = transformAlignedBlock(tierIndex, itemIndex, targetStart, targetEnd, {
+          mode: 'remap',
+          bandIndex: bandIdx ?? selection?.bandIndex ?? 0
+        });
+        if (res.ok && res.changed) {
+          if (!useEditorStore.getState().playing) {
+            setPlaybackTime(res.finalXmin, true);
+          }
+          maybeAutoOpenInspector();
+          return true;
+        }
+        return false;
+      },
+      [mode, playRange, transformAlignedBlock, selection?.bandIndex, setPlaybackTime, maybeAutoOpenInspector]
+    );
+
+    const buildBlockPreviewSlices = useCallback(
+      (
+        activeBand: BandLayout,
+        block: AlignedBlock,
+        newXmin: number,
+        newXmax: number,
+        blockedSide: 'left' | 'right' | null,
+        blockerTierIndex: number | null
+      ): BlockTierPreviewSlice[] => {
+        const slices: BlockTierPreviewSlice[] = [];
+        for (const islice of block.intervalSlices) {
+          const tl = activeBand.tiersLayout[islice.tierIndex];
+          if (!tl) continue;
+          const mappedInterior = remapInteriorBoundaries(
+            block.xmin,
+            block.xmax,
+            islice.interiorTimes,
+            newXmin,
+            newXmax
+          );
+          const interiorXs: number[] = [];
+          const interiorLinXs: number[] = [];
+          for (const it of mappedInterior) {
+            if (it >= activeBand.startT - 1e-9 && it <= activeBand.endT + 1e-9) {
+              interiorXs.push(elasticXInBand(activeBand, it));
+              interiorLinXs.push(activeBand.linearXForTime(it));
+            }
+          }
+          slices.push({
+            tierIndex: islice.tierIndex,
+            y0: tl.y,
+            y1: tl.y + tl.h,
+            interiorXs,
+            interiorLinXs,
+            blockedSide:
+              blockedSide && blockerTierIndex === islice.tierIndex ? blockedSide : null
+          });
+        }
+        for (const pslice of block.pointSlices) {
+          const tl = activeBand.tiersLayout[pslice.tierIndex];
+          const tier = tg.tiers[pslice.tierIndex];
+          if (!tl || !tier || tier.kind !== 'textTier') continue;
+          const pointXs: number[] = [];
+          for (const pi of pslice.pointIndices) {
+            const ptItem = tier.points[pi];
+            if (!ptItem) continue;
+            const mappedT = remapTimestampInBlock(
+              block.xmin,
+              block.xmax,
+              ptItem.number,
+              newXmin,
+              newXmax
+            );
+            if (mappedT >= activeBand.startT - 1e-9 && mappedT <= activeBand.endT + 1e-9) {
+              pointXs.push(elasticXInBand(activeBand, mappedT));
+            }
+          }
+          slices.push({
+            tierIndex: pslice.tierIndex,
+            y0: tl.y,
+            y1: tl.y + tl.h,
+            interiorXs: [],
+            pointXs,
+            blockedSide:
+              blockedSide && blockerTierIndex === pslice.tierIndex ? blockedSide : null
+          });
+        }
+        return slices;
+      },
+      [tg]
+    );
+
     // Global keyboard shortcuts & 2D navigation
     useEffect(() => {
       const onKeyDown = (e: KeyboardEvent) => {
@@ -2414,6 +3101,11 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           if (inlineTargetRef.current) {
             e.preventDefault();
             closeInlineRef.current(false);
+            return;
+          }
+          if (multiSelection.length >= 2) {
+            e.preventDefault();
+            clearMultiSelection();
             return;
           }
           if (playRange) {
@@ -3048,6 +3740,28 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             return;
           }
 
+          // Remap aligned block (or active multi-selection) to current playRange (default: Shift+I)
+          if (matchesShortcut('remap-block-to-playrange', e, customShortcuts)) {
+            if (playRange && playRange.end - playRange.start >= 0.001) {
+              e.preventDefault();
+              if (multiAnalysis.count >= 2) {
+                if (multiAnalysis.capabilities.canRemapToPlayRange) {
+                  alignMultiSelectionBounds('to-range', playRange);
+                } else {
+                  showToast('分散复选区间不支持重映射到单一选区', true);
+                }
+                return;
+              }
+              const anchor = resolveRemapAnchor(playRange);
+              if (anchor) {
+                remapBlockToPlayRange(anchor.tierIndex, anchor.itemIndex, selection?.bandIndex);
+              } else {
+                showToast('请先选中一个非空区间，或在语谱图框选与标注块重叠的范围', true);
+              }
+            }
+            return;
+          }
+
           // Create interval from playRange (default: I)
           if (matchesShortcut('create-from-playrange', e, customShortcuts)) {
             if (playRange && playRange.end - playRange.start >= 0.001) {
@@ -3092,9 +3806,18 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             return;
           }
 
-          // Non-destructive merge left / right (default: Shift+M / M)
+          // Non-destructive merge left / right (default: Shift+M / M); in multi-select merges contiguous run
           const isMergeLeft = matchesShortcut('merge-left', e, customShortcuts);
           const isMergeRight = !isMergeLeft && matchesShortcut('merge-right', e, customShortcuts);
+          if ((isMergeLeft || isMergeRight) && multiAnalysis.count >= 2) {
+            e.preventDefault();
+            if (multiAnalysis.capabilities.canMerge) {
+              mergeMultiSelection();
+            } else {
+              showToast('仅支持合并同一层内的连续复选区间', true);
+            }
+            return;
+          }
           if ((isMergeLeft || isMergeRight) && selection?.kind === 'interval') {
             e.preventDefault();
             const tier = tg.tiers[selection.tierIndex];
@@ -3368,6 +4091,11 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         }
 
         // Structural 4-Quadrant Backspace / Delete / Shift+Backspace / Shift+Delete
+        if ((e.key === 'Delete' || e.key === 'Backspace') && !e.altKey && mode === 'edit' && multiAnalysis.count >= 2) {
+          e.preventDefault();
+          clearMultiSelectionText();
+          return;
+        }
         if ((e.key === 'Delete' || e.key === 'Backspace') && !e.altKey && mode === 'edit' && selection) {
           const isBackspace = e.key === 'Backspace';
           const isDelete = e.key === 'Delete';
@@ -3677,6 +4405,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       shortcutsOpen,
       customShortcuts,
       selection,
+      multiSelection,
+      multiAnalysis,
       lastActiveTierIndex,
       hiddenTierIndices,
       playRange,
@@ -3704,6 +4434,10 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       setWrapMode,
       setViewDomain,
       setSelection,
+      clearMultiSelection,
+      clearMultiSelectionText,
+      mergeMultiSelection,
+      alignMultiSelectionBounds,
       setPlayRange,
       setPlaybackTime,
       setIpaDockOpen,
@@ -3727,6 +4461,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       moveTierBoundary,
       moveSharedTimestamp,
       createIntervalFromPlayRange,
+      resolveRemapAnchor,
+      remapBlockToPlayRange,
       replayCurrent,
       snapTargetToZeroCrossing,
       copyText,
@@ -4310,6 +5046,10 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       const initY0 = shared ? band.tiersTopY : tl.y;
       const initY1 = shared ? band.tiersBottomY : tl.y + tl.h;
       const { minAllowed, maxAllowed } = getBoundaryDragBounds(tg, ti, origTime, shared);
+      const singleTierBounds = shared
+        ? getBoundaryDragBounds(tg, ti, origTime, false)
+        : { minAllowed, maxAllowed };
+      let subBoundaryHintShown = false;
 
       setSelection({ kind: 'boundary', tierIndex: ti, time: origTime, bandIndex: bandIdx });
       clearHoverGuide();
@@ -4337,6 +5077,22 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         const y1 = shared ? activeBand.tiersBottomY : activeTl.y + activeTl.h;
 
         const rawT = fromSpec ? timeFromLinearX(activeBand, curPt.x) : timeFromElasticX(activeBand, curPt.x);
+        if (shared && !subBoundaryHintShown) {
+          const hitRightSub =
+            rawT > maxAllowed + 0.004 && maxAllowed < singleTierBounds.maxAllowed - 1e-6;
+          const hitLeftSub =
+            rawT < minAllowed - 0.004 && minAllowed > singleTierBounds.minAllowed + 1e-6;
+          if (hitRightSub || hitLeftSub) {
+            subBoundaryHintShown = true;
+            const now = Date.now();
+            if (now - lastSubBoundaryHintAtRef.current > 10000) {
+              lastSubBoundaryHintAtRef.current = now;
+              showToast(
+                `受下层子边界阻挡，按住 ${IS_MAC ? '⌘' : 'Ctrl'} 拖拽可弹性缩放整块`
+              );
+            }
+          }
+        }
         let t = Math.max(minAllowed, Math.min(maxAllowed, rawT));
         let snapX: number | null = null;
         let snapMode = false;
@@ -4496,6 +5252,842 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       window.addEventListener('blur', onCancel);
     };
 
+    const startBlockResizeDrag = (opts: {
+      band: BandLayout;
+      bandIdx: number;
+      block: AlignedBlock;
+      side: 'left' | 'right';
+      fromSpec: boolean;
+      startClientX: number;
+      startClientY: number;
+    }) => {
+      const { band, bandIdx, block, side, fromSpec, startClientX, startClientY } = opts;
+      const anchorTi = block.anchorTierIndex;
+      const anchorIi = block.anchorItemIndex;
+      const anchorIv = tg.tiers[anchorTi]?.intervals[anchorIi];
+      const anchorTl = band.tiersLayout[anchorTi];
+      if (!anchorIv || !anchorTl) return;
+
+      const safe = computeBlockSafeBounds(tg, block);
+      const dragMin = side === 'left' ? safe.minXmin : block.xmin + safe.minDuration;
+      const dragMax = side === 'left' ? block.xmax - safe.minDuration : safe.maxXmax;
+      const origEdgeT = side === 'left' ? block.xmin : block.xmax;
+      const fixedSide: 'left' | 'right' = side === 'left' ? 'right' : 'left';
+
+      setSelection({ kind: 'interval', tierIndex: anchorTi, itemIndex: anchorIi, bandIndex: bandIdx });
+      clearHoverGuide();
+      draggingRef.current = true;
+      const prevBodyCursor = document.body.style.cursor;
+      document.body.style.cursor = 'ew-resize';
+
+      let latestEdgeT = origEdgeT;
+      let latestBand = band;
+      let latestBandIdx = bandIdx;
+      let stickyTime: number | null = null;
+      let lastClientX = startClientX;
+      let lastClientY = startClientY;
+      let dragActive = true;
+      let moveSeq = 0;
+
+      const updateResizeAt = async (clientX: number, clientY: number) => {
+        const seq = ++moveSeq;
+        const curLayout = layoutRef.current;
+        const curPt = svgPointFromEvent({ clientX, clientY });
+        const activeBand = resolveBandAtY(curLayout, curPt.y, band);
+        const activeTl = activeBand.tiersLayout[anchorTi];
+        if (!activeTl) return;
+
+        const rawT = fromSpec
+          ? timeFromLinearX(activeBand, curPt.x)
+          : timeFromElasticX(activeBand, curPt.x);
+
+        let blockedSide: 'left' | 'right' | null = null;
+        let blockerTierIndex: number | null = null;
+        let blockedLabel: string | null = null;
+
+        if (side === 'left') {
+          if (rawT < safe.minXmin - 1e-6) {
+            blockedSide = 'left';
+            blockerTierIndex = safe.leftBlockerTierIndex;
+            blockedLabel = safe.leftBlockerTierName
+              ? `受「${safe.leftBlockerTierName}」阻挡`
+              : '已达左边界';
+          } else if (rawT > dragMax + 1e-6) {
+            blockedSide = 'left';
+            blockedLabel = '已达最小时长';
+          }
+        } else {
+          if (rawT > safe.maxXmax + 1e-6) {
+            blockedSide = 'right';
+            blockerTierIndex = safe.rightBlockerTierIndex;
+            blockedLabel = safe.rightBlockerTierName
+              ? `受「${safe.rightBlockerTierName}」阻挡`
+              : '已达右边界';
+          } else if (rawT < dragMin - 1e-6) {
+            blockedSide = 'right';
+            blockedLabel = '已达最小时长';
+          }
+        }
+
+        let t = Math.max(dragMin, Math.min(dragMax, rawT));
+        let edgeSnapVisual: EdgeSnapVisual | null = null;
+        let exactSnapped = false;
+
+        if (zKeyDownRef.current && analysis) {
+          stickyTime = null;
+          const zt = await getPlatformBridge().findZeroCrossing(analysis.sessionId, t, 0.008);
+          if (!dragActive || seq !== moveSeq) return;
+          t = Math.max(dragMin, Math.min(dragMax, zt));
+          exactSnapped = true;
+          edgeSnapVisual = {
+            x: elasticXInBand(activeBand, t),
+            linX: activeBand.linearXForTime(t),
+            label: '已吸附过零'
+          };
+        } else if (!blockedSide) {
+          const hit = resolveSnap({
+            tg,
+            band: activeBand,
+            pointerX: curPt.x,
+            fromSpec,
+            minAllowed: dragMin,
+            maxAllowed: dragMax,
+            allowEndpoints: true,
+            activeTierIndex: anchorTi,
+            excludeOwnBoundaryTime: origEdgeT,
+            playRange,
+            currentTime,
+            showPlayhead,
+            bypassAlt: altKeyDownRef.current,
+            stickyTime,
+            hiddenTierIndices
+          });
+          if (hit) {
+            t = hit.t;
+            stickyTime = hit.t;
+            exactSnapped = true;
+            edgeSnapVisual = snapToEdgeVisual(hit);
+          } else {
+            stickyTime = null;
+          }
+        } else {
+          stickyTime = null;
+        }
+
+        if (!dragActive || seq !== moveSeq) return;
+        latestEdgeT = exactSnapped
+          ? t
+          : Math.max(dragMin, Math.min(dragMax, Number(t.toFixed(6))));
+        latestBand = activeBand;
+        latestBandIdx = activeBand.bandIndex;
+
+        const newXmin = side === 'left' ? latestEdgeT : block.xmin;
+        const newXmax = side === 'right' ? latestEdgeT : block.xmax;
+        const clampedXmin = Math.max(activeBand.startT, Math.min(activeBand.endT, newXmin));
+        const clampedXmax = Math.max(activeBand.startT, Math.min(activeBand.endT, newXmax));
+        const x0 =
+          side === 'left' && edgeSnapVisual ? edgeSnapVisual.x : elasticXInBand(activeBand, clampedXmin);
+        const x1 =
+          side === 'right' && edgeSnapVisual ? edgeSnapVisual.x : elasticXInBand(activeBand, clampedXmax);
+        const linX0 =
+          side === 'left' && edgeSnapVisual
+            ? edgeSnapVisual.linX
+            : activeBand.linearXForTime(clampedXmin);
+        const linX1 =
+          side === 'right' && edgeSnapVisual
+            ? edgeSnapVisual.linX
+            : activeBand.linearXForTime(clampedXmax);
+
+        const blockSlices = buildBlockPreviewSlices(
+          activeBand,
+          block,
+          newXmin,
+          newXmax,
+          blockedSide,
+          blockerTierIndex
+        );
+
+        setIntervalDragPreview({
+          bandIndex: activeBand.bandIndex,
+          tierIndex: anchorTi,
+          mode: 'block-resize',
+          tStart: newXmin,
+          tEnd: newXmax,
+          x0,
+          x1,
+          linX0,
+          linX1,
+          y0: activeTl.y,
+          y1: activeTl.y + activeTl.h,
+          startSnap: side === 'left' ? edgeSnapVisual : null,
+          endSnap: side === 'right' ? edgeSnapVisual : null,
+          blockSlices,
+          blockCount: block.tierIndices.length,
+          blockedSide,
+          blockedLabel,
+          resizeFixedSide: fixedSide,
+          text: anchorIv.text
+        });
+
+        if (audioBuffer && showMicroLoupe) {
+          const anchorX = fromSpec
+            ? side === 'left'
+              ? linX0
+              : linX1
+            : side === 'left'
+              ? x0
+              : x1;
+          setLoupeAnchor({
+            centerT: latestEdgeT,
+            anchorX,
+            anchorTopY: fromSpec ? activeBand.waveY : activeTl.y,
+            anchorBottomY: fromSpec ? activeBand.neckTopY : activeTl.y + activeTl.h,
+            snapLabel: blockedLabel ?? edgeSnapVisual?.label ?? null
+          });
+        }
+      };
+
+      void updateResizeAt(startClientX, startClientY);
+
+      const onMove = (ev: PointerEvent) => {
+        lastClientX = ev.clientX;
+        lastClientY = ev.clientY;
+        altKeyDownRef.current = ev.altKey;
+        void updateResizeAt(ev.clientX, ev.clientY);
+      };
+      const onModKey = (ev: KeyboardEvent) => {
+        if (ev.type === 'keydown' && ev.key === 'Escape') {
+          ev.preventDefault();
+          cleanup(false);
+          return;
+        }
+        if (ev.code === 'KeyZ' || ev.key === 'z' || ev.key === 'Z') {
+          zKeyDownRef.current = ev.type === 'keydown';
+          void updateResizeAt(lastClientX, lastClientY);
+        } else if (ev.key === 'Alt') {
+          ev.preventDefault();
+          altKeyDownRef.current = ev.type === 'keydown';
+          void updateResizeAt(lastClientX, lastClientY);
+        }
+      };
+      const cleanup = (commit: boolean) => {
+        if (!dragActive) return;
+        dragActive = false;
+        draggingRef.current = false;
+        document.body.style.cursor = prevBodyCursor;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onCancel);
+        window.removeEventListener('keydown', onModKey);
+        window.removeEventListener('keyup', onModKey);
+        window.removeEventListener('blur', onCancel);
+        setIntervalDragPreview(null);
+        setLoupeAnchor(null);
+        if (commit && Math.abs(latestEdgeT - origEdgeT) > 1e-9) {
+          const newXmin = side === 'left' ? latestEdgeT : block.xmin;
+          const newXmax = side === 'right' ? latestEdgeT : block.xmax;
+          captureDragAnchor(latestBand, latestBandIdx, latestEdgeT);
+          const res = transformAlignedBlock(anchorTi, anchorIi, newXmin, newXmax, {
+            mode: 'resize',
+            bandIndex: latestBandIdx
+          });
+          if (!res.ok) {
+            pendingDragAnchorRef.current = null;
+          } else if (!useEditorStore.getState().playing) {
+            setPlaybackTime(res.finalXmin, true);
+          }
+        } else if (commit) {
+          maybeAutoOpenInspector();
+        }
+      };
+      const onUp = () => cleanup(true);
+      const onCancel = () => cleanup(false);
+
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onCancel);
+      window.addEventListener('keydown', onModKey);
+      window.addEventListener('keyup', onModKey);
+      window.addEventListener('blur', onCancel);
+    };
+
+    const startMultiSyncDrag = (opts: {
+      band: BandLayout;
+      bandIdx: number;
+      units: MultiSelectionUnit[];
+      leadUnit: MultiSelectionUnit;
+      action: MultiSyncAction;
+      fromSpec: boolean;
+      startClientX: number;
+      startClientY: number;
+      initialClientX?: number;
+      initialClientY?: number;
+    }) => {
+      const {
+        band,
+        bandIdx,
+        units,
+        leadUnit,
+        action,
+        fromSpec,
+        startClientX,
+        startClientY,
+        initialClientX,
+        initialClientY
+      } = opts;
+      if (units.length === 0) return;
+
+      const bounds = computeMultiSyncDeltaBounds(tg, units, action);
+      const startPt = svgPointFromEvent({ clientX: startClientX, clientY: startClientY });
+      const startT = fromSpec
+        ? timeFromLinearX(band, startPt.x)
+        : timeFromElasticX(band, startPt.x);
+      const leadOrigEdgeT =
+        action === 'left-edge'
+          ? leadUnit.xmin
+          : action === 'right-edge'
+            ? leadUnit.xmax
+            : leadUnit.xmin;
+
+      clearHoverGuide();
+      draggingRef.current = true;
+      const prevBodyCursor = document.body.style.cursor;
+      document.body.style.cursor = action === 'move' ? 'grabbing' : 'ew-resize';
+
+      let latestDelta = 0;
+      let latestBand = band;
+      let latestBandIdx = bandIdx;
+      let lastClientX = initialClientX ?? startClientX;
+      let lastClientY = initialClientY ?? startClientY;
+      let dragActive = true;
+      let moveSeq = 0;
+
+      const syncLabelPrefix =
+        action === 'move'
+          ? `复选同步平移 (${multiAnalysis.count}项)`
+          : action === 'left-edge'
+            ? `复选同步调左界 (${multiAnalysis.count}项)`
+            : `复选同步调右界 (${multiAnalysis.count}项)`;
+
+      const updateSyncAt = async (clientX: number, clientY: number) => {
+        const seq = ++moveSeq;
+        const curLayout = layoutRef.current;
+        const curPt = svgPointFromEvent({ clientX, clientY });
+        const activeBand = resolveBandAtY(curLayout, curPt.y, band);
+        const leadTl = activeBand.tiersLayout[leadUnit.tierIndex];
+        if (!leadTl) return;
+
+        const curT = fromSpec
+          ? timeFromLinearX(activeBand, curPt.x)
+          : timeFromElasticX(activeBand, curPt.x);
+        const rawDelta = curT - startT;
+
+        let blockedSide: 'left' | 'right' | null = null;
+        let blockerTierIndex: number | null = null;
+        let blockedLabel: string | null = null;
+
+        if (bounds.maxDelta <= bounds.minDelta + 1e-9 && Math.abs(rawDelta) > 1e-4) {
+          blockedSide = rawDelta < 0 ? 'left' : 'right';
+          blockerTierIndex =
+            rawDelta < 0 ? bounds.leftBlockerTierIndex : bounds.rightBlockerTierIndex;
+          const bName = rawDelta < 0 ? bounds.leftBlockerTierName : bounds.rightBlockerTierName;
+          blockedLabel = bName ? `受「${bName}」阻挡` : '无法继续移动';
+        } else if (rawDelta < bounds.minDelta - 1e-6) {
+          blockedSide = 'left';
+          blockerTierIndex = bounds.leftBlockerTierIndex;
+          blockedLabel = bounds.leftBlockerTierName
+            ? `受「${bounds.leftBlockerTierName}」阻挡`
+            : '已达左极限';
+        } else if (rawDelta > bounds.maxDelta + 1e-6) {
+          blockedSide = 'right';
+          blockerTierIndex = bounds.rightBlockerTierIndex;
+          blockedLabel = bounds.rightBlockerTierName
+            ? `受「${bounds.rightBlockerTierName}」阻挡`
+            : '已达右极限';
+        }
+
+        let delta = Math.max(bounds.minDelta, Math.min(bounds.maxDelta, rawDelta));
+        let snapLabel: string | null = null;
+
+        if (zKeyDownRef.current && analysis) {
+          const leadTargetT = leadOrigEdgeT + delta;
+          const zt = await getPlatformBridge().findZeroCrossing(
+            analysis.sessionId,
+            leadTargetT,
+            0.008
+          );
+          if (!dragActive || seq !== moveSeq) return;
+          delta = Math.max(bounds.minDelta, Math.min(bounds.maxDelta, zt - leadOrigEdgeT));
+          snapLabel = '已吸附过零';
+        }
+
+        if (!dragActive || seq !== moveSeq) return;
+        latestDelta = Number(delta.toFixed(6));
+        latestBand = activeBand;
+        latestBandIdx = activeBand.bandIndex;
+
+        const leadNewA =
+          action === 'right-edge' ? leadUnit.xmin : Number((leadUnit.xmin + latestDelta).toFixed(6));
+        const leadNewB =
+          action === 'left-edge' ? leadUnit.xmax : Number((leadUnit.xmax + latestDelta).toFixed(6));
+
+        const multiUnitPreviews: MultiUnitPreviewBox[] = [];
+        for (const u of units) {
+          const utl = activeBand.tiersLayout[u.tierIndex];
+          if (!utl) continue;
+          const uNewA =
+            action === 'right-edge' ? u.xmin : Number((u.xmin + latestDelta).toFixed(6));
+          const uNewB =
+            action === 'left-edge' ? u.xmax : Number((u.xmax + latestDelta).toFixed(6));
+          const cA = Math.max(activeBand.startT, Math.min(activeBand.endT, uNewA));
+          const cB = Math.max(activeBand.startT, Math.min(activeBand.endT, uNewB));
+          const mappedInt = remapInteriorBoundaries(u.xmin, u.xmax, u.interiorTimes, uNewA, uNewB);
+          const interiorXs: number[] = [];
+          for (const it of mappedInt) {
+            if (it >= activeBand.startT - 1e-9 && it <= activeBand.endT + 1e-9) {
+              interiorXs.push(elasticXInBand(activeBand, it));
+            }
+          }
+          multiUnitPreviews.push({
+            tierIndex: u.tierIndex,
+            x0: elasticXInBand(activeBand, cA),
+            x1: elasticXInBand(activeBand, cB),
+            y0: utl.y,
+            y1: utl.y + utl.h,
+            interiorXs,
+            blockedSide: blockedSide && blockerTierIndex === u.tierIndex ? blockedSide : null
+          });
+        }
+
+        const cLeadA = Math.max(activeBand.startT, Math.min(activeBand.endT, leadNewA));
+        const cLeadB = Math.max(activeBand.startT, Math.min(activeBand.endT, leadNewB));
+        const x0 = elasticXInBand(activeBand, cLeadA);
+        const x1 = elasticXInBand(activeBand, cLeadB);
+        const linX0 = activeBand.linearXForTime(cLeadA);
+        const linX1 = activeBand.linearXForTime(cLeadB);
+
+        setIntervalDragPreview({
+          bandIndex: activeBand.bandIndex,
+          tierIndex: leadUnit.tierIndex,
+          mode: 'multi-sync',
+          tStart: leadNewA,
+          tEnd: leadNewB,
+          x0,
+          x1,
+          linX0,
+          linX1,
+          y0: leadTl.y,
+          y1: leadTl.y + leadTl.h,
+          multiUnitPreviews,
+          multiSyncLabel: syncLabelPrefix,
+          blockCount: multiAnalysis.count,
+          blockedSide,
+          blockedLabel,
+          snapLabel
+        });
+
+        if (audioBuffer && showMicroLoupe) {
+          const focusT =
+            action === 'left-edge'
+              ? leadNewA
+              : action === 'right-edge'
+                ? leadNewB
+                : latestDelta >= 0
+                  ? leadNewB
+                  : leadNewA;
+          const focusX =
+            action === 'left-edge'
+              ? x0
+              : action === 'right-edge'
+                ? x1
+                : latestDelta >= 0
+                  ? x1
+                  : x0;
+          setLoupeAnchor({
+            centerT: focusT,
+            anchorX: fromSpec ? activeBand.linearXForTime(focusT) : focusX,
+            anchorTopY: fromSpec ? activeBand.waveY : leadTl.y,
+            anchorBottomY: fromSpec ? activeBand.neckTopY : leadTl.y + leadTl.h,
+            snapLabel: blockedLabel ?? snapLabel
+          });
+        }
+      };
+
+      void updateSyncAt(lastClientX, lastClientY);
+
+      const onMove = (ev: PointerEvent) => {
+        lastClientX = ev.clientX;
+        lastClientY = ev.clientY;
+        altKeyDownRef.current = ev.altKey;
+        void updateSyncAt(ev.clientX, ev.clientY);
+      };
+      const onModKey = (ev: KeyboardEvent) => {
+        if (ev.type === 'keydown' && ev.key === 'Escape') {
+          ev.preventDefault();
+          cleanup(false);
+          return;
+        }
+        if (ev.code === 'KeyZ' || ev.key === 'z' || ev.key === 'Z') {
+          zKeyDownRef.current = ev.type === 'keydown';
+          void updateSyncAt(lastClientX, lastClientY);
+        } else if (ev.key === 'Alt') {
+          ev.preventDefault();
+          altKeyDownRef.current = ev.type === 'keydown';
+          void updateSyncAt(lastClientX, lastClientY);
+        }
+      };
+      const cleanup = (commit: boolean) => {
+        if (!dragActive) return;
+        dragActive = false;
+        draggingRef.current = false;
+        document.body.style.cursor = prevBodyCursor;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onCancel);
+        window.removeEventListener('keydown', onModKey);
+        window.removeEventListener('keyup', onModKey);
+        window.removeEventListener('blur', onCancel);
+        setIntervalDragPreview(null);
+        setLoupeAnchor(null);
+        if (commit && Math.abs(latestDelta) > 1e-9) {
+          captureDragAnchor(latestBand, latestBandIdx, leadUnit.xmin + latestDelta);
+          const ok = syncTransformMultiSelection(action, latestDelta, {
+            bandIndex: latestBandIdx,
+            silentToast: true
+          });
+          if (!ok) {
+            pendingDragAnchorRef.current = null;
+          }
+        }
+      };
+      const onUp = () => cleanup(true);
+      const onCancel = () => cleanup(false);
+
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onCancel);
+      window.addEventListener('keydown', onModKey);
+      window.addEventListener('keyup', onModKey);
+      window.addEventListener('blur', onCancel);
+    };
+
+    const startBlockMoveDrag = (opts: {
+      band: BandLayout;
+      bandIdx: number;
+      ti: number;
+      ii: number;
+      iv: TextGrid['tiers'][number]['intervals'][number];
+      startClientX: number;
+      startClientY: number;
+      currentClientX: number;
+      currentClientY: number;
+    }) => {
+      const { band, bandIdx, ti, ii, iv, startClientX, startClientY, currentClientX, currentClientY } =
+        opts;
+      const block = findAlignedBlock(
+        tg,
+        { xmin: iv.xmin, xmax: iv.xmax, tierIndex: ti, itemIndex: ii },
+        hiddenTierIndices
+      );
+      if (!block) return;
+
+      const safe = computeBlockSafeBounds(tg, block);
+      const dur = block.xmax - block.xmin;
+      const minXmin = safe.minXmin;
+      const maxXmax = safe.maxXmax;
+      const maxXmin = maxXmax - dur;
+
+      const blockSlotEdges: number[] = [];
+      if (safe.minXmin < block.xmin - 1e-9) blockSlotEdges.push(safe.minXmin);
+      if (safe.maxXmax > block.xmax + 1e-9) blockSlotEdges.push(safe.maxXmax);
+
+      const startPt = svgPointFromEvent({ clientX: startClientX, clientY: startClientY });
+      const startDragT = timeFromElasticX(band, startPt.x);
+      let latestXmin = block.xmin;
+      let latestXmax = block.xmax;
+      let latestBand = band;
+      let latestBandIdx = bandIdx;
+      let stickyStartTime: number | null = null;
+      let stickyEndTime: number | null = null;
+      let lastClientX = currentClientX;
+      let lastClientY = currentClientY;
+      let dragActive = true;
+      let moveSeq = 0;
+
+      clearHoverGuide();
+      draggingRef.current = true;
+      const prevBodyCursor = document.body.style.cursor;
+      document.body.style.cursor = 'grabbing';
+
+      const updateBlockMoveAt = async (clientX: number, clientY: number) => {
+        const seq = ++moveSeq;
+        const curLayout = layoutRef.current;
+        const curPt = svgPointFromEvent({ clientX, clientY });
+        const activeBand = resolveBandAtY(curLayout, curPt.y, band);
+        const activeTl = activeBand.tiersLayout[ti];
+        if (!activeTl) return;
+
+        const dt = timeFromElasticX(activeBand, curPt.x) - startDragT;
+        const uncXmin = block.xmin + dt;
+        const uncXmax = block.xmax + dt;
+
+        let blockedSide: 'left' | 'right' | null = null;
+        let blockerTierIndex: number | null = null;
+        let blockedLabel: string | null = null;
+
+        if (maxXmin <= minXmin + 1e-9) {
+          blockedSide = dt < 0 ? 'left' : 'right';
+          blockerTierIndex = dt < 0 ? safe.leftBlockerTierIndex : safe.rightBlockerTierIndex;
+          const bName = dt < 0 ? safe.leftBlockerTierName : safe.rightBlockerTierName;
+          blockedLabel = bName ? `受「${bName}」非空区间阻挡` : '两侧均受阻挡';
+        } else if (uncXmin < minXmin - 1e-6) {
+          blockedSide = 'left';
+          blockerTierIndex = safe.leftBlockerTierIndex;
+          blockedLabel = safe.leftBlockerTierName
+            ? `受「${safe.leftBlockerTierName}」阻挡`
+            : '已达左边界';
+        } else if (uncXmax > maxXmax + 1e-6) {
+          blockedSide = 'right';
+          blockerTierIndex = safe.rightBlockerTierIndex;
+          blockedLabel = safe.rightBlockerTierName
+            ? `受「${safe.rightBlockerTierName}」阻挡`
+            : '已达右边界';
+        }
+
+        const rawNewXmin =
+          maxXmin <= minXmin + 1e-9
+            ? block.xmin
+            : Math.max(minXmin, Math.min(maxXmin, uncXmin));
+        const rawNewXmax = rawNewXmin + dur;
+
+        let newXmin = rawNewXmin;
+        let newXmax = rawNewXmax;
+        let startSnapVisual: EdgeSnapVisual | null = null;
+        let endSnapVisual: EdgeSnapVisual | null = null;
+        let snappedStart = false;
+        let snappedEnd = false;
+
+        if (maxXmin > minXmin + 1e-9) {
+          if (zKeyDownRef.current && analysis) {
+            stickyStartTime = null;
+            stickyEndTime = null;
+            const leadingRight = dt >= 0;
+            const targetEdgeT = leadingRight ? rawNewXmax : rawNewXmin;
+            const zt = await getPlatformBridge().findZeroCrossing(
+              analysis.sessionId,
+              targetEdgeT,
+              0.008
+            );
+            if (!dragActive || seq !== moveSeq) return;
+            const candidateXmin = leadingRight ? zt - dur : zt;
+            newXmin = Math.max(minXmin, Math.min(maxXmin, candidateXmin));
+            newXmax = newXmin + dur;
+            if (leadingRight) {
+              snappedEnd = true;
+              endSnapVisual = {
+                x: elasticXInBand(activeBand, newXmax),
+                linX: activeBand.linearXForTime(newXmax),
+                label: '已吸附过零'
+              };
+            } else {
+              snappedStart = true;
+              startSnapVisual = {
+                x: elasticXInBand(activeBand, newXmin),
+                linX: activeBand.linearXForTime(newXmin),
+                label: '已吸附过零'
+              };
+            }
+          } else if (!blockedSide) {
+            const dual = resolveDualEdgeSnap({
+              tg,
+              band: activeBand,
+              rawXmin: rawNewXmin,
+              duration: dur,
+              fromSpec: false,
+              minXmin,
+              maxXmax,
+              activeTierIndex: ti,
+              excludeStartTime: block.xmin,
+              excludeEndTime: block.xmax,
+              slotEdges: blockSlotEdges,
+              playRange,
+              currentTime,
+              showPlayhead,
+              bypassAlt: altKeyDownRef.current,
+              stickyStartTime,
+              stickyEndTime,
+              hiddenTierIndices
+            });
+            newXmin = dual.newXmin;
+            newXmax = dual.newXmax;
+            startSnapVisual = snapToEdgeVisual(dual.startSnap);
+            endSnapVisual = snapToEdgeVisual(dual.endSnap);
+            snappedStart = Boolean(dual.startSnap);
+            snappedEnd = Boolean(dual.endSnap);
+            stickyStartTime = dual.startSnap?.t ?? null;
+            stickyEndTime = dual.endSnap?.t ?? null;
+          } else {
+            stickyStartTime = null;
+            stickyEndTime = null;
+          }
+        }
+
+        if (!dragActive || seq !== moveSeq) return;
+        if (!snappedStart && !snappedEnd) {
+          newXmin = Math.max(
+            minXmin,
+            Math.min(Math.max(minXmin, maxXmin), Number(newXmin.toFixed(6)))
+          );
+          newXmax = dur >= 1e-5 ? Number((newXmin + dur).toFixed(6)) : newXmin + dur;
+          if (newXmax > maxXmax) {
+            newXmax = maxXmax;
+            newXmin = Math.max(minXmin, newXmax - dur);
+          }
+        } else if (snappedStart && !snappedEnd) {
+          newXmax = dur >= 1e-5 ? Number((newXmin + dur).toFixed(6)) : newXmin + dur;
+          if (newXmax > maxXmax) newXmax = maxXmax;
+        } else if (snappedEnd && !snappedStart) {
+          newXmin = dur >= 1e-5 ? Number((newXmax - dur).toFixed(6)) : newXmax - dur;
+          if (newXmin < minXmin) newXmin = minXmin;
+        }
+
+        latestXmin = newXmin;
+        latestXmax = newXmax;
+        latestBand = activeBand;
+        latestBandIdx = activeBand.bandIndex;
+
+        const clampedXmin = Math.max(activeBand.startT, Math.min(activeBand.endT, latestXmin));
+        const clampedXmax = Math.max(activeBand.startT, Math.min(activeBand.endT, latestXmax));
+        const x0 = startSnapVisual ? startSnapVisual.x : elasticXInBand(activeBand, clampedXmin);
+        const x1 = endSnapVisual ? endSnapVisual.x : elasticXInBand(activeBand, clampedXmax);
+        const linX0 = startSnapVisual
+          ? startSnapVisual.linX
+          : activeBand.linearXForTime(clampedXmin);
+        const linX1 = endSnapVisual
+          ? endSnapVisual.linX
+          : activeBand.linearXForTime(clampedXmax);
+
+        const blockSlices = buildBlockPreviewSlices(
+          activeBand,
+          block,
+          latestXmin,
+          latestXmax,
+          blockedSide,
+          blockerTierIndex
+        );
+
+        setIntervalDragPreview({
+          bandIndex: activeBand.bandIndex,
+          tierIndex: ti,
+          mode: 'block-move',
+          tStart: latestXmin,
+          tEnd: latestXmax,
+          x0,
+          x1,
+          linX0,
+          linX1,
+          y0: activeTl.y,
+          y1: activeTl.y + activeTl.h,
+          startSnap: startSnapVisual,
+          endSnap: endSnapVisual,
+          blockSlices,
+          blockCount: block.tierIndices.length,
+          blockedSide,
+          blockedLabel,
+          text: iv.text
+        });
+
+        if (audioBuffer && showMicroLoupe) {
+          const anchorRight =
+            endSnapVisual && !startSnapVisual
+              ? true
+              : startSnapVisual && !endSnapVisual
+                ? false
+                : dt >= 0;
+          const loupeSnapLabel =
+            blockedLabel ??
+            (startSnapVisual && endSnapVisual
+              ? '双端对齐'
+              : (anchorRight ? endSnapVisual?.label : startSnapVisual?.label) ??
+                startSnapVisual?.label ??
+                endSnapVisual?.label ??
+                null);
+          setLoupeAnchor({
+            centerT: anchorRight ? latestXmax : latestXmin,
+            anchorX: anchorRight ? x1 : x0,
+            anchorTopY: activeTl.y,
+            anchorBottomY: activeTl.y + activeTl.h,
+            snapLabel: loupeSnapLabel
+          });
+        }
+      };
+
+      void updateBlockMoveAt(currentClientX, currentClientY);
+
+      const onMove = (ev: PointerEvent) => {
+        lastClientX = ev.clientX;
+        lastClientY = ev.clientY;
+        altKeyDownRef.current = ev.altKey;
+        void updateBlockMoveAt(ev.clientX, ev.clientY);
+      };
+      const onModKey = (ev: KeyboardEvent) => {
+        if (ev.type === 'keydown' && ev.key === 'Escape') {
+          ev.preventDefault();
+          cleanup(false);
+          return;
+        }
+        if (ev.code === 'KeyZ' || ev.key === 'z' || ev.key === 'Z') {
+          zKeyDownRef.current = ev.type === 'keydown';
+          void updateBlockMoveAt(lastClientX, lastClientY);
+        } else if (ev.key === 'Alt') {
+          ev.preventDefault();
+          altKeyDownRef.current = ev.type === 'keydown';
+          void updateBlockMoveAt(lastClientX, lastClientY);
+        }
+      };
+      const cleanup = (commit: boolean) => {
+        if (!dragActive) return;
+        dragActive = false;
+        draggingRef.current = false;
+        document.body.style.cursor = prevBodyCursor;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onCancel);
+        window.removeEventListener('keydown', onModKey);
+        window.removeEventListener('keyup', onModKey);
+        window.removeEventListener('blur', onCancel);
+        setIntervalDragPreview(null);
+        setLoupeAnchor(null);
+
+        if (commit) {
+          if (maxXmin <= minXmin + 1e-9) {
+            showToast('两侧相邻区间均为非空，无法跨层平移', true);
+          } else if (Math.abs(latestXmin - block.xmin) > 1e-9) {
+            captureDragAnchor(latestBand, latestBandIdx, (latestXmin + latestXmax) / 2);
+            const res = transformAlignedBlock(ti, ii, latestXmin, latestXmax, {
+              mode: 'move',
+              bandIndex: latestBandIdx,
+              silentToast: true
+            });
+            if (!res.ok) {
+              pendingDragAnchorRef.current = null;
+            } else if (!useEditorStore.getState().playing) {
+              setPlaybackTime(res.finalXmin, true);
+            }
+          }
+        }
+      };
+      const onUp = () => cleanup(true);
+      const onCancel = () => cleanup(false);
+
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onCancel);
+      window.addEventListener('keydown', onModKey);
+      window.addEventListener('keyup', onModKey);
+      window.addEventListener('blur', onCancel);
+    };
+
     const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
       if (spacePanRef.current.held) {
         e.preventDefault();
@@ -4536,6 +6128,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
       const el = (e.target as Element).closest('[data-role]');
       if (!el) {
+        lastBlockAnchorRef.current = null;
         setSelection(null);
         setPlayRange(null);
         return;
@@ -4550,6 +6143,43 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         e.preventDefault();
         const ti = parseInt(el.getAttribute('data-tier') || '0', 10);
         const origTime = parseFloat(el.getAttribute('data-time') || '0');
+        if (multiAnalysis.count >= 2) {
+          const multiBnd = resolveMultiBoundaryAction(multiAnalysis.units, ti, origTime);
+          if (multiBnd) {
+            startMultiSyncDrag({
+              band,
+              bandIdx,
+              units: multiAnalysis.units,
+              leadUnit: multiBnd.unit,
+              action: multiBnd.side === 'left' ? 'left-edge' : 'right-edge',
+              fromSpec: false,
+              startClientX: e.clientX,
+              startClientY: e.clientY
+            });
+            return;
+          }
+        }
+        if (e.ctrlKey || e.metaKey) {
+          const resolved = resolveBlockForBoundaryDrag(
+            tg,
+            ti,
+            origTime,
+            selection,
+            hiddenTierIndices
+          );
+          if (resolved) {
+            startBlockResizeDrag({
+              band,
+              bandIdx,
+              block: resolved.block,
+              side: resolved.side,
+              fromSpec: false,
+              startClientX: e.clientX,
+              startClientY: e.clientY
+            });
+            return;
+          }
+        }
         startBoundaryDrag({
           band,
           bandIdx,
@@ -4817,6 +6447,95 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           }
           const targetT = splitSnapT !== null ? splitSnapT : timeFromElasticX(band, pt.x);
           splitInterval(ti, ii, targetT, { exact: splitSnapT !== null });
+          return;
+        }
+
+        // Mod+Click (multi-select toggle) vs Mod+Drag (block move / multi-sync move) disambiguation (4px threshold)
+        const isModGesture = Boolean(e.ctrlKey || e.metaKey);
+        const isInActiveMulti =
+          multiAnalysis.count >= 2 && isIntervalInMultiSelection(multiAnalysis.items, ti, ii);
+        if (mode === 'edit' && (isModGesture || isInActiveMulti)) {
+          e.preventDefault();
+          const downClientX = e.clientX;
+          const downClientY = e.clientY;
+          let resolvedGesture = false;
+
+          const detachWait = () => {
+            window.removeEventListener('pointermove', onWaitMove);
+            window.removeEventListener('pointerup', onWaitUp);
+            window.removeEventListener('pointercancel', onWaitCancel);
+          };
+
+          const onWaitMove = (ev: PointerEvent) => {
+            if (resolvedGesture) return;
+            const dist = Math.hypot(ev.clientX - downClientX, ev.clientY - downClientY);
+            if (dist < 4) return;
+            resolvedGesture = true;
+            detachWait();
+
+            if (isInActiveMulti) {
+              const leadUnit =
+                multiAnalysis.units.find(
+                  (u) => u.tierIndex === ti && ii >= u.startItemIndex && ii <= u.endItemIndex
+                ) ?? multiAnalysis.units[0];
+              if (leadUnit) {
+                startMultiSyncDrag({
+                  band,
+                  bandIdx,
+                  units: multiAnalysis.units,
+                  leadUnit,
+                  action: 'move',
+                  fromSpec: false,
+                  startClientX: downClientX,
+                  startClientY: downClientY,
+                  initialClientX: ev.clientX,
+                  initialClientY: ev.clientY
+                });
+              }
+            } else if (iv.text !== '' && iv.xmax > iv.xmin) {
+              setSelection({ kind: 'interval', tierIndex: ti, itemIndex: ii, bandIndex: bandIdx });
+              startBlockMoveDrag({
+                band,
+                bandIdx,
+                ti,
+                ii,
+                iv,
+                startClientX: downClientX,
+                startClientY: downClientY,
+                currentClientX: ev.clientX,
+                currentClientY: ev.clientY
+              });
+            }
+          };
+
+          const onWaitUp = () => {
+            if (resolvedGesture) return;
+            resolvedGesture = true;
+            detachWait();
+            if (isModGesture) {
+              toggleMultiSelectInterval(ti, ii, bandIdx);
+            } else {
+              // Plain click on a multi-selected interval exits multi-selection and focuses it
+              setSelection({ kind: 'interval', tierIndex: ti, itemIndex: ii, bandIndex: bandIdx });
+              if (iv.xmax > iv.xmin) {
+                setPlayRange({ start: iv.xmin, end: iv.xmax });
+                if (!useEditorStore.getState().playing) {
+                  setPlaybackTime(iv.xmin, true);
+                }
+              }
+              maybeAutoOpenInspector();
+            }
+          };
+
+          const onWaitCancel = () => {
+            if (resolvedGesture) return;
+            resolvedGesture = true;
+            detachWait();
+          };
+
+          window.addEventListener('pointermove', onWaitMove);
+          window.addEventListener('pointerup', onWaitUp);
+          window.addEventListener('pointercancel', onWaitCancel);
           return;
         }
 
@@ -5117,6 +6836,325 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           window.addEventListener('keyup', onModKey);
           window.addEventListener('blur', onCancel);
           return;
+        }
+
+        // Mod + Drag non-empty interval -> cross-tier aligned nested block rigid translation
+        if (e.ctrlKey || e.metaKey) {
+          const block = findAlignedBlock(
+            tg,
+            { xmin: iv.xmin, xmax: iv.xmax, tierIndex: ti, itemIndex: ii },
+            hiddenTierIndices
+          );
+          if (block) {
+            const safe = computeBlockSafeBounds(tg, block);
+            const dur = block.xmax - block.xmin;
+            const minXmin = safe.minXmin;
+            const maxXmax = safe.maxXmax;
+            const maxXmin = maxXmax - dur;
+
+            const blockSlotEdges: number[] = [];
+            if (safe.minXmin < block.xmin - 1e-9) blockSlotEdges.push(safe.minXmin);
+            if (safe.maxXmax > block.xmax + 1e-9) blockSlotEdges.push(safe.maxXmax);
+
+            const startDragT = timeFromElasticX(band, pt.x);
+            let moved = false;
+            let prevBodyCursor = '';
+            let latestXmin = block.xmin;
+            let latestXmax = block.xmax;
+            let latestBand = band;
+            let latestBandIdx = bandIdx;
+            let stickyStartTime: number | null = null;
+            let stickyEndTime: number | null = null;
+            let lastClientX = e.clientX;
+            let lastClientY = e.clientY;
+            let dragActive = true;
+            let moveSeq = 0;
+
+            const updateBlockMoveAt = async (clientX: number, clientY: number) => {
+              const seq = ++moveSeq;
+              const curLayout = layoutRef.current;
+              const curPt = svgPointFromEvent({ clientX, clientY });
+              const activeBand = resolveBandAtY(curLayout, curPt.y, band);
+              const activeTl = activeBand.tiersLayout[ti];
+              if (!activeTl) return;
+
+              const dt = timeFromElasticX(activeBand, curPt.x) - startDragT;
+              const uncXmin = block.xmin + dt;
+              const uncXmax = block.xmax + dt;
+
+              let blockedSide: 'left' | 'right' | null = null;
+              let blockerTierIndex: number | null = null;
+              let blockedLabel: string | null = null;
+
+              if (maxXmin <= minXmin + 1e-9) {
+                blockedSide = dt < 0 ? 'left' : 'right';
+                blockerTierIndex =
+                  dt < 0 ? safe.leftBlockerTierIndex : safe.rightBlockerTierIndex;
+                const bName =
+                  dt < 0 ? safe.leftBlockerTierName : safe.rightBlockerTierName;
+                blockedLabel = bName ? `受「${bName}」非空区间阻挡` : '两侧均受阻挡';
+              } else if (uncXmin < minXmin - 1e-6) {
+                blockedSide = 'left';
+                blockerTierIndex = safe.leftBlockerTierIndex;
+                blockedLabel = safe.leftBlockerTierName
+                  ? `受「${safe.leftBlockerTierName}」阻挡`
+                  : '已达左边界';
+              } else if (uncXmax > maxXmax + 1e-6) {
+                blockedSide = 'right';
+                blockerTierIndex = safe.rightBlockerTierIndex;
+                blockedLabel = safe.rightBlockerTierName
+                  ? `受「${safe.rightBlockerTierName}」阻挡`
+                  : '已达右边界';
+              }
+
+              const rawNewXmin =
+                maxXmin <= minXmin + 1e-9
+                  ? block.xmin
+                  : Math.max(minXmin, Math.min(maxXmin, uncXmin));
+              const rawNewXmax = rawNewXmin + dur;
+
+              let newXmin = rawNewXmin;
+              let newXmax = rawNewXmax;
+              let startSnapVisual: EdgeSnapVisual | null = null;
+              let endSnapVisual: EdgeSnapVisual | null = null;
+              let snappedStart = false;
+              let snappedEnd = false;
+
+              if (maxXmin > minXmin + 1e-9) {
+                if (zKeyDownRef.current && analysis) {
+                  stickyStartTime = null;
+                  stickyEndTime = null;
+                  const leadingRight = dt >= 0;
+                  const targetEdgeT = leadingRight ? rawNewXmax : rawNewXmin;
+                  const zt = await getPlatformBridge().findZeroCrossing(
+                    analysis.sessionId,
+                    targetEdgeT,
+                    0.008
+                  );
+                  if (!dragActive || seq !== moveSeq) return;
+                  const candidateXmin = leadingRight ? zt - dur : zt;
+                  newXmin = Math.max(minXmin, Math.min(maxXmin, candidateXmin));
+                  newXmax = newXmin + dur;
+                  if (leadingRight) {
+                    snappedEnd = true;
+                    endSnapVisual = {
+                      x: elasticXInBand(activeBand, newXmax),
+                      linX: activeBand.linearXForTime(newXmax),
+                      label: '已吸附过零'
+                    };
+                  } else {
+                    snappedStart = true;
+                    startSnapVisual = {
+                      x: elasticXInBand(activeBand, newXmin),
+                      linX: activeBand.linearXForTime(newXmin),
+                      label: '已吸附过零'
+                    };
+                  }
+                } else if (!blockedSide) {
+                  const dual = resolveDualEdgeSnap({
+                    tg,
+                    band: activeBand,
+                    rawXmin: rawNewXmin,
+                    duration: dur,
+                    fromSpec: false,
+                    minXmin,
+                    maxXmax,
+                    activeTierIndex: ti,
+                    excludeStartTime: block.xmin,
+                    excludeEndTime: block.xmax,
+                    slotEdges: blockSlotEdges,
+                    playRange,
+                    currentTime,
+                    showPlayhead,
+                    bypassAlt: altKeyDownRef.current,
+                    stickyStartTime,
+                    stickyEndTime,
+                    hiddenTierIndices
+                  });
+                  newXmin = dual.newXmin;
+                  newXmax = dual.newXmax;
+                  startSnapVisual = snapToEdgeVisual(dual.startSnap);
+                  endSnapVisual = snapToEdgeVisual(dual.endSnap);
+                  snappedStart = Boolean(dual.startSnap);
+                  snappedEnd = Boolean(dual.endSnap);
+                  stickyStartTime = dual.startSnap?.t ?? null;
+                  stickyEndTime = dual.endSnap?.t ?? null;
+                } else {
+                  stickyStartTime = null;
+                  stickyEndTime = null;
+                }
+              }
+
+              if (!dragActive || seq !== moveSeq) return;
+              if (!snappedStart && !snappedEnd) {
+                newXmin = Math.max(
+                  minXmin,
+                  Math.min(Math.max(minXmin, maxXmin), Number(newXmin.toFixed(6)))
+                );
+                newXmax = dur >= 1e-5 ? Number((newXmin + dur).toFixed(6)) : newXmin + dur;
+                if (newXmax > maxXmax) {
+                  newXmax = maxXmax;
+                  newXmin = Math.max(minXmin, newXmax - dur);
+                }
+              } else if (snappedStart && !snappedEnd) {
+                newXmax = dur >= 1e-5 ? Number((newXmin + dur).toFixed(6)) : newXmin + dur;
+                if (newXmax > maxXmax) newXmax = maxXmax;
+              } else if (snappedEnd && !snappedStart) {
+                newXmin = dur >= 1e-5 ? Number((newXmax - dur).toFixed(6)) : newXmax - dur;
+                if (newXmin < minXmin) newXmin = minXmin;
+              }
+
+              latestXmin = newXmin;
+              latestXmax = newXmax;
+              latestBand = activeBand;
+              latestBandIdx = activeBand.bandIndex;
+
+              const clampedXmin = Math.max(activeBand.startT, Math.min(activeBand.endT, latestXmin));
+              const clampedXmax = Math.max(activeBand.startT, Math.min(activeBand.endT, latestXmax));
+              const x0 = startSnapVisual ? startSnapVisual.x : elasticXInBand(activeBand, clampedXmin);
+              const x1 = endSnapVisual ? endSnapVisual.x : elasticXInBand(activeBand, clampedXmax);
+              const linX0 = startSnapVisual
+                ? startSnapVisual.linX
+                : activeBand.linearXForTime(clampedXmin);
+              const linX1 = endSnapVisual
+                ? endSnapVisual.linX
+                : activeBand.linearXForTime(clampedXmax);
+
+              const blockSlices = buildBlockPreviewSlices(
+                activeBand,
+                block,
+                latestXmin,
+                latestXmax,
+                blockedSide,
+                blockerTierIndex
+              );
+
+              setIntervalDragPreview({
+                bandIndex: activeBand.bandIndex,
+                tierIndex: ti,
+                mode: 'block-move',
+                tStart: latestXmin,
+                tEnd: latestXmax,
+                x0,
+                x1,
+                linX0,
+                linX1,
+                y0: activeTl.y,
+                y1: activeTl.y + activeTl.h,
+                startSnap: startSnapVisual,
+                endSnap: endSnapVisual,
+                blockSlices,
+                blockCount: block.tierIndices.length,
+                blockedSide,
+                blockedLabel,
+                text: iv.text
+              });
+
+              if (audioBuffer && showMicroLoupe) {
+                const anchorRight =
+                  endSnapVisual && !startSnapVisual
+                    ? true
+                    : startSnapVisual && !endSnapVisual
+                      ? false
+                      : dt >= 0;
+                const loupeSnapLabel =
+                  blockedLabel ??
+                  (startSnapVisual && endSnapVisual
+                    ? '双端对齐'
+                    : (anchorRight ? endSnapVisual?.label : startSnapVisual?.label) ??
+                      startSnapVisual?.label ??
+                      endSnapVisual?.label ??
+                      null);
+                setLoupeAnchor({
+                  centerT: anchorRight ? latestXmax : latestXmin,
+                  anchorX: anchorRight ? x1 : x0,
+                  anchorTopY: activeTl.y,
+                  anchorBottomY: activeTl.y + activeTl.h,
+                  snapLabel: loupeSnapLabel
+                });
+              }
+            };
+
+            const onMove = (ev: PointerEvent) => {
+              lastClientX = ev.clientX;
+              lastClientY = ev.clientY;
+              altKeyDownRef.current = ev.altKey;
+              if (!moved && Math.abs(ev.clientX - startClientX) < 5) return;
+              if (!moved) {
+                moved = true;
+                draggingRef.current = true;
+                clearHoverGuide();
+                prevBodyCursor = document.body.style.cursor;
+                document.body.style.cursor = 'grabbing';
+              }
+              void updateBlockMoveAt(ev.clientX, ev.clientY);
+            };
+            const onModKey = (ev: KeyboardEvent) => {
+              if (ev.type === 'keydown' && ev.key === 'Escape') {
+                ev.preventDefault();
+                cleanup(false);
+                return;
+              }
+              if (ev.code === 'KeyZ' || ev.key === 'z' || ev.key === 'Z') {
+                zKeyDownRef.current = ev.type === 'keydown';
+                if (moved) void updateBlockMoveAt(lastClientX, lastClientY);
+              } else if (ev.key === 'Alt') {
+                ev.preventDefault();
+                altKeyDownRef.current = ev.type === 'keydown';
+                if (moved) void updateBlockMoveAt(lastClientX, lastClientY);
+              }
+            };
+            const cleanup = (commit: boolean) => {
+              if (!dragActive) return;
+              dragActive = false;
+              draggingRef.current = false;
+              if (moved) {
+                document.body.style.cursor = prevBodyCursor;
+              }
+              window.removeEventListener('pointermove', onMove);
+              window.removeEventListener('pointerup', onUp);
+              window.removeEventListener('pointercancel', onCancel);
+              window.removeEventListener('keydown', onModKey);
+              window.removeEventListener('keyup', onModKey);
+              window.removeEventListener('blur', onCancel);
+              setIntervalDragPreview(null);
+              setLoupeAnchor(null);
+
+              if (commit && !moved) {
+                maybeAutoOpenInspector();
+                if (startedWithAlt && iv.xmax > iv.xmin) {
+                  setPlayRange({ start: iv.xmin, end: iv.xmax });
+                  onStartPlayback(iv.xmin, iv.xmax);
+                }
+              } else if (commit && moved) {
+                if (maxXmin <= minXmin + 1e-9) {
+                  showToast('两侧相邻区间均为非空，无法跨层平移', true);
+                } else if (Math.abs(latestXmin - block.xmin) > 1e-9) {
+                  captureDragAnchor(latestBand, latestBandIdx, (latestXmin + latestXmax) / 2);
+                  const res = transformAlignedBlock(ti, ii, latestXmin, latestXmax, {
+                    mode: 'move',
+                    bandIndex: latestBandIdx,
+                    silentToast: true
+                  });
+                  if (!res.ok) {
+                    pendingDragAnchorRef.current = null;
+                  } else if (!useEditorStore.getState().playing) {
+                    setPlaybackTime(res.finalXmin, true);
+                  }
+                }
+              }
+            };
+            const onUp = () => cleanup(true);
+            const onCancel = () => cleanup(false);
+
+            window.addEventListener('pointermove', onMove);
+            window.addEventListener('pointerup', onUp);
+            window.addEventListener('pointercancel', onCancel);
+            window.addEventListener('keydown', onModKey);
+            window.addEventListener('keyup', onModKey);
+            window.addEventListener('blur', onCancel);
+            return;
+          }
         }
 
         // Non-empty interval whole-interval horizontal translation / slide (with empty-neighbor flush & dual-edge snap)
@@ -5534,6 +7572,47 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             hiddenTierIndices
           );
           if (hit) {
+            if (multiAnalysis.count >= 2) {
+              const multiBnd = resolveMultiBoundaryAction(
+                multiAnalysis.units,
+                hit.tierIndex,
+                hit.time
+              );
+              if (multiBnd) {
+                startMultiSyncDrag({
+                  band,
+                  bandIdx,
+                  units: multiAnalysis.units,
+                  leadUnit: multiBnd.unit,
+                  action: multiBnd.side === 'left' ? 'left-edge' : 'right-edge',
+                  fromSpec: true,
+                  startClientX: e.clientX,
+                  startClientY: e.clientY
+                });
+                return;
+              }
+            }
+            if (e.ctrlKey || e.metaKey) {
+              const resolved = resolveBlockForBoundaryDrag(
+                tg,
+                hit.tierIndex,
+                hit.time,
+                selection,
+                hiddenTierIndices
+              );
+              if (resolved) {
+                startBlockResizeDrag({
+                  band,
+                  bandIdx,
+                  block: resolved.block,
+                  side: resolved.side,
+                  fromSpec: true,
+                  startClientX: e.clientX,
+                  startClientY: e.clientY
+                });
+                return;
+              }
+            }
             startBoundaryDrag({
               band,
               bandIdx,
@@ -5763,6 +7842,27 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                 if (targetTi >= 0) createIntervalFromPlayRange(targetTi, bandIdx);
               }
             });
+            if (hasRange && playRange) {
+              const remapAnchor = resolveRemapAnchor(playRange);
+              const differsFromRange = Boolean(
+                remapAnchor &&
+                  (Math.abs(remapAnchor.xmin - playRange.start) > 1e-4 ||
+                    Math.abs(remapAnchor.xmax - playRange.end) > 1e-4)
+              );
+              if (remapAnchor && differsFromRange) {
+                const shortLabel =
+                  remapAnchor.text.length > 10
+                    ? `${remapAnchor.text.slice(0, 10)}…`
+                    : remapAnchor.text;
+                items.push({
+                  label: `将「${shortLabel}」跨层重映射到此选区`,
+                  icon: 'nudgeShared',
+                  shortcut: hint('remap-block-to-playrange'),
+                  action: () =>
+                    remapBlockToPlayRange(remapAnchor.tierIndex, remapAnchor.itemIndex, bandIdx)
+                });
+              }
+            }
           }
           items.push(
             {
@@ -5793,7 +7893,54 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           const ii = parseInt(target.getAttribute('data-idx') || '0', 10);
           const tier = tg.tiers[ti];
           const iv = tier?.intervals[ii];
-          if (iv) {
+          if (iv && isEdit && multiAnalysis.count >= 2 && isIntervalInMultiSelection(multiAnalysis.items, ti, ii)) {
+            const caps = multiAnalysis.capabilities;
+            if (caps.canMerge) {
+              items.push({
+                label: `合并所选区间 (${multiAnalysis.count} 段)`,
+                icon: 'mergeRight',
+                shortcut: hint('merge-right'),
+                action: () => mergeMultiSelection()
+              });
+            }
+            if (caps.canAlignBounds) {
+              items.push(
+                {
+                  label: '对齐左右边界至主选区间',
+                  icon: 'nudgeShared',
+                  action: () => alignMultiSelectionBounds('to-primary')
+                },
+                {
+                  label: '对齐左右边界至外包范围',
+                  icon: 'nudgeShared',
+                  action: () => alignMultiSelectionBounds('to-envelope')
+                }
+              );
+            }
+            if (caps.canRemapToPlayRange && playRange) {
+              items.push({
+                label: `将所选重映射到当前选区 (${playRange.start.toFixed(2)}–${playRange.end.toFixed(2)}s)`,
+                icon: 'nudgeShared',
+                shortcut: hint('remap-block-to-playrange'),
+                action: () => alignMultiSelectionBounds('to-range', playRange)
+              });
+            }
+            if (caps.canClearText) {
+              items.push({
+                label: `批量清空文本 (${multiAnalysis.nonEmptyCount} 项)`,
+                icon: 'clear',
+                shortcut: 'Del',
+                action: () => clearMultiSelectionText()
+              });
+            }
+            if (items.length > 0) items.push({ divider: true });
+            items.push({
+              label: `取消复选 (当前已选 ${multiAnalysis.count} 项)`,
+              icon: 'CloseIcon',
+              shortcut: 'Esc',
+              action: () => clearMultiSelection()
+            });
+          } else if (iv) {
             setSelection({ kind: 'interval', tierIndex: ti, itemIndex: ii, bandIndex: bandIdx });
             if (isEdit) {
               const splitSnap =
@@ -5835,6 +7982,22 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                   action: () => createIntervalFromPlayRange(ti, bandIdx)
                 });
               }
+              const canRemapToRange = Boolean(
+                iv.text !== '' &&
+                  iv.xmax > iv.xmin &&
+                  playRange &&
+                  playRange.end - playRange.start >= 0.001 &&
+                  (Math.abs(playRange.start - iv.xmin) > 1e-4 ||
+                    Math.abs(playRange.end - iv.xmax) > 1e-4)
+              );
+              if (canRemapToRange && playRange) {
+                items.push({
+                  label: `跨层重映射到当前选区 (${playRange.start.toFixed(2)}–${playRange.end.toFixed(2)}s)`,
+                  icon: 'nudgeShared',
+                  shortcut: hint('remap-block-to-playrange'),
+                  action: () => remapBlockToPlayRange(ti, ii, bandIdx)
+                });
+              }
 
               const otherIntervalTiers = tg.tiers
                 .map((t, idx) => ({ t, idx }))
@@ -5858,6 +8021,19 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                 );
               });
 
+              const decodedIvText = decodeTrigraphGlossSync(iv.text);
+              const splitSourceText = resolveSplitSourceText(iv.text, decodedIvText).text;
+              const splitCharCount = splitTextIntoChars(splitSourceText).length;
+              const splitWordCount = splitTextByDelimiter(splitSourceText, {
+                preset: 'whitespace'
+              }).length;
+              const peerTexts = collectPeerTexts(tier.intervals, ii, 20);
+              const smartPlan = inferSmartSplit(iv.text, decodedIvText, {
+                tierName: tier.name,
+                peerTexts,
+                hasAudio: Boolean(audioBuffer)
+              });
+
               items.push(
                 { label: '编辑文本', icon: 'edit', shortcut: '双击', action: () => openInline({ kind: 'interval', tierIndex: ti, itemIndex: ii }) },
                 {
@@ -5867,6 +8043,24 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                   action: () => splitInterval(ti, ii, splitTargetT, { exact: Boolean(splitSnap) })
                 },
                 { label: '从正中切分', icon: 'split', shortcut: hint('split-mid'), disabled: iv.xmax <= iv.xmin, action: () => splitInterval(ti, ii) },
+                ...(smartPlan.primary
+                  ? [
+                      {
+                        label: smartPlan.primary.menuLabel,
+                        icon: 'splitEqual' as IconName,
+                        disabled: iv.xmax <= iv.xmin,
+                        action: () =>
+                          void runSmartSplit(
+                            ti,
+                            ii,
+                            iv,
+                            smartPlan.primary!,
+                            smartPlan.alternatives,
+                            smartSplitUseAcoustic
+                          )
+                      }
+                    ]
+                  : []),
                 {
                   label: '等分该区间',
                   icon: 'splitEqual',
@@ -5886,7 +8080,19 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                     },
                     { divider: true },
                     {
-                      label: '自定义段数…',
+                      label: splitCharCount >= 2 ? `按字数等分（${splitCharCount} 段）` : '按字数等分',
+                      disabled: iv.xmax <= iv.xmin || splitCharCount < 2,
+                      action: () => splitIntervalByChars(ti, ii)
+                    },
+                    {
+                      label:
+                        splitWordCount >= 2 ? `按空格分词等分（${splitWordCount} 段）` : '按空格分词等分',
+                      disabled: iv.xmax <= iv.xmin || splitWordCount < 2,
+                      action: () => splitIntervalByDelimiter(ti, ii, { preset: 'whitespace' })
+                    },
+                    { divider: true },
+                    {
+                      label: '自定义等分…',
                       action: () => {
                         setSplitEqualDialog({
                           tierIndex: ti,
@@ -5894,7 +8100,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                           tierName: tier.name || `层 ${ti + 1}`,
                           text: iv.text,
                           xmin: iv.xmin,
-                          xmax: iv.xmax
+                          xmax: iv.xmax,
+                          peerTexts
                         });
                       }
                     }
@@ -6089,12 +8296,22 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                     ]
                   : []),
                 { divider: true },
-                { label: '删除边界（合并两侧）', icon: 'delBoundary', shortcut: 'Del', danger: true, action: () => deleteBoundaryAt(ti, time) },
+                {
+                  label: '删除边界（合并两侧）',
+                  icon: 'delBoundary',
+                  shortcut: 'Del',
+                  danger: true,
+                  disabled:
+                    Boolean(tg.tiers[ti]) &&
+                    (time <= tg.tiers[ti].xmin + 1e-9 || time >= tg.tiers[ti].xmax - 1e-9),
+                  action: () => deleteBoundaryAt(ti, time)
+                },
                 {
                   label: '跨层删除对齐边界',
                   icon: 'delBoundaryAll',
                   shortcut: 'Shift+Del',
                   danger: true,
+                  disabled: time <= tg.xmin + 1e-9 || time >= tg.xmax - 1e-9,
                   action: () => deleteBoundaryAcrossAllTiers(time)
                 }
               );
@@ -6310,6 +8527,95 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
     const renderFloatingBarContent = (): React.ReactNode => {
       if (!selection || !anchorRect || !anchorBand) return null;
+
+      if (multiAnalysis.count >= 2 && selection.kind === 'interval') {
+        const caps = multiAnalysis.capabilities;
+        const multiNodes: React.ReactNode[] = [
+          <span key="ms-count" className="dur-badge">
+            已选 {multiAnalysis.count} 项
+          </span>,
+          <div key="ms-sep-0" className="sep" />
+        ];
+        if (caps.canMerge) {
+          multiNodes.push(
+            <button
+              key="ms-merge"
+              type="button"
+              className="compact"
+              title={`合并所选连续区间 (${multiAnalysis.count} 段)`}
+              onClick={() => mergeMultiSelection()}
+            >
+              <UiIcon name="mergeRight" size={13} />
+              <span>合并 ({multiAnalysis.count})</span>
+            </button>
+          );
+        }
+        if (caps.canAlignBounds) {
+          multiNodes.push(
+            <button
+              key="ms-align-primary"
+              type="button"
+              className="compact"
+              title="将所选区间左右边界对齐至主选区间"
+              onClick={() => alignMultiSelectionBounds('to-primary')}
+            >
+              <UiIcon name="nudgeShared" size={13} />
+              <span>对齐主选</span>
+            </button>,
+            <button
+              key="ms-align-env"
+              type="button"
+              className="compact"
+              title="将所选区间左右边界对齐至外包范围"
+              onClick={() => alignMultiSelectionBounds('to-envelope')}
+            >
+              <UiIcon name="nudgeShared" size={13} />
+              <span>对齐外包</span>
+            </button>
+          );
+        }
+        if (caps.canRemapToPlayRange && playRange) {
+          multiNodes.push(
+            <button
+              key="ms-remap"
+              type="button"
+              className="compact"
+              title="将所选区间重映射到当前语谱图选区"
+              onClick={() => alignMultiSelectionBounds('to-range', playRange)}
+            >
+              <UiIcon name="nudgeShared" size={13} />
+              <span>重映射到选区</span>
+            </button>
+          );
+        }
+        if (caps.canClearText) {
+          multiNodes.push(
+            <button
+              key="ms-clear"
+              type="button"
+              className="compact"
+              title={`批量清空所选 ${multiAnalysis.nonEmptyCount} 项文本`}
+              onClick={() => clearMultiSelectionText()}
+            >
+              <UiIcon name="clear" size={13} />
+              <span>清空 ({multiAnalysis.nonEmptyCount})</span>
+            </button>
+          );
+        }
+        multiNodes.push(
+          <button
+            key="ms-cancel"
+            type="button"
+            className="compact"
+            title="退出复选模式 (Esc)"
+            onClick={() => clearMultiSelection()}
+          >
+            <UiIcon name="CloseIcon" size={13} />
+            <span>取消复选</span>
+          </button>
+        );
+        return multiNodes;
+      }
 
       if (selection.kind === 'interval') {
         const tier = tg.tiers[selection.tierIndex];
@@ -7686,16 +9992,111 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           {/* Custom Architectural Equal-Split Slider Modal */}
           <SplitEqualModal
             state={splitEqualDialog}
+            hasAudio={Boolean(audioBuffer)}
+            useAcoustic={smartSplitUseAcoustic}
+            onToggleAcoustic={setSmartSplitUseAcoustic}
             onCancel={() => setSplitEqualDialog(null)}
-            onConfirm={(n) => {
+            onConfirm={(payload) => {
               const dlg = splitEqualDialog;
               setSplitEqualDialog(null);
-              if (dlg) {
-                splitIntervalEqualN(dlg.tierIndex, dlg.itemIndex, n);
+              if (!dlg) return;
+              if (payload.mode === 'count') {
+                splitIntervalEqualN(dlg.tierIndex, dlg.itemIndex, payload.count);
+              } else if (payload.mode === 'smart') {
+                const plan = inferSmartSplit(dlg.text, decodeTrigraphGlossSync(dlg.text), {
+                  tierName: dlg.tierName,
+                  peerTexts: dlg.peerTexts,
+                  hasAudio: Boolean(audioBuffer)
+                });
+                const alts = [
+                  ...(plan.primary ? [plan.primary] : []),
+                  ...plan.alternatives
+                ].filter((c) => c.id !== payload.candidate.id);
+                void runSmartSplit(
+                  dlg.tierIndex,
+                  dlg.itemIndex,
+                  { xmin: dlg.xmin, xmax: dlg.xmax, text: dlg.text },
+                  payload.candidate,
+                  alts,
+                  payload.useAcoustic
+                );
+              } else if (payload.mode === 'chars') {
+                void runManualTextSplit(
+                  dlg,
+                  payload.texts,
+                  'syllable',
+                  '按字数',
+                  Boolean(payload.useAcoustic),
+                  {
+                    title: '按字数等分区间',
+                    detailPrefix: '按字数等分为',
+                    toastLabel: '已按字数等分为'
+                  }
+                );
+              } else {
+                void runManualTextSplit(
+                  dlg,
+                  payload.texts,
+                  'delimiter',
+                  `按${payload.delimiterLabel}分词`,
+                  Boolean(payload.useAcoustic),
+                  {
+                    title: '按分词等分区间',
+                    detailPrefix: `按${payload.delimiterLabel}分词等分为`,
+                    toastLabel: `已按${payload.delimiterLabel}分词等分为`
+                  }
+                );
               }
             }}
           />
         </main>
+
+        {/* Non-focus-stealing post-split floating bar for quick granularity switch / equal fallback */}
+        {smartSplitBar && (
+          <div
+            className="smart-split-bar"
+            role="status"
+            aria-live="polite"
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            <span className="smart-split-bar-msg">
+              已{smartSplitBar.activeCandidate.strategyLabel}
+              {smartSplitBar.usedAcoustic ? '声学' : ''}拆为 {smartSplitBar.currentCount} 段
+            </span>
+            <div className="smart-split-bar-actions">
+              {smartSplitBar.alternatives.slice(0, 2).map((alt) => (
+                <button
+                  key={alt.id}
+                  type="button"
+                  className="smart-split-bar-btn"
+                  disabled={smartSplitBar.busy}
+                  onClick={() => void handleSmartSplitSwitch(alt)}
+                >
+                  {alt.switchLabel}
+                </button>
+              ))}
+              {smartSplitBar.usedAcoustic && (
+                <button
+                  type="button"
+                  className="smart-split-bar-btn secondary"
+                  disabled={smartSplitBar.busy}
+                  onClick={handleSmartSplitRevertEqual}
+                >
+                  时间退回等分
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              className="smart-split-bar-close"
+              title="关闭"
+              aria-label="关闭智能拆分提示"
+              onClick={() => setSmartSplitBar(null)}
+            >
+              ×
+            </button>
+          </div>
+        )}
       </div>
     );
   }

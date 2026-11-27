@@ -1,3 +1,4 @@
+pub mod acoustic_split;
 pub mod codec;
 pub mod contour;
 pub mod ipa;
@@ -99,4 +100,10 @@ pub fn get_praat_matches(first_char: Option<char>) -> Vec<PraatMatch> {
 
 pub fn lookup_ipa_symbol(sym: &str) -> IpaSymbolInfo {
     ipa::ipa_engine().lookup_symbol(sym)
+}
+
+pub fn align_split_boundaries(
+    input: &acoustic_split::AcousticSplitInput<'_>,
+) -> acoustic_split::AcousticSplitOutput {
+    acoustic_split::align_split_boundaries(input)
 }

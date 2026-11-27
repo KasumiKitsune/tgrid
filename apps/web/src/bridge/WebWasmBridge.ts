@@ -23,10 +23,13 @@ import {
   render_spectrogram_rgba_packed,
   compute_band_contours_json,
   compute_waveform_path,
-  find_zero_crossing
+  find_zero_crossing,
+  align_split_boundaries_json
 } from '../wasm-pkg/tg_wasm';
 import wasmUrl from '../wasm-pkg/tg_wasm_bg.wasm?url';
 import type {
+  AcousticSplitParams,
+  AcousticSplitResult,
   AudioAnalysisSummary,
   AudioSummary,
   CollectionFormat,
@@ -296,6 +299,16 @@ export class WebWasmBridge implements PlatformBridge {
   async findZeroCrossing(sessionId: number, t: number, maxWindowSec: number): Promise<number> {
     await this.init();
     return find_zero_crossing(sessionId, t, maxWindowSec);
+  }
+
+  async alignSplitBoundaries(
+    samples: Float32Array,
+    params: AcousticSplitParams
+  ): Promise<AcousticSplitResult> {
+    await this.init();
+    return JSON.parse(
+      align_split_boundaries_json(samples, JSON.stringify(params))
+    ) as AcousticSplitResult;
   }
 
   async openNativeFileDialog(

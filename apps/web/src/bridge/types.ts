@@ -135,6 +135,45 @@ export interface SpectrogramRgbaResult {
   rgba: Uint8ClampedArray;
 }
 
+export type AcousticSplitGranularity =
+  | 'delimiter'
+  | 'word'
+  | 'syllable'
+  | 'onset-rime'
+  | 'phone'
+  | 'tone-split';
+
+export type AcousticSplitSegmentClass =
+  | 'voiceless-obs'
+  | 'voiced-obs'
+  | 'nasal-liquid'
+  | 'vowel'
+  | 'syllable'
+  | 'other';
+
+export interface AcousticSplitF0Frame {
+  timeSec: number;
+  f0Hz: number;
+}
+
+export interface AcousticSplitParams {
+  sampleRate: number;
+  samplesOriginSec?: number;
+  xmin: number;
+  xmax: number;
+  granularity: AcousticSplitGranularity;
+  durationWeights: number[];
+  acousticClasses: AcousticSplitSegmentClass[];
+  f0Frames?: AcousticSplitF0Frame[];
+}
+
+export interface AcousticSplitResult {
+  cuts: number[];
+  confidence: number;
+  fallbackToEqual: boolean;
+  speechSpan: [number, number];
+}
+
 export interface IpaCandidate {
   text: string;
   code: string;
@@ -264,6 +303,10 @@ export interface PlatformBridge {
   ): Promise<ContourPath[]>;
   computeWaveformPath(sessionId: number, segs: LinearSeg[], y: number, h: number): Promise<string>;
   findZeroCrossing(sessionId: number, t: number, maxWindowSec: number): Promise<number>;
+  alignSplitBoundaries(
+    samples: Float32Array,
+    params: AcousticSplitParams
+  ): Promise<AcousticSplitResult>;
 
   // Native Desktop File I/O (Web/WASM returns null / false gracefully)
   openNativeFileDialog(

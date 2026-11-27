@@ -50,6 +50,35 @@ import {
   saveCanvasScale,
   saveUiScale
 } from '../utils/uiScale';
+import {
+  buildCharSplitIntervals,
+  buildDelimiterSplitIntervals,
+  buildEqualIntervals,
+  resolveSplitSourceText,
+  type CharSplitOptions,
+  type DelimiterSplitOptions,
+  type EqualSplitSegment
+} from '../utils/intervalSplit';
+import {
+  applyBlockTransformToDraft,
+  clampBlockTargetSpan,
+  computeBlockSafeBounds,
+  findAlignedBlock,
+  type BlockTransformMode
+} from '../utils/blockTransform';
+import {
+  analyzeMultiSelection,
+  applyAlignMultiSelectionBounds,
+  applyClearMultiSelectionText,
+  applyMergeContiguousSelection,
+  applyMultiSyncDelta,
+  sanitizeIntervalRefs,
+  type IntervalRef,
+  type MultiSyncAction
+} from '../utils/multiSelection';
+import { getPlatformBridge } from '../bridge/PlatformBridge';
+import { isValidPraatTrigraphAt } from '../layout/praatTrigraphCodes';
+import { decodeTrigraphGlossSync, primeTrigraphString } from '../layout/richText';
 import type {
   CorpusFilterState,
   CorpusItemRecord,
@@ -472,6 +501,23 @@ export interface BoundaryMoveOptions {
   actionMeta?: Partial<HistoryActionMeta>;
 }
 
+export interface TransformAlignedBlockOptions {
+  mode?: BlockTransformMode;
+  bandIndex?: number;
+  silentToast?: boolean;
+}
+
+export interface TransformAlignedBlockResult {
+  ok: boolean;
+  changed: boolean;
+  clamped: boolean;
+  blockerTierName: string | null;
+  affectedTierCount: number;
+  finalXmin: number;
+  finalXmax: number;
+  reason?: 'invalid-anchor' | 'no-change' | 'blocked';
+}
+
 export interface PendingAutoEditTarget {
   kind: 'interval';
   tierIndex: number;
@@ -519,6 +565,7 @@ export interface TabRecord {
   collectionHistories: Record<number, HistoryTimeline>;
   viewDomain: { min: number; max: number } | null;
   selection: EditorSelection;
+  multiSelection: IntervalRef[];
   lastActiveTierIndex: number;
   hiddenTierIndices: number[];
   playRange: { start: number; end: number } | null;
@@ -583,6 +630,7 @@ export interface EditorState {
   widthAutoFit: boolean;
   stageAvailableWidth: number;
   selection: EditorSelection;
+  multiSelection: IntervalRef[];
   lastActiveTierIndex: number;
   hiddenTierIndices: number[];
   playRange: { start: number; end: number } | null;
@@ -619,6 +667,7 @@ export interface EditorState {
   ribbonTab: RibbonTabId;
   ribbonCollapsed: boolean;
   restoreSessionOnStartup: boolean;
+  smartSplitUseAcoustic: boolean;
 
   // Office-Style Right Sidebar & Edit Inspector Preferences
   sidebarOpen: boolean;
@@ -742,6 +791,20 @@ export interface EditorState {
   setWidthAutoFit: (v: boolean) => void;
   setStageAvailableWidth: (w: number) => void;
   setSelection: (sel: EditorSelection) => void;
+  toggleMultiSelectInterval: (tierIndex: number, itemIndex: number, bandIndex?: number) => void;
+  setMultiSelection: (items: IntervalRef[], primary?: IntervalRef | null, bandIndex?: number) => void;
+  clearMultiSelection: () => void;
+  clearMultiSelectionText: () => boolean;
+  mergeMultiSelection: () => boolean;
+  alignMultiSelectionBounds: (
+    mode: 'to-primary' | 'to-envelope' | 'to-range',
+    customRange?: { start: number; end: number } | null
+  ) => boolean;
+  syncTransformMultiSelection: (
+    action: MultiSyncAction,
+    delta: number,
+    opts?: { bandIndex?: number; silentToast?: boolean }
+  ) => boolean;
   toggleTierVisibility: (tierIndex: number) => void;
   soloTier: (tierIndex: number) => void;
   showAllTiers: () => void;
@@ -774,6 +837,7 @@ export interface EditorState {
   setRibbonCollapsed: (collapsed: boolean) => void;
   toggleRibbonCollapsed: () => void;
   setRestoreSessionOnStartup: (enabled: boolean) => void;
+  setSmartSplitUseAcoustic: (enabled: boolean) => void;
   setSidebarOpen: (open: boolean) => void;
   setSidebarTab: (tab: SidebarTab) => void;
   toggleSidebarTab: (tab: SidebarTab) => void;
@@ -833,6 +897,39 @@ export interface EditorState {
     copyText: boolean
   ) => boolean;
   splitIntervalEqualN: (tierIndex: number, itemIndex: number, n: number) => boolean;
+  splitIntervalWithCuts: (
+    tierIndex: number,
+    itemIndex: number,
+    texts: readonly string[],
+    cuts?: readonly number[] | null,
+    meta?: { title?: string; detailPrefix?: string; toastLabel?: string }
+  ) => boolean;
+  replaceJustSplitInterval: (
+    tierIndex: number,
+    startItemIndex: number,
+    prevCount: number,
+    originalXmin: number,
+    originalXmax: number,
+    nextTexts: readonly string[],
+    nextCuts?: readonly number[] | null,
+    meta?: { title?: string; detailPrefix?: string; toastLabel?: string }
+  ) => boolean;
+  splitIntervalWithTexts: (
+    tierIndex: number,
+    itemIndex: number,
+    texts: readonly string[],
+    meta?: { title?: string; detailPrefix?: string; toastLabel?: string }
+  ) => boolean;
+  splitIntervalByChars: (
+    tierIndex: number,
+    itemIndex: number,
+    options?: CharSplitOptions
+  ) => boolean;
+  splitIntervalByDelimiter: (
+    tierIndex: number,
+    itemIndex: number,
+    options?: DelimiterSplitOptions
+  ) => boolean;
   alignMicroBoundaries: (targetTierIndex?: number, thresholdSec?: number) => AlignMicroResult;
   updateBlankTabDuration: (audioOffset: number, audioDuration: number) => boolean;
   normalizeTextGrid: () => void;
@@ -844,6 +941,13 @@ export interface EditorState {
     opts?: BoundaryMoveOptions
   ) => boolean;
   moveSharedTimestamp: (oldT: number, newT: number, opts?: BoundaryMoveOptions) => boolean;
+  transformAlignedBlock: (
+    anchorTierIndex: number,
+    anchorItemIndex: number,
+    targetXmin: number,
+    targetXmax: number,
+    opts?: TransformAlignedBlockOptions
+  ) => TransformAlignedBlockResult;
 }
 
 let beforeHistoryNavigateHook: (() => void) | null = null;
@@ -960,6 +1064,7 @@ function createTabRecord(opts?: CreateTabOptions, historyLimit = loadSavedHistor
     collectionHistories,
     viewDomain: null,
     selection: null,
+    multiSelection: [],
     lastActiveTierIndex: 0,
     hiddenTierIndices: [],
     playRange: null,
@@ -990,6 +1095,7 @@ function fieldsFromTab(tab: TabRecord) {
     collectionHistories: tab.collectionHistories,
     viewDomain: tab.viewDomain,
     selection: tab.selection,
+    multiSelection: tab.multiSelection,
     lastActiveTierIndex: tab.lastActiveTierIndex,
     hiddenTierIndices: tab.hiddenTierIndices,
     playRange: tab.playRange,
@@ -1110,6 +1216,7 @@ function saveRibbonCollapsed(collapsed: boolean): void {
 
 const RESTORE_SESSION_STORAGE_KEY = 'tg_restore_session_v1';
 const HAS_OPENED_STORAGE_KEY = 'tg_has_opened_v1';
+const SMART_SPLIT_ACOUSTIC_STORAGE_KEY = 'tg_smart_split_acoustic_v1';
 
 function loadRestoreSessionOnStartup(): boolean {
   try {
@@ -1125,6 +1232,54 @@ function saveRestoreSessionOnStartup(enabled: boolean): void {
   } catch {
     // ignore storage errors
   }
+}
+
+function loadSmartSplitUseAcoustic(): boolean {
+  try {
+    return localStorage.getItem(SMART_SPLIT_ACOUSTIC_STORAGE_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+function saveSmartSplitUseAcoustic(enabled: boolean): void {
+  try {
+    localStorage.setItem(SMART_SPLIT_ACOUSTIC_STORAGE_KEY, enabled ? '1' : '0');
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function buildIntervalsFromCuts(
+  xmin: number,
+  xmax: number,
+  texts: readonly string[],
+  cuts?: readonly number[] | null
+): EqualSplitSegment[] | null {
+  const count = texts.length;
+  if (!Number.isFinite(xmin) || !Number.isFinite(xmax) || xmax <= xmin || count < 2) {
+    return null;
+  }
+  if (cuts && cuts.length === count - 1) {
+    let valid = true;
+    let prev = xmin;
+    for (let i = 0; i < cuts.length; i++) {
+      const t = cuts[i];
+      if (!Number.isFinite(t) || t <= prev || t >= xmax) {
+        valid = false;
+        break;
+      }
+      prev = t;
+    }
+    if (valid) {
+      return Array.from({ length: count }, (_, k) => ({
+        xmin: k === 0 ? xmin : cuts[k - 1],
+        xmax: k === count - 1 ? xmax : cuts[k],
+        text: texts[k]
+      }));
+    }
+  }
+  return buildEqualIntervals(xmin, xmax, texts);
 }
 
 function consumeIsFirstOpen(): boolean {
@@ -1143,7 +1298,23 @@ function consumeIsFirstOpen(): boolean {
 export function getBoundaryBoundsForTier(tier: TextGrid['tiers'][number], oldT: number) {
   let minAllowed = -Infinity;
   let maxAllowed = Infinity;
-  if (tier.kind === 'intervalTier') {
+  if (tier.kind === 'intervalTier' && tier.intervals.length > 0) {
+    const firstIv = tier.intervals[0];
+    const lastIv = tier.intervals[tier.intervals.length - 1];
+    if (Math.abs(oldT - tier.xmin) <= 1e-9) {
+      // Outer start edge: only non-empty first interval may pull inward (rightward)
+      if (firstIv && Math.abs(firstIv.xmin - oldT) <= 1e-9 && firstIv.text.trim() !== '') {
+        return { minAllowed: tier.xmin, maxAllowed: firstIv.xmax - 1e-6 };
+      }
+      return { minAllowed: -Infinity, maxAllowed: Infinity };
+    }
+    if (Math.abs(oldT - tier.xmax) <= 1e-9) {
+      // Outer end edge: only non-empty last interval may pull inward (leftward)
+      if (lastIv && Math.abs(lastIv.xmax - oldT) <= 1e-9 && lastIv.text.trim() !== '') {
+        return { minAllowed: lastIv.xmin + 1e-6, maxAllowed: tier.xmax };
+      }
+      return { minAllowed: -Infinity, maxAllowed: Infinity };
+    }
     for (const iv of tier.intervals) {
       if (iv.xmax === oldT) minAllowed = Math.max(minAllowed, iv.xmin + 1e-6);
       if (iv.xmin === oldT) maxAllowed = Math.min(maxAllowed, iv.xmax - 1e-6);
@@ -1305,6 +1476,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   ribbonTab: 'annotate',
   ribbonCollapsed: loadRibbonCollapsed(),
   restoreSessionOnStartup: loadRestoreSessionOnStartup(),
+  smartSplitUseAcoustic: loadSmartSplitUseAcoustic(),
 
   sidebarOpen: initialSidebarPrefs.sidebarOpen,
   sidebarTab: initialSidebarPrefs.sidebarTab,
@@ -1981,6 +2153,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         history: nextHistory,
         isDirty: nextDirty,
         selection: resolvedSelection,
+        multiSelection: [],
         lastActiveTierIndex: nextLastActive,
         hiddenTierIndices: nextHidden,
         currentTime: temporal.currentTime,
@@ -2266,10 +2439,345 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const ti = extractTierIndex(selection);
       const patch: Partial<TabRecord> =
         ti !== null
-          ? { selection, lastActiveTierIndex: clampTierIndex(ti, s.tg.tiers.length) }
-          : { selection };
+          ? {
+              selection,
+              multiSelection: [],
+              lastActiveTierIndex: clampTierIndex(ti, s.tg.tiers.length)
+            }
+          : { selection, multiSelection: [] };
       return syncActivePatch(s, patch);
     }),
+
+  toggleMultiSelectInterval: (tierIndex, itemIndex, bandIndex) =>
+    set((s) => {
+      const tier = s.tg.tiers[tierIndex];
+      const iv = tier?.kind === 'intervalTier' ? tier.intervals[itemIndex] : null;
+      if (!tier || !iv || iv.xmax <= iv.xmin) return s;
+
+      const cur = sanitizeIntervalRefs(s.tg, s.multiSelection);
+      const nextBand = bandIndex ?? s.selection?.bandIndex ?? 0;
+
+      if (cur.length < 2) {
+        if (
+          s.selection?.kind === 'interval' &&
+          (s.selection.tierIndex !== tierIndex || s.selection.itemIndex !== itemIndex)
+        ) {
+          const prevTier = s.tg.tiers[s.selection.tierIndex];
+          const prevIv =
+            prevTier?.kind === 'intervalTier' ? prevTier.intervals[s.selection.itemIndex] : null;
+          if (prevIv && prevIv.xmax > prevIv.xmin) {
+            const nextMulti = sanitizeIntervalRefs(s.tg, [
+              { tierIndex: s.selection.tierIndex, itemIndex: s.selection.itemIndex },
+              { tierIndex, itemIndex }
+            ]);
+            return syncActivePatch(s, {
+              selection: { kind: 'interval', tierIndex, itemIndex, bandIndex: nextBand },
+              multiSelection: nextMulti,
+              lastActiveTierIndex: clampTierIndex(tierIndex, s.tg.tiers.length)
+            });
+          }
+        }
+        return syncActivePatch(s, {
+          selection: { kind: 'interval', tierIndex, itemIndex, bandIndex: nextBand },
+          multiSelection: [],
+          lastActiveTierIndex: clampTierIndex(tierIndex, s.tg.tiers.length)
+        });
+      }
+
+      const existsIdx = cur.findIndex(
+        (it) => it.tierIndex === tierIndex && it.itemIndex === itemIndex
+      );
+      if (existsIdx !== -1) {
+        const remaining = cur.filter((_, idx) => idx !== existsIdx);
+        if (remaining.length <= 1) {
+          const only = remaining[0];
+          return syncActivePatch(s, {
+            selection: only
+              ? {
+                  kind: 'interval',
+                  tierIndex: only.tierIndex,
+                  itemIndex: only.itemIndex,
+                  bandIndex: nextBand
+                }
+              : null,
+            multiSelection: [],
+            lastActiveTierIndex: only
+              ? clampTierIndex(only.tierIndex, s.tg.tiers.length)
+              : s.lastActiveTierIndex
+          });
+        }
+        const wasPrimary =
+          s.selection?.kind === 'interval' &&
+          s.selection.tierIndex === tierIndex &&
+          s.selection.itemIndex === itemIndex;
+        const nextPrimary = wasPrimary ? remaining[remaining.length - 1] : null;
+        return syncActivePatch(s, {
+          selection: nextPrimary
+            ? {
+                kind: 'interval',
+                tierIndex: nextPrimary.tierIndex,
+                itemIndex: nextPrimary.itemIndex,
+                bandIndex: nextBand
+              }
+            : s.selection,
+          multiSelection: remaining
+        });
+      }
+
+      const appended = [...cur, { tierIndex, itemIndex }];
+      return syncActivePatch(s, {
+        selection: { kind: 'interval', tierIndex, itemIndex, bandIndex: nextBand },
+        multiSelection: appended,
+        lastActiveTierIndex: clampTierIndex(tierIndex, s.tg.tiers.length)
+      });
+    }),
+
+  setMultiSelection: (items, primary, bandIndex) =>
+    set((s) => {
+      const clean = sanitizeIntervalRefs(s.tg, items);
+      const nextBand = bandIndex ?? s.selection?.bandIndex ?? 0;
+      if (clean.length === 0) {
+        return syncActivePatch(s, { multiSelection: [] });
+      }
+      if (clean.length === 1) {
+        const only = clean[0];
+        return syncActivePatch(s, {
+          selection: {
+            kind: 'interval',
+            tierIndex: only.tierIndex,
+            itemIndex: only.itemIndex,
+            bandIndex: nextBand
+          },
+          multiSelection: [],
+          lastActiveTierIndex: clampTierIndex(only.tierIndex, s.tg.tiers.length)
+        });
+      }
+      const p =
+        (primary &&
+          clean.find(
+            (it) => it.tierIndex === primary.tierIndex && it.itemIndex === primary.itemIndex
+          )) ||
+        clean[clean.length - 1];
+      return syncActivePatch(s, {
+        selection: {
+          kind: 'interval',
+          tierIndex: p.tierIndex,
+          itemIndex: p.itemIndex,
+          bandIndex: nextBand
+        },
+        multiSelection: clean,
+        lastActiveTierIndex: clampTierIndex(p.tierIndex, s.tg.tiers.length)
+      });
+    }),
+
+  clearMultiSelection: () =>
+    set((s) => (s.multiSelection.length === 0 ? s : syncActivePatch(s, { multiSelection: [] }))),
+
+  clearMultiSelectionText: () => {
+    const st = get();
+    const clean = sanitizeIntervalRefs(st.tg, st.multiSelection);
+    if (clean.length < 2) return false;
+    let clearedCount = 0;
+    const primarySel = st.selection;
+    const committed = st.commitTgMutation(
+      (_draft, ctx) => {
+        const res = applyClearMultiSelectionText(ctx.editTier, clean);
+        clearedCount = res.clearedCount;
+        return res.changed;
+      },
+      primarySel,
+      {
+        type: 'multi-clear-text',
+        title: '批量清空文本',
+        detail: `已清空 ${clean.length} 项所选区间`,
+        icon: 'clear'
+      }
+    );
+    if (!committed) {
+      st.showToast('所选区间均为空白');
+      return false;
+    }
+    const primaryRef =
+      primarySel?.kind === 'interval'
+        ? { tierIndex: primarySel.tierIndex, itemIndex: primarySel.itemIndex }
+        : null;
+    get().setMultiSelection(clean, primaryRef, primarySel?.bandIndex);
+    st.showToast(`已清空 ${clearedCount} 项区间文本`);
+    return true;
+  },
+
+  mergeMultiSelection: () => {
+    const st = get();
+    const primaryRef =
+      st.selection?.kind === 'interval'
+        ? { tierIndex: st.selection.tierIndex, itemIndex: st.selection.itemIndex }
+        : null;
+    const analysis = analyzeMultiSelection(st.tg, st.multiSelection, primaryRef, st.playRange);
+    if (!analysis.capabilities.canMerge) {
+      st.showToast('仅支持合并同一层内的连续复选区间', true);
+      return false;
+    }
+    const tier = st.tg.tiers[analysis.units[0].tierIndex];
+    const tierName = formatTierLabel(tier?.name, analysis.units[0].tierIndex);
+    const bandIndex = st.selection?.bandIndex ?? 0;
+    let mergedCount = 0;
+    const committed = st.commitTgMutation(
+      (_draft, ctx) => {
+        const res = applyMergeContiguousSelection(ctx.editTier, analysis);
+        if (!res.changed) return false;
+        mergedCount = res.mergedCount;
+        ctx.setNextSelection({
+          kind: 'interval',
+          tierIndex: res.tierIndex,
+          itemIndex: res.mergedItemIndex,
+          bandIndex
+        });
+        ctx.setNextPlayRange({ start: analysis.envelopeXmin, end: analysis.envelopeXmax });
+      },
+      undefined,
+      {
+        type: 'multi-merge',
+        title: `合并所选区间 (${analysis.count} 段)`,
+        detail: `${tierName} · ${formatTimeSpan(analysis.envelopeXmin, analysis.envelopeXmax)}`,
+        icon: 'mergeRight',
+        tierName,
+        focusTime: analysis.envelopeXmin
+      }
+    );
+    if (committed) {
+      st.showToast(`已合并 ${mergedCount} 段连续区间`);
+    }
+    return committed;
+  },
+
+  alignMultiSelectionBounds: (mode, customRange) => {
+    const st = get();
+    const primaryRef =
+      st.selection?.kind === 'interval'
+        ? { tierIndex: st.selection.tierIndex, itemIndex: st.selection.itemIndex }
+        : null;
+    const analysis = analyzeMultiSelection(st.tg, st.multiSelection, primaryRef, st.playRange);
+    if (analysis.count < 2) return false;
+    if (mode === 'to-range' && (!customRange || customRange.end - customRange.start < 0.001)) {
+      return false;
+    }
+
+    let result = {
+      changed: false,
+      nextItems: analysis.items,
+      affectedTierCount: 0,
+      clampedCount: 0,
+      blockerTierName: null as string | null,
+      targetXmin: analysis.envelopeXmin,
+      targetXmax: analysis.envelopeXmax
+    };
+    const title =
+      mode === 'to-range'
+        ? '重映射所选区间到选区'
+        : mode === 'to-primary'
+          ? '对齐所选区间至主选边界'
+          : '对齐所选区间至外包范围';
+    const bandIndex = st.selection?.bandIndex ?? 0;
+
+    const committed = st.commitTgMutation(
+      (_draft, ctx) => {
+        result = applyAlignMultiSelectionBounds(ctx.editTier, st.tg, analysis, mode, customRange);
+        if (!result.changed) return false;
+        const firstNext = result.nextItems[0];
+        if (firstNext) {
+          ctx.setNextSelection({
+            kind: 'interval',
+            tierIndex: firstNext.tierIndex,
+            itemIndex: firstNext.itemIndex,
+            bandIndex
+          });
+        }
+        ctx.setNextPlayRange({ start: result.targetXmin, end: result.targetXmax });
+      },
+      undefined,
+      {
+        type: mode === 'to-range' ? 'remap-block' : 'multi-align',
+        title,
+        detail: `${analysis.count} 项 · ${formatTimeSpan(result.targetXmin, result.targetXmax)}`,
+        icon: 'nudgeShared',
+        focusTime: result.targetXmin
+      }
+    );
+    if (!committed) {
+      if (result.clampedCount > 0 && result.blockerTierName) {
+        st.showToast(`受「${result.blockerTierName}」相邻非空区间阻挡，无法对齐`, true);
+      } else {
+        st.showToast('所选区间边界已对齐');
+      }
+      return false;
+    }
+
+    get().setMultiSelection(result.nextItems, result.nextItems[0] ?? null, bandIndex);
+    if (result.clampedCount > 0 && result.blockerTierName) {
+      st.showToast(`受「${result.blockerTierName}」阻挡，其余区间已对齐至安全范围`);
+    } else if (mode === 'to-range') {
+      st.showToast(
+        `已将所选 ${analysis.count} 项重映射到 ${formatTimeSpan(result.targetXmin, result.targetXmax)}`
+      );
+    } else {
+      st.showToast(`已对齐 ${result.affectedTierCount} 层所选区间边界`);
+    }
+    return true;
+  },
+
+  syncTransformMultiSelection: (action, delta, opts) => {
+    const st = get();
+    const primaryRef =
+      st.selection?.kind === 'interval'
+        ? { tierIndex: st.selection.tierIndex, itemIndex: st.selection.itemIndex }
+        : null;
+    const analysis = analyzeMultiSelection(st.tg, st.multiSelection, primaryRef, st.playRange);
+    if (analysis.count < 2 || analysis.units.length === 0) return false;
+
+    const bandIndex = opts?.bandIndex ?? st.selection?.bandIndex ?? 0;
+    let nextItems: IntervalRef[] = analysis.items;
+    let finalDelta = 0;
+
+    const title =
+      action === 'move'
+        ? '同步平移所选区间'
+        : action === 'left-edge'
+          ? '同步调整所选左边界'
+          : '同步调整所选右边界';
+
+    const committed = st.commitTgMutation(
+      (_draft, ctx) => {
+        const res = applyMultiSyncDelta(ctx.editTier, st.tg, analysis.units, action, delta);
+        if (!res.changed) return false;
+        nextItems = res.nextItems;
+        finalDelta = res.finalDelta;
+        const nextPrimary = res.nextItems[res.nextItems.length - 1] ?? res.nextItems[0];
+        if (nextPrimary) {
+          ctx.setNextSelection({
+            kind: 'interval',
+            tierIndex: nextPrimary.tierIndex,
+            itemIndex: nextPrimary.itemIndex,
+            bandIndex
+          });
+        }
+      },
+      undefined,
+      {
+        type: 'multi-transform',
+        title,
+        detail: `${analysis.count} 项 · ${formatDeltaTime(delta)}`,
+        icon: action === 'move' ? 'navHorizontal' : 'nudgeShared',
+        focusTime: analysis.envelopeXmin + delta
+      }
+    );
+
+    if (!committed) return false;
+    get().setMultiSelection(nextItems, nextItems[nextItems.length - 1] ?? null, bandIndex);
+    if (!opts?.silentToast) {
+      st.showToast(`${title}（${analysis.count} 项 · ${formatDeltaTime(finalDelta)}）`);
+    }
+    return true;
+  },
   toggleTierVisibility: (tierIndex) => {
     const st = get();
     const total = st.tg.tiers.length;
@@ -2389,6 +2897,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setRestoreSessionOnStartup: (restoreSessionOnStartup) => {
     saveRestoreSessionOnStartup(restoreSessionOnStartup);
     set({ restoreSessionOnStartup });
+  },
+  setSmartSplitUseAcoustic: (smartSplitUseAcoustic) => {
+    saveSmartSplitUseAcoustic(smartSplitUseAcoustic);
+    set({ smartSplitUseAcoustic });
   },
   setSidebarOpen: (sidebarOpen) =>
     set((s) => {
@@ -3277,30 +3789,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (!tier || tier.kind !== 'intervalTier') return false;
     const iv = tier.intervals[itemIndex];
     if (!iv || iv.xmax <= iv.xmin) return false;
-    const step = (iv.xmax - iv.xmin) / count;
-    if (step <= 1e-7) {
+
+    const texts = Array.from({ length: count }, (_, k) => (k === 0 ? iv.text : ''));
+    const segs = buildEqualIntervals(iv.xmin, iv.xmax, texts);
+    if (!segs) {
       st.showToast('区间时长过短，无法继续等分', true);
       return false;
     }
-
-    const useRound = step >= 1e-4;
-    const cuts: number[] = [iv.xmin];
-    for (let k = 1; k < count; k++) {
-      const rawT = iv.xmin + step * k;
-      const t = useRound ? roundTimeClean(rawT) : rawT;
-      if (t <= cuts[cuts.length - 1] || t >= iv.xmax) {
-        st.showToast('区间时长过短，无法继续等分', true);
-        return false;
-      }
-      cuts.push(t);
-    }
-    cuts.push(iv.xmax);
-
-    const segs = Array.from({ length: count }, (_, k) => ({
-      xmin: cuts[k],
-      xmax: cuts[k + 1],
-      text: k === 0 ? iv.text : ''
-    }));
     const tierName = formatTierLabel(tier.name, tierIndex);
 
     const ok = st.commitTgMutation(
@@ -3321,6 +3816,245 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     );
     if (ok) get().showToast(`已将区间等分为 ${count} 段`);
     return ok;
+  },
+
+  splitIntervalWithCuts: (tierIndex, itemIndex, texts, cuts, meta) => {
+    const st = get();
+    if (texts.length < 2) return false;
+    const tier = st.tg.tiers[tierIndex];
+    if (!tier || tier.kind !== 'intervalTier') return false;
+    const iv = tier.intervals[itemIndex];
+    if (!iv || iv.xmax <= iv.xmin) return false;
+
+    const segs = buildIntervalsFromCuts(iv.xmin, iv.xmax, texts, cuts);
+    if (!segs) {
+      st.showToast('区间时长过短，无法继续拆分', true);
+      return false;
+    }
+
+    const count = texts.length;
+    const tierName = formatTierLabel(tier.name, tierIndex);
+    const title = meta?.title ?? '等分区间';
+    const detailPrefix = meta?.detailPrefix ?? '等分为';
+    const toastLabel = meta?.toastLabel ?? '已将区间等分为';
+
+    const ok = st.commitTgMutation(
+      (_draft, ctx) => {
+        const dTier = ctx.editTier(tierIndex);
+        if (!dTier || dTier.kind !== 'intervalTier') return false;
+        dTier.intervals.splice(itemIndex, 1, ...segs);
+      },
+      { kind: 'interval', tierIndex, itemIndex },
+      {
+        type: 'split-equal',
+        title,
+        detail: `${tierName} · ${detailPrefix} ${count} 段 (${formatTimeSpan(iv.xmin, iv.xmax)})`,
+        icon: 'splitEqual',
+        tierName,
+        focusTime: iv.xmin
+      }
+    );
+    if (ok) get().showToast(`${toastLabel} ${count} 段`);
+    return ok;
+  },
+
+  replaceJustSplitInterval: (
+    tierIndex,
+    startItemIndex,
+    prevCount,
+    originalXmin,
+    originalXmax,
+    nextTexts,
+    nextCuts,
+    meta
+  ) => {
+    const st = get();
+    if (
+      prevCount < 1 ||
+      nextTexts.length < 2 ||
+      startItemIndex < 0 ||
+      !Number.isFinite(originalXmin) ||
+      !Number.isFinite(originalXmax) ||
+      originalXmax <= originalXmin
+    ) {
+      return false;
+    }
+    const tier = st.tg.tiers[tierIndex];
+    if (!tier || tier.kind !== 'intervalTier') return false;
+    if (startItemIndex + prevCount > tier.intervals.length) return false;
+
+    const slice = tier.intervals.slice(startItemIndex, startItemIndex + prevCount);
+    if (
+      slice.length !== prevCount ||
+      slice[0].xmin !== originalXmin ||
+      slice[slice.length - 1].xmax !== originalXmax
+    ) {
+      return false;
+    }
+
+    const segs = buildIntervalsFromCuts(originalXmin, originalXmax, nextTexts, nextCuts);
+    if (!segs) {
+      st.showToast('区间时长过短，无法继续拆分', true);
+      return false;
+    }
+
+    const count = nextTexts.length;
+    const tierName = formatTierLabel(tier.name, tierIndex);
+    const title = meta?.title ?? '切换拆分粒度';
+    const detailPrefix = meta?.detailPrefix ?? '拆分为';
+    const toastLabel = meta?.toastLabel ?? '已切换为';
+
+    const ok = st.commitTgMutation(
+      (_draft, ctx) => {
+        const dTier = ctx.editTier(tierIndex);
+        if (!dTier || dTier.kind !== 'intervalTier') return false;
+        const curSlice = dTier.intervals.slice(startItemIndex, startItemIndex + prevCount);
+        if (
+          curSlice.length !== prevCount ||
+          curSlice[0].xmin !== originalXmin ||
+          curSlice[curSlice.length - 1].xmax !== originalXmax
+        ) {
+          return false;
+        }
+        dTier.intervals.splice(startItemIndex, prevCount, ...segs);
+      },
+      { kind: 'interval', tierIndex, itemIndex: startItemIndex },
+      {
+        type: 'split-equal',
+        title,
+        detail: `${tierName} · ${detailPrefix} ${count} 段 (${formatTimeSpan(originalXmin, originalXmax)})`,
+        icon: 'splitEqual',
+        tierName,
+        focusTime: originalXmin
+      }
+    );
+    if (ok) get().showToast(`${toastLabel} ${count} 段`);
+    return ok;
+  },
+
+  splitIntervalWithTexts: (tierIndex, itemIndex, texts, meta) => {
+    return get().splitIntervalWithCuts(tierIndex, itemIndex, texts, null, meta);
+  },
+
+  splitIntervalByChars: (tierIndex, itemIndex, options) => {
+    const st = get();
+    const tier = st.tg.tiers[tierIndex];
+    if (!tier || tier.kind !== 'intervalTier') return false;
+    const iv = tier.intervals[itemIndex];
+    if (!iv || iv.xmax <= iv.xmin) return false;
+
+    const runWithText = (rawText: string, decodedText: string | null): boolean => {
+      const sourceText = resolveSplitSourceText(rawText, decodedText).text;
+      const res = buildCharSplitIntervals(iv.xmin, iv.xmax, sourceText, options);
+      if (!res.ok) {
+        if (res.reason === 'insufficient-chars') {
+          get().showToast('有效字数不足 2 字，无法按字数等分', true);
+        } else {
+          get().showToast('区间时长过短，无法继续等分', true);
+        }
+        return false;
+      }
+      return get().splitIntervalWithTexts(tierIndex, itemIndex, res.chars, {
+        title: '按字数等分区间',
+        detailPrefix: '按字数等分为',
+        toastLabel: '已按字数等分为'
+      });
+    };
+
+    const cachedDecoded = decodeTrigraphGlossSync(iv.text);
+    if (cachedDecoded === null && iv.text.includes('\\')) {
+      let hasTrigraph = false;
+      for (let idx = 0; idx < iv.text.length - 2; idx++) {
+        if (isValidPraatTrigraphAt(iv.text, idx)) {
+          hasTrigraph = true;
+          break;
+        }
+      }
+      if (hasTrigraph) {
+        const expectedText = iv.text;
+        const expectedXmin = iv.xmin;
+        const expectedXmax = iv.xmax;
+        void primeTrigraphString(expectedText, getPlatformBridge()).then(() => {
+          const curTier = get().tg.tiers[tierIndex];
+          if (!curTier || curTier.kind !== 'intervalTier') return;
+          const curIv = curTier.intervals[itemIndex];
+          if (
+            !curIv ||
+            curIv.text !== expectedText ||
+            curIv.xmin !== expectedXmin ||
+            curIv.xmax !== expectedXmax
+          ) {
+            return;
+          }
+          runWithText(curIv.text, decodeTrigraphGlossSync(curIv.text));
+        });
+        return true;
+      }
+    }
+
+    return runWithText(iv.text, cachedDecoded);
+  },
+
+  splitIntervalByDelimiter: (tierIndex, itemIndex, options) => {
+    const st = get();
+    const tier = st.tg.tiers[tierIndex];
+    if (!tier || tier.kind !== 'intervalTier') return false;
+    const iv = tier.intervals[itemIndex];
+    if (!iv || iv.xmax <= iv.xmin) return false;
+
+    const preset = options?.preset ?? 'whitespace';
+    const modeName = preset === 'whitespace' ? '空格分词' : '分词';
+
+    const runWithText = (rawText: string, decodedText: string | null): boolean => {
+      const sourceText = resolveSplitSourceText(rawText, decodedText).text;
+      const res = buildDelimiterSplitIntervals(iv.xmin, iv.xmax, sourceText, options);
+      if (!res.ok) {
+        if (res.reason === 'insufficient-tokens') {
+          get().showToast(`按${modeName}切分不足 2 段，无法等分`, true);
+        } else {
+          get().showToast('区间时长过短，无法继续等分', true);
+        }
+        return false;
+      }
+      return get().splitIntervalWithTexts(tierIndex, itemIndex, res.tokens, {
+        title: `按${modeName}等分区间`,
+        detailPrefix: `按${modeName}等分为`,
+        toastLabel: `已按${modeName}等分为`
+      });
+    };
+
+    const cachedDecoded = decodeTrigraphGlossSync(iv.text);
+    if (cachedDecoded === null && iv.text.includes('\\')) {
+      let hasTrigraph = false;
+      for (let idx = 0; idx < iv.text.length - 2; idx++) {
+        if (isValidPraatTrigraphAt(iv.text, idx)) {
+          hasTrigraph = true;
+          break;
+        }
+      }
+      if (hasTrigraph) {
+        const expectedText = iv.text;
+        const expectedXmin = iv.xmin;
+        const expectedXmax = iv.xmax;
+        void primeTrigraphString(expectedText, getPlatformBridge()).then(() => {
+          const curTier = get().tg.tiers[tierIndex];
+          if (!curTier || curTier.kind !== 'intervalTier') return;
+          const curIv = curTier.intervals[itemIndex];
+          if (
+            !curIv ||
+            curIv.text !== expectedText ||
+            curIv.xmin !== expectedXmin ||
+            curIv.xmax !== expectedXmax
+          ) {
+            return;
+          }
+          runWithText(curIv.text, decodeTrigraphGlossSync(curIv.text));
+        });
+        return true;
+      }
+    }
+
+    return runWithText(iv.text, cachedDecoded);
   },
 
   alignMicroBoundaries: (targetTierIndex, thresholdSec = 0.005) => {
@@ -3615,12 +4349,31 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const st = get();
     if (shared) return st.moveSharedTimestamp(oldT, newT, opts);
     const tier = st.tg.tiers[tierIndex];
-    if (!tier || tier.kind !== 'intervalTier') return false;
+    if (!tier || tier.kind !== 'intervalTier' || tier.intervals.length === 0) return false;
+
+    const isOuterStart = Math.abs(oldT - tier.xmin) <= 1e-9;
+    const isOuterEnd = Math.abs(oldT - tier.xmax) <= 1e-9;
     const { minAllowed, maxAllowed } = getBoundaryBoundsForTier(tier, oldT);
-    if (newT <= minAllowed - 1e-9 || newT >= maxAllowed + 1e-9) {
+
+    if (isOuterStart) {
+      const firstIv = tier.intervals[0];
+      if (!firstIv || firstIv.text.trim() === '') return false;
+      if (newT <= tier.xmin + 1e-9 || newT >= firstIv.xmax - 1e-6) {
+        st.showToast('外端边界只能向内侧收缩且不能越过相邻边界', true);
+        return false;
+      }
+    } else if (isOuterEnd) {
+      const lastIv = tier.intervals[tier.intervals.length - 1];
+      if (!lastIv || lastIv.text.trim() === '') return false;
+      if (newT >= tier.xmax - 1e-9 || newT <= lastIv.xmin + 1e-6) {
+        st.showToast('外端边界只能向内侧收缩且不能越过相邻边界', true);
+        return false;
+      }
+    } else if (newT <= minAllowed - 1e-9 || newT >= maxAllowed + 1e-9) {
       st.showToast('边界不能越过相邻区间', true);
       return false;
     }
+
     const leftIdx = tier.intervals.findIndex((iv) => iv.xmax === oldT);
     const rightIdx = tier.intervals.findIndex((iv) => iv.xmin === oldT);
     const bndKey = leftIdx >= 0 ? `L${leftIdx}` : `R${rightIdx}`;
@@ -3638,13 +4391,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }
       : {
           type: 'move-boundary',
-          title: '移动边界',
+          title: isOuterStart || isOuterEnd ? '收缩外端边界' : '移动边界',
           detail: `${tierName} · ${formatTimeSec(oldT)} → ${formatTimeSec(newT)} (${formatDeltaTime(newT - oldT)})`,
           icon: 'nudgeBoundary',
           tierName,
           focusTime: newT,
           coalesce:
-            opts?.coalesce === false
+            opts?.coalesce === false || isOuterStart || isOuterEnd
               ? undefined
               : {
                   key: `move-bnd:${tierIndex}:${bndKey}`,
@@ -3662,16 +4415,36 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     return st.commitTgMutation(
       (_draft, ctx) => {
         const dTier = ctx.editTier(tierIndex);
-        if (!dTier || dTier.kind !== 'intervalTier') return false;
+        if (!dTier || dTier.kind !== 'intervalTier' || dTier.intervals.length === 0) return false;
         let touched = false;
-        for (const iv of dTier.intervals) {
-          if (iv.xmax === oldT) {
-            iv.xmax = newT;
-            touched = true;
+        if (isOuterStart) {
+          const first = dTier.intervals[0];
+          if (!first || first.text.trim() === '' || newT <= first.xmin + 1e-9 || newT >= first.xmax - 1e-6) {
+            return false;
           }
-          if (iv.xmin === oldT) {
-            iv.xmin = newT;
-            touched = true;
+          const origMin = first.xmin;
+          first.xmin = newT;
+          dTier.intervals.unshift({ xmin: origMin, xmax: newT, text: '' });
+          touched = true;
+        } else if (isOuterEnd) {
+          const last = dTier.intervals[dTier.intervals.length - 1];
+          if (!last || last.text.trim() === '' || newT >= last.xmax - 1e-9 || newT <= last.xmin + 1e-6) {
+            return false;
+          }
+          const origMax = last.xmax;
+          last.xmax = newT;
+          dTier.intervals.push({ xmin: newT, xmax: origMax, text: '' });
+          touched = true;
+        } else {
+          for (const iv of dTier.intervals) {
+            if (iv.xmax === oldT) {
+              iv.xmax = newT;
+              touched = true;
+            }
+            if (iv.xmin === oldT) {
+              iv.xmin = newT;
+              touched = true;
+            }
           }
         }
         if (!touched) return false;
@@ -3686,6 +4459,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   moveSharedTimestamp: (oldT, newT, opts) => {
     const st = get();
+    const isGlobalOuterStart = Math.abs(oldT - st.tg.xmin) <= 1e-9;
+    const isGlobalOuterEnd = Math.abs(oldT - st.tg.xmax) <= 1e-9;
     let minAllowed = -Infinity;
     let maxAllowed = Infinity;
     for (const tier of st.tg.tiers) {
@@ -3695,7 +4470,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         maxAllowed = Math.min(maxAllowed, b.maxAllowed);
       }
     }
-    if (newT <= minAllowed - 1e-9 || newT >= maxAllowed + 1e-9) {
+    if (isGlobalOuterStart) {
+      if (newT <= st.tg.xmin + 1e-9 || newT >= maxAllowed + 1e-9) {
+        st.showToast('外端边界只能向内侧收缩且不能越过相邻边界', true);
+        return false;
+      }
+    } else if (isGlobalOuterEnd) {
+      if (newT >= st.tg.xmax - 1e-9 || newT <= minAllowed - 1e-9) {
+        st.showToast('外端边界只能向内侧收缩且不能越过相邻边界', true);
+        return false;
+      }
+    } else if (newT <= minAllowed - 1e-9 || newT >= maxAllowed + 1e-9) {
       st.showToast('移动超出相邻边界允许范围', true);
       return false;
     }
@@ -3711,12 +4496,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }
       : {
           type: 'move-shared-boundary',
-          title: '跨层移动边界',
+          title: isGlobalOuterStart || isGlobalOuterEnd ? '跨层收缩外端边界' : '跨层移动边界',
           detail: `对齐时刻 · ${formatTimeSec(oldT)} → ${formatTimeSec(newT)} (${formatDeltaTime(newT - oldT)})`,
           icon: 'nudgeShared',
           focusTime: newT,
           coalesce:
-            opts?.coalesce === false
+            opts?.coalesce === false || isGlobalOuterStart || isGlobalOuterEnd
               ? undefined
               : {
                   key: 'move-shared',
@@ -3734,54 +4519,108 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     return st.commitTgMutation(
       (draft, ctx) => {
         let changed = false;
-        if (draft.xmin === oldT && newT <= draft.xmax) {
-          draft.xmin = newT;
-          changed = true;
-        }
-        if (draft.xmax === oldT && newT >= draft.xmin) {
-          draft.xmax = newT;
-          changed = true;
-        }
-        for (let ti = 0; ti < draft.tiers.length; ti++) {
-          const origTier = draft.tiers[ti];
-          const hitsBound =
-            (origTier.xmin === oldT && newT <= origTier.xmax) ||
-            (origTier.xmax === oldT && newT >= origTier.xmin);
-          const hitsItem =
-            origTier.kind === 'intervalTier'
-              ? origTier.intervals.some((iv) => iv.xmax === oldT || iv.xmin === oldT)
-              : origTier.points.some((pt) => pt.number === oldT);
-          if (!hitsBound && !hitsItem) continue;
+        if (isGlobalOuterStart || isGlobalOuterEnd) {
+          // Pull-inward from audio/tier outer edges: preserve tier/draft domain and insert empty lead/tail
+          for (let ti = 0; ti < draft.tiers.length; ti++) {
+            const origTier = draft.tiers[ti];
+            if (origTier.kind === 'intervalTier' && origTier.intervals.length > 0) {
+              if (isGlobalOuterStart) {
+                const firstOrig = origTier.intervals[0];
+                if (
+                  Math.abs(firstOrig.xmin - oldT) <= 1e-9 &&
+                  firstOrig.text.trim() !== '' &&
+                  newT > firstOrig.xmin + 1e-9 &&
+                  newT < firstOrig.xmax - 1e-6
+                ) {
+                  const tier = ctx.editTier(ti);
+                  if (!tier || tier.kind !== 'intervalTier') continue;
+                  const first = tier.intervals[0];
+                  const origMin = first.xmin;
+                  first.xmin = newT;
+                  tier.intervals.unshift({ xmin: origMin, xmax: newT, text: '' });
+                  changed = true;
+                }
+              } else if (isGlobalOuterEnd) {
+                const lastOrig = origTier.intervals[origTier.intervals.length - 1];
+                if (
+                  Math.abs(lastOrig.xmax - oldT) <= 1e-9 &&
+                  lastOrig.text.trim() !== '' &&
+                  newT < lastOrig.xmax - 1e-9 &&
+                  newT > lastOrig.xmin + 1e-6
+                ) {
+                  const tier = ctx.editTier(ti);
+                  if (!tier || tier.kind !== 'intervalTier') continue;
+                  const last = tier.intervals[tier.intervals.length - 1];
+                  const origMax = last.xmax;
+                  last.xmax = newT;
+                  tier.intervals.push({ xmin: newT, xmax: origMax, text: '' });
+                  changed = true;
+                }
+              }
+            } else if (origTier.kind === 'textTier') {
+              if (origTier.points.some((pt) => Math.abs(pt.number - oldT) <= 1e-9)) {
+                const tier = ctx.editTier(ti);
+                if (!tier || tier.kind !== 'textTier') continue;
+                for (const pt of tier.points) {
+                  if (Math.abs(pt.number - oldT) <= 1e-9) {
+                    pt.number = newT;
+                    changed = true;
+                  }
+                }
+                tier.points.sort((a, b) => a.number - b.number);
+              }
+            }
+          }
+        } else {
+          if (draft.xmin === oldT && newT <= draft.xmax) {
+            draft.xmin = newT;
+            changed = true;
+          }
+          if (draft.xmax === oldT && newT >= draft.xmin) {
+            draft.xmax = newT;
+            changed = true;
+          }
+          for (let ti = 0; ti < draft.tiers.length; ti++) {
+            const origTier = draft.tiers[ti];
+            const hitsBound =
+              (origTier.xmin === oldT && newT <= origTier.xmax) ||
+              (origTier.xmax === oldT && newT >= origTier.xmin);
+            const hitsItem =
+              origTier.kind === 'intervalTier'
+                ? origTier.intervals.some((iv) => iv.xmax === oldT || iv.xmin === oldT)
+                : origTier.points.some((pt) => pt.number === oldT);
+            if (!hitsBound && !hitsItem) continue;
 
-          const tier = ctx.editTier(ti);
-          if (!tier) continue;
-          if (tier.xmin === oldT && newT <= tier.xmax) {
-            tier.xmin = newT;
-            changed = true;
-          }
-          if (tier.xmax === oldT && newT >= tier.xmin) {
-            tier.xmax = newT;
-            changed = true;
-          }
-          if (tier.kind === 'intervalTier') {
-            for (const iv of tier.intervals) {
-              if (iv.xmax === oldT) {
-                iv.xmax = newT;
-                changed = true;
-              }
-              if (iv.xmin === oldT) {
-                iv.xmin = newT;
-                changed = true;
-              }
+            const tier = ctx.editTier(ti);
+            if (!tier) continue;
+            if (tier.xmin === oldT && newT <= tier.xmax) {
+              tier.xmin = newT;
+              changed = true;
             }
-          } else {
-            for (const pt of tier.points) {
-              if (pt.number === oldT) {
-                pt.number = newT;
-                changed = true;
-              }
+            if (tier.xmax === oldT && newT >= tier.xmin) {
+              tier.xmax = newT;
+              changed = true;
             }
-            tier.points.sort((a, b) => a.number - b.number);
+            if (tier.kind === 'intervalTier') {
+              for (const iv of tier.intervals) {
+                if (iv.xmax === oldT) {
+                  iv.xmax = newT;
+                  changed = true;
+                }
+                if (iv.xmin === oldT) {
+                  iv.xmin = newT;
+                  changed = true;
+                }
+              }
+            } else {
+              for (const pt of tier.points) {
+                if (pt.number === oldT) {
+                  pt.number = newT;
+                  changed = true;
+                }
+              }
+              tier.points.sort((a, b) => a.number - b.number);
+            }
           }
         }
         if (!changed) return false;
@@ -3792,5 +4631,163 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       undefined,
       meta
     );
+  },
+
+  transformAlignedBlock: (anchorTierIndex, anchorItemIndex, targetXmin, targetXmax, opts) => {
+    const st = get();
+    const anchorTier = st.tg.tiers[anchorTierIndex];
+    const anchorIv =
+      anchorTier && anchorTier.kind === 'intervalTier' ? anchorTier.intervals[anchorItemIndex] : null;
+    if (!anchorTier || !anchorIv || anchorIv.xmax <= anchorIv.xmin) {
+      return {
+        ok: false,
+        changed: false,
+        clamped: false,
+        blockerTierName: null,
+        affectedTierCount: 0,
+        finalXmin: 0,
+        finalXmax: 0,
+        reason: 'invalid-anchor'
+      };
+    }
+
+    const mode: BlockTransformMode = opts?.mode ?? 'remap';
+    const block = findAlignedBlock(
+      st.tg,
+      {
+        xmin: anchorIv.xmin,
+        xmax: anchorIv.xmax,
+        tierIndex: anchorTierIndex,
+        itemIndex: anchorItemIndex
+      },
+      st.hiddenTierIndices
+    );
+    if (!block) {
+      return {
+        ok: false,
+        changed: false,
+        clamped: false,
+        blockerTierName: null,
+        affectedTierCount: 0,
+        finalXmin: anchorIv.xmin,
+        finalXmax: anchorIv.xmax,
+        reason: 'invalid-anchor'
+      };
+    }
+
+    const safe = computeBlockSafeBounds(st.tg, block);
+    const clamped = clampBlockTargetSpan(block, safe, targetXmin, targetXmax, mode);
+    const wasClamped = clamped.clampedLeft || clamped.clampedRight || clamped.clampedMinWidth;
+
+    if (!clamped.changed) {
+      if (!opts?.silentToast) {
+        if (wasClamped && clamped.blockerTierName) {
+          st.showToast(`受「${clamped.blockerTierName}」相邻非空区间阻挡，无法移动`, true);
+        } else if (wasClamped) {
+          st.showToast('目标范围超出安全边界，无法移动', true);
+        }
+      }
+      return {
+        ok: false,
+        changed: false,
+        clamped: wasClamped,
+        blockerTierName: clamped.blockerTierName,
+        affectedTierCount: 0,
+        finalXmin: anchorIv.xmin,
+        finalXmax: anchorIv.xmax,
+        reason: wasClamped ? 'blocked' : 'no-change'
+      };
+    }
+
+    const tierCount = block.tierIndices.length;
+    const textHint = anchorIv.text ? formatQuote(anchorIv.text, 8) : '';
+    const historyType =
+      mode === 'move' ? 'move-block' : mode === 'resize' ? 'resize-block' : 'remap-block';
+    const historyTitle =
+      mode === 'move'
+        ? '跨层平移时间块'
+        : mode === 'resize'
+          ? '跨层弹性缩放'
+          : '跨层重映射到选区';
+    const historyIcon = mode === 'move' ? 'navHorizontal' : 'nudgeShared';
+    const detail =
+      mode === 'move'
+        ? `${tierCount} 层${textHint} · ${formatDeltaTime(clamped.targetXmin - block.xmin)}`
+        : `${tierCount} 层${textHint} · ${formatTimeSpan(block.xmin, block.xmax)} → ${formatTimeSpan(clamped.targetXmin, clamped.targetXmax)}`;
+
+    let appliedResult = {
+      changed: false,
+      nextAnchorItemIndex: block.anchorItemIndex,
+      affectedTierCount: 0,
+      finalXmin: clamped.targetXmin,
+      finalXmax: clamped.targetXmax
+    };
+
+    const committed = st.commitTgMutation(
+      (_draft, ctx) => {
+        appliedResult = applyBlockTransformToDraft(
+          ctx.editTier,
+          block,
+          clamped.targetXmin,
+          clamped.targetXmax
+        );
+        if (!appliedResult.changed) return false;
+        ctx.setNextSelection({
+          kind: 'interval',
+          tierIndex: block.anchorTierIndex,
+          itemIndex: appliedResult.nextAnchorItemIndex,
+          bandIndex: opts?.bandIndex ?? st.selection?.bandIndex ?? 0
+        });
+        ctx.setNextPlayRange({
+          start: appliedResult.finalXmin,
+          end: appliedResult.finalXmax
+        });
+      },
+      undefined,
+      {
+        type: historyType,
+        title: historyTitle,
+        detail,
+        icon: historyIcon,
+        tierName: formatTierLabel(anchorTier.name, anchorTierIndex),
+        focusTime: clamped.targetXmin
+      }
+    );
+
+    if (!committed) {
+      return {
+        ok: false,
+        changed: false,
+        clamped: wasClamped,
+        blockerTierName: clamped.blockerTierName,
+        affectedTierCount: 0,
+        finalXmin: anchorIv.xmin,
+        finalXmax: anchorIv.xmax,
+        reason: 'no-change'
+      };
+    }
+
+    if (!opts?.silentToast) {
+      const layerWord = `${appliedResult.affectedTierCount} 层`;
+      if (wasClamped && clamped.blockerTierName) {
+        st.showToast(
+          `受「${clamped.blockerTierName}」相邻区间阻挡，已贴合至安全范围（${layerWord}）`
+        );
+      } else if (mode === 'remap') {
+        st.showToast(
+          `已将 ${layerWord} 跨层重映射到 ${formatTimeSpan(appliedResult.finalXmin, appliedResult.finalXmax)}`
+        );
+      }
+    }
+
+    return {
+      ok: true,
+      changed: true,
+      clamped: wasClamped,
+      blockerTierName: clamped.blockerTierName,
+      affectedTierCount: appliedResult.affectedTierCount,
+      finalXmin: appliedResult.finalXmin,
+      finalXmax: appliedResult.finalXmax
+    };
   }
 }));

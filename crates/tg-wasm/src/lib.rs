@@ -1,3 +1,4 @@
+use tg_core::acoustic_split::{AcousticSplitInput, AcousticSplitParams};
 use tg_core::model::{
     CollectionFormat, CollectionItem, ContourBox, LinearSeg, SliceOptions, TextGrid,
     TextGridFormat, ZipEntryInput,
@@ -253,4 +254,22 @@ pub fn find_zero_crossing(
     max_window_sec: f64,
 ) -> Result<f64, JsValue> {
     tg_dsp::session_zero_crossing(session_id, t, max_window_sec).map_err(to_js_err)
+}
+
+#[wasm_bindgen]
+pub fn align_split_boundaries_json(samples: &[f32], params_json: &str) -> Result<String, JsValue> {
+    let params: AcousticSplitParams = serde_json::from_str(params_json).map_err(to_js_err)?;
+    let input = AcousticSplitInput {
+        samples,
+        sample_rate: params.sample_rate,
+        samples_origin_sec: params.samples_origin_sec,
+        xmin: params.xmin,
+        xmax: params.xmax,
+        granularity: params.granularity,
+        duration_weights: &params.duration_weights,
+        acoustic_classes: &params.acoustic_classes,
+        f0_frames: params.f0_frames.as_deref(),
+    };
+    let out = tg_core::align_split_boundaries(&input);
+    serde_json::to_string(&out).map_err(to_js_err)
 }

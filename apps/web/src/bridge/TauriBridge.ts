@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
+  AcousticSplitParams,
+  AcousticSplitResult,
   AudioAnalysisSummary,
   AudioSummary,
   CollectionFormat,
@@ -257,6 +259,16 @@ export class TauriBridge implements PlatformBridge {
 
   async findZeroCrossing(sessionId: number, t: number, maxWindowSec: number): Promise<number> {
     return invoke<number>('find_zero_crossing', { sessionId, t, maxWindowSec });
+  }
+
+  async alignSplitBoundaries(
+    samples: Float32Array,
+    params: AcousticSplitParams
+  ): Promise<AcousticSplitResult> {
+    return invoke<AcousticSplitResult>('align_split_boundaries', {
+      samples: Array.from(samples),
+      params
+    });
   }
 
   async openNativeFileDialog(

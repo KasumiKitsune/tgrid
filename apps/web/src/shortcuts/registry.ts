@@ -245,6 +245,14 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         scope: 'edit'
       },
       {
+        id: 'remap-block-to-playrange',
+        keys: ['Shift+I'],
+        label: '将选中标注块跨层重映射到当前选区',
+        description: '语谱图框选真实发音后，一键平移并按比例缩放对齐层及内部子边界',
+        icon: 'nudgeShared',
+        scope: 'edit'
+      },
+      {
         id: 'select-left-edge',
         keys: ['['],
         label: '选中当前区间的左边界',
@@ -651,6 +659,27 @@ export const MOUSE_GESTURE_TIPS: MouseGestureTip[] = [
     gesture: 'Shift + 拖拽边界',
     label: '跨层联动平移对齐边界',
     description: '同步移动所有对齐层上该时刻的边界与标点',
+    scope: 'edit'
+  },
+  {
+    id: 'mod-click-multi-select',
+    gesture: 'Mod + 单击区间',
+    label: '复选多个区间（支持同层 / 跨层）',
+    description: '轻点切换复选状态，按所选拓扑自动提供合并、批量清空、边界对齐或同步移动；按 Esc 退出复选',
+    scope: 'edit'
+  },
+  {
+    id: 'mod-drag-block-move',
+    gesture: 'Mod + 拖拽非空区间',
+    label: '跨层整块平移对齐区间与子层',
+    description: '连同对齐层、嵌套子区间及区间内标点同步平移，遇相邻非空区间自动硬停',
+    scope: 'edit'
+  },
+  {
+    id: 'mod-drag-block-resize',
+    gesture: 'Mod + 拖拽边界',
+    label: '跨层弹性缩放（子边界按比例跟随）',
+    description: '固定对侧边界拉伸或压缩整块（含贴首尾边界向内收缩），内部嵌套子边界按比例重排',
     scope: 'edit'
   },
   {

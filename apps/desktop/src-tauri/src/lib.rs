@@ -1,3 +1,4 @@
+use tg_core::acoustic_split::{AcousticSplitInput, AcousticSplitOutput, AcousticSplitParams};
 use tg_core::model::{
     CollectionFormat, CollectionItem, ContourBox, ContourPath, EngineInfo, IpaCandidate,
     IpaConvertResult, IpaSymbolInfo, LinearSeg, ParsedDocument, PraatMatch, SliceOptions, TextGrid,
@@ -202,6 +203,22 @@ fn find_zero_crossing(
     max_window_sec: f64,
 ) -> Result<f64, String> {
     tg_dsp::session_zero_crossing(session_id, t, max_window_sec).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn align_split_boundaries(samples: Vec<f32>, params: AcousticSplitParams) -> AcousticSplitOutput {
+    let input = AcousticSplitInput {
+        samples: &samples,
+        sample_rate: params.sample_rate,
+        samples_origin_sec: params.samples_origin_sec,
+        xmin: params.xmin,
+        xmax: params.xmax,
+        granularity: params.granularity,
+        duration_weights: &params.duration_weights,
+        acoustic_classes: &params.acoustic_classes,
+        f0_frames: params.f0_frames.as_deref(),
+    };
+    tg_core::align_split_boundaries(&input)
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -876,6 +893,7 @@ pub fn run() {
             compute_band_contours,
             compute_waveform_path,
             find_zero_crossing,
+            align_split_boundaries,
             scan_corpus_dir,
             read_local_file,
             read_local_file_if_exists,
