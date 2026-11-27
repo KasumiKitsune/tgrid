@@ -11,6 +11,7 @@ import {
   BAUHAUS_R_WAVE1,
   BAUHAUS_START_DEG,
   BAUHAUS_TOTAL_DEG,
+  POSTER_DISPLAY_SANS_STACK,
   POSTER_IPA_STACK,
   POSTER_MONO_STACK,
   POSTER_SANS_STACK,
@@ -768,10 +769,10 @@ export function renderBauhausPosterSvg(params: RenderBauhausParams): {
       `<rect x="${tx0 + 84}" y="50" width="12" height="6.5" fill="${PAL.blue}"/>`,
       `<text x="844" y="53.5" font-family="${escapeXml(POSTER_SANS_STACK)}" font-size="7.6" font-weight="700" letter-spacing="0.6" fill="${PAL.muted}" text-anchor="end" dominant-baseline="central">${escapeXml(autoCopy.sideLabel)}</text>`,
       // Monumental SPRACHE / KLANG lockup
-      `<text x="${tx0 - 2}" y="106" font-family="${escapeXml(POSTER_SANS_STACK)}" font-size="52" font-weight="900" letter-spacing="-1.4" fill="${PAL.ink}">SPRACHE</text>`,
-      `<text x="${tx0 + 26}" y="157" font-family="${escapeXml(POSTER_SANS_STACK)}" font-size="50" font-weight="900" letter-spacing="-1.0" fill="${PAL.red}">KLANG</text>`,
+      `<text x="${tx0 - 2}" y="106" font-family="${escapeXml(POSTER_DISPLAY_SANS_STACK)}" font-size="52" font-weight="900" letter-spacing="-1.4" fill="${PAL.ink}">SPRACHE</text>`,
+      `<text x="${tx0 + 26}" y="157" font-family="${escapeXml(POSTER_DISPLAY_SANS_STACK)}" font-size="50" font-weight="900" letter-spacing="-1.0" fill="${PAL.red}">KLANG</text>`,
       `<rect x="${tx0}" y="126" width="18" height="33" fill="${PAL.ink}"/>`,
-      `<text x="${tx0 + 9}" y="142.5" font-family="${escapeXml(POSTER_SANS_STACK)}" font-size="9.5" font-weight="900" fill="${PAL.paperHi}" text-anchor="middle" dominant-baseline="central">${badgeNum}</text>`,
+      `<text x="${tx0 + 9}" y="142.5" font-family="${escapeXml(POSTER_DISPLAY_SANS_STACK)}" font-size="9.5" font-weight="900" fill="${PAL.paperHi}" text-anchor="middle" dominant-baseline="central">${badgeNum}</text>`,
       `<text x="${tx0}" y="191" font-family="${escapeXml(POSTER_SANS_STACK)}" font-size="16" font-weight="700" letter-spacing="1.4" fill="${PAL.ink}">${escapeXml(truncateByGraphemes(titleStr, 360, `700 16px ${POSTER_SANS_STACK}`))}</text>`,
       `<text x="${tx0}" y="212" font-family="${escapeXml(POSTER_SANS_STACK)}" font-size="8.8" font-weight="500" fill="#5E574D">${escapeXml(truncateByGraphemes(subStr, 430, `500 8.8px ${POSTER_SANS_STACK}`))}</text>`
     );

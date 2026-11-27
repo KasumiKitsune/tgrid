@@ -293,6 +293,7 @@ export const AboutModal: React.FC = () => {
               </p>
               <div className="about-meta-links">
                 <span className="about-license-tag">MIT 开源协议</span>
+                <span className="about-license-tag">内置音标字库 · SIL OFL 1.1</span>
                 {!isDesktop && (
                   <a
                     href="./guide.html"

@@ -1,6 +1,7 @@
 import type { TextGrid } from '../../bridge/types';
 import { measurePx } from '../../layout/richText';
 import {
+  POSTER_DISPLAY_SANS_STACK,
   POSTER_IPA_STACK,
   POSTER_MONO_STACK,
   POSTER_SANS_STACK,
@@ -723,7 +724,7 @@ export function renderVinylPosterSvg(params: RenderVinylParams): {
     });
 
   const acceptedDegs: number[] = [];
-  const minTickSep = 8.0;
+  const minTickSep = 10.5;
   for (const item of [...tickItems].sort((a, b) => b.prio - a.prio || a.deg - b.deg)) {
     if (item.t > layout.tMin + 1e-7 && item.t - layout.tMin < 0.02 && item.prio < 5) continue;
     if (item.prio < 5 && hitsAnyPointRay(item.deg)) continue;
@@ -822,8 +823,8 @@ export function renderVinylPosterSvg(params: RenderVinylParams): {
     // Top-right metadata + Swiss title lockup
     edParts.push(
       `<text x="${fmtNum(trimW - marginX)}" y="72" font-family="${escapeXml(POSTER_MONO_STACK)}" font-size="7.8" letter-spacing="1.6" fill="${COL.dim}" text-anchor="end">${escapeXml(autoCopy.sideLabel)}</text>`,
-      `<text x="${fmtNum(marginX - 2)}" y="96" font-family="${escapeXml(POSTER_SANS_STACK)}" font-size="49" font-weight="800" letter-spacing="-1.6" fill="${COL.ink}">ANATOMY OF</text>`,
-      `<text x="${fmtNum(marginX - 2)}" y="146" font-family="${escapeXml(POSTER_SANS_STACK)}" font-size="49" font-weight="800" letter-spacing="-1.6" fill="${COL.ink}">A VOICE</text>`,
+      `<text x="${fmtNum(marginX - 2)}" y="96" font-family="${escapeXml(POSTER_DISPLAY_SANS_STACK)}" font-size="49" font-weight="800" letter-spacing="-1.6" fill="${COL.ink}">ANATOMY OF</text>`,
+      `<text x="${fmtNum(marginX - 2)}" y="146" font-family="${escapeXml(POSTER_DISPLAY_SANS_STACK)}" font-size="49" font-weight="800" letter-spacing="-1.6" fill="${COL.ink}">A VOICE</text>`,
       `<text x="${fmtNum(marginX + 216)}" y="144" font-family="${escapeXml(POSTER_SANS_STACK)}" font-size="19.5" font-weight="500" letter-spacing="1.1" fill="${COL.red}">${escapeXml(truncateByGraphemes(titleStr, 540, `500 19.5px ${POSTER_SANS_STACK}`))}</text>`,
       `<text x="${fmtNum(marginX)}" y="180" font-family="${escapeXml(POSTER_SANS_STACK)}" font-size="10.4" fill="#5A534B">${escapeXml(truncateByGraphemes(subStr, trimW - 2 * marginX, `400 10.4px ${POSTER_SANS_STACK}`))}</text>`
     );

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { getPlatformBridge } from '../bridge/PlatformBridge';
 import type { AudioAnalysisSummary } from '../bridge/types';
+import { MONO_FONT_STACK } from '../layout/richText';
 import { getElementRectScale } from '../utils/uiScale';
 
 export interface MicroLoupeAnchor {
@@ -216,7 +217,7 @@ export const AcousticMicroLoupe: React.FC<AcousticMicroLoupeProps> = ({
         // Subtle corner scale micro-tags (2x HiDPI)
         const drawScalePill = (label: string, topY: number) => {
           ctx.save();
-          ctx.font = '18px "JetBrains Mono", Consolas, monospace';
+          ctx.font = `18px ${MONO_FONT_STACK}`;
           const pillW = Math.ceil(ctx.measureText(label).width) + 12;
           const pillH = 24;
           const px = W - pillW - 6;

@@ -84,6 +84,9 @@ export interface RenderScoreExportContext {
   palette: ScorePalette;
   transparentBg: boolean;
   fontFamily: string;
+  sansFontFamily?: string;
+  monoFontFamily?: string;
+  symbolFontFamily?: string;
   fontScale: number;
   strokeScale: number;
   trigraphMode: 'ipa-only' | 'dual' | 'raw-only';
@@ -159,21 +162,35 @@ function renderRichTextSVG(
   y: number,
   align: 'start' | 'middle' | 'end',
   fontSize: number,
-  styleOpts: { isExport: boolean; fontFamily: string; palette: ScorePalette; fontScale: number } | null
+  styleOpts: {
+    isExport: boolean;
+    fontFamily: string;
+    monoFontFamily?: string;
+    symbolFontFamily?: string;
+    palette: ScorePalette;
+    fontScale: number;
+  } | null,
+  textScale = 1
 ): void {
   if (!rich) return;
   const isExport = Boolean(styleOpts?.isExport);
   const fontFamily = styleOpts?.fontFamily || IPA_FONT_STACK;
+  const monoFamily = styleOpts?.monoFontFamily || MONO_FONT_STACK;
+  const symbolFamily = styleOpts?.symbolFontFamily || SYMBOL_FONT_STACK;
   const pal = styleOpts?.palette || WARM_PALETTE;
-  const fScale = styleOpts?.fontScale || 1;
+  const baseScale = styleOpts?.fontScale || 1;
+  const fScale = baseScale * textScale;
   const effSize = Number((fontSize * fScale).toFixed(2));
-  const glossSize = Number((9.5 * fScale).toFixed(2));
-  const glossRawSize = Number((9 * fScale).toFixed(2));
+  const glossSize = Number((11.2 * fScale).toFixed(2));
+  const glossRawSize = Number((10.2 * fScale).toFixed(2));
+  const ctrlSize = Number((9.5 * fScale).toFixed(2));
   const textWrap = svgEl('g', isExport ? {} : { 'data-text-node': '1' }, parent);
   let curY = y;
 
   const glossLines = rich.glossLines?.length ? rich.glossLines : rich.gloss ? [rich.gloss] : [];
-  const glossLineH = rich.glossLineH || Math.round(12.5 * fScale);
+  const glossLineH =
+    (rich.glossLineH || Math.round((rich.glossIsRaw ? 14 : 15) * baseScale)) * textScale;
+  const effLineH = rich.lineH * textScale;
 
   if (glossLines.length > 0 && !rich.glossIsRaw) {
     for (const gl of glossLines) {
@@ -181,11 +198,10 @@ function renderRichTextSVG(
         'text',
         {
           x,
-          y: curY + Math.round(9 * fScale),
+          y: curY + Math.round(11 * fScale),
           'text-anchor': align,
           'font-family': fontFamily,
           'font-size': String(glossSize),
-          'font-style': 'italic',
           fill: pal.gloss,
           ...(isExport ? {} : { 'data-legend-keys': 'trigraph' })
         },
@@ -194,7 +210,7 @@ function renderRichTextSVG(
       gt.textContent = gl;
       curY += glossLineH;
     }
-    curY += Math.round(1 * fScale);
+    curY += Math.round(3 * fScale);
   }
 
   for (const line of rich.lines) {
@@ -220,32 +236,33 @@ function renderRichTextSVG(
       if (tok.kind === 'text') ts.setAttribute('fill', pal.ink);
       else if (tok.kind === 'wrap') {
         ts.setAttribute('fill', pal.isBw ? pal.meta : pal.faint);
-        ts.setAttribute('font-family', SYMBOL_FONT_STACK);
+        ts.setAttribute('font-family', symbolFamily);
         ts.setAttribute('font-size', String(Number((effSize - 1.5).toFixed(2))));
       } else if (tok.kind === 'ctrl') {
         ts.setAttribute('fill', pal.ctrl);
-        ts.setAttribute('font-family', MONO_FONT_STACK);
-        ts.setAttribute('font-size', String(glossSize));
+        ts.setAttribute('font-family', monoFamily);
+        ts.setAttribute('font-size', String(ctrlSize));
       } else {
         ts.setAttribute('fill', pal.meta);
-        ts.setAttribute('font-family', SYMBOL_FONT_STACK);
+        ts.setAttribute('font-family', symbolFamily);
       }
     }
-    curY += rich.lineH;
+    curY += effLineH;
   }
 
   if (glossLines.length > 0 && rich.glossIsRaw) {
+    curY += Math.round(2 * fScale);
     for (const gl of glossLines) {
       const gt = svgEl(
         'text',
         {
           x,
-          y: curY + Math.round(9 * fScale),
+          y: curY + Math.round(10.5 * fScale),
           'text-anchor': align,
-          'font-family': MONO_FONT_STACK,
+          'font-family': monoFamily,
           'font-size': String(glossRawSize),
           fill: pal.gloss,
-          opacity: '0.78',
+          opacity: '0.88',
           ...(isExport ? {} : { 'data-legend-keys': 'trigraph' })
         },
         textWrap
@@ -1142,7 +1159,19 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
   const fScale = exportCtx?.fontScale || 1;
   const sScale = exportCtx?.strokeScale || 1;
   const fontFamily = exportCtx?.fontFamily || IPA_FONT_STACK;
-  const richStyle = isExp ? { isExport: true, fontFamily, palette: pal, fontScale: fScale } : null;
+  const sansFont = exportCtx?.sansFontFamily || SANS_FONT_STACK;
+  const monoFont = exportCtx?.monoFontFamily || MONO_FONT_STACK;
+  const symbolFont = exportCtx?.symbolFontFamily || SYMBOL_FONT_STACK;
+  const richStyle = isExp
+    ? {
+        isExport: true,
+        fontFamily,
+        monoFontFamily: monoFont,
+        symbolFontFamily: symbolFont,
+        palette: pal,
+        fontScale: fScale
+      }
+    : null;
   const sw = (v: number) => Number((v * sScale).toFixed(2));
   const fs = (v: number) => String(Number((v * fScale).toFixed(2)));
   const safeId = (s: string) =>
@@ -1186,8 +1215,8 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
     const capY = layout.padTop + 12;
     const leftX = layout.padX;
     const rightX = layout.width - layout.padX;
-    svgEl('text', { x: leftX, y: capY, 'text-anchor': 'start', 'font-family': SANS_FONT_STACK, 'font-size': fs(12), 'font-weight': '600', fill: pal.ink }, capG).textContent = exportCtx.captionTitle;
-    svgEl('text', { x: rightX, y: capY, 'text-anchor': 'end', 'font-family': MONO_FONT_STACK, 'font-size': fs(10), fill: pal.muted }, capG).textContent = exportCtx.captionTimeText;
+    svgEl('text', { x: leftX, y: capY, 'text-anchor': 'start', 'font-family': sansFont, 'font-size': fs(12), 'font-weight': '600', fill: pal.ink }, capG).textContent = exportCtx.captionTitle;
+    svgEl('text', { x: rightX, y: capY, 'text-anchor': 'end', 'font-family': monoFont, 'font-size': fs(10), fill: pal.muted }, capG).textContent = exportCtx.captionTimeText;
     svgEl('line', { x1: leftX, y1: capY + 6, x2: rightX, y2: capY + 6, stroke: pal.rule, 'stroke-width': sw(0.75) }, capG);
   }
 
@@ -1433,8 +1462,8 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
       const axisG = svgEl('g', isExp && sem ? { id: `band-${bNum}-axis` } : {}, bG);
       svgEl('line', { x1: band.originX - 3, y1: band.specY + 0.5, x2: band.originX, y2: band.specY + 0.5, stroke: pal.muted, 'stroke-width': sw(0.9) }, axisG);
       svgEl('line', { x1: band.originX - 3, y1: band.specY + band.specH - 0.5, x2: band.originX, y2: band.specY + band.specH - 0.5, stroke: pal.muted, 'stroke-width': sw(0.9) }, axisG);
-      svgEl('text', { x: band.originX - 5.5, y: band.specY + 7, 'text-anchor': 'end', 'font-family': MONO_FONT_STACK, 'font-size': fs(8.5), fill: pal.muted }, axisG).textContent = compactAxis ? `${maxFreq / 1000}k` : `${maxFreq / 1000} kHz`;
-      svgEl('text', { x: band.originX - 5.5, y: band.specY + band.specH - 1, 'text-anchor': 'end', 'font-family': MONO_FONT_STACK, 'font-size': fs(8.5), fill: pal.muted }, axisG).textContent = compactAxis ? '0' : '0 Hz';
+      svgEl('text', { x: band.originX - 5.5, y: band.specY + 7, 'text-anchor': 'end', 'font-family': monoFont, 'font-size': fs(8.5), fill: pal.muted }, axisG).textContent = compactAxis ? `${maxFreq / 1000}k` : `${maxFreq / 1000} kHz`;
+      svgEl('text', { x: band.originX - 5.5, y: band.specY + band.specH - 1, 'text-anchor': 'end', 'font-family': monoFont, 'font-size': fs(8.5), fill: pal.muted }, axisG).textContent = compactAxis ? '0' : '0 Hz';
 
       // F0 Range Readout
       if (analysis && band.bandContentW >= 90 && (!isExp || pitchOpacity > 0.001)) {
@@ -1443,7 +1472,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
           ? Math.max(f0Floor + 25, input.f0RangeOverride.ceil)
           : Math.max(f0Floor + 50, analysis.f0Ceil || 500);
         const f0Lbl = `F0 ${Math.round(f0Floor)}–${Math.round(f0Ceil)} Hz`;
-        const f0LblW = Math.ceil(measurePx(f0Lbl, `${(8.5 * fScale).toFixed(1)}px ${MONO_FONT_STACK}`)) + 8;
+        const f0LblW = Math.ceil(measurePx(f0Lbl, `${(8.5 * fScale).toFixed(1)}px ${monoFont}`)) + 8;
         const f0BoxX = band.originX + band.bandContentW - f0LblW - 4;
         const f0BoxY = band.specY + 4;
         const f0AxisG = svgEl(
@@ -1456,7 +1485,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
           specG
         );
         svgEl('rect', { x: f0BoxX, y: f0BoxY, width: f0LblW, height: Math.round(13 * fScale), fill: pal.paper, 'fill-opacity': '0.88', stroke: pal.pitch, 'stroke-opacity': '0.28', 'stroke-width': '0.6' }, f0AxisG);
-        svgEl('text', { x: f0BoxX + f0LblW - 4, y: f0BoxY + Math.round(9.5 * fScale), 'text-anchor': 'end', 'font-family': MONO_FONT_STACK, 'font-size': fs(8.5), fill: pal.pitch }, f0AxisG).textContent = f0Lbl;
+        svgEl('text', { x: f0BoxX + f0LblW - 4, y: f0BoxY + Math.round(9.5 * fScale), 'text-anchor': 'end', 'font-family': monoFont, 'font-size': fs(8.5), fill: pal.pitch }, f0AxisG).textContent = f0Lbl;
       }
 
       // 1:1 Anchor Strip
@@ -1541,7 +1570,8 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
         fScale,
         isExp,
         sem,
-        bNum
+        bNum,
+        sansFontFamily: sansFont
       });
     }
 
@@ -1739,7 +1769,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             y: band.tiersTopY - 8,
             transform: `rotate(-52, ${col.x + 1}, ${band.tiersTopY - 8})`,
             'text-anchor': 'start',
-            'font-family': MONO_FONT_STACK,
+            'font-family': monoFont,
             'font-size': fs(10.5),
             ...(!transparentBg
               ? {
@@ -1804,7 +1834,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             y: band.tiersTopY - 8,
             transform: `rotate(-52, ${ptTick.x + 1}, ${band.tiersTopY - 8})`,
             'text-anchor': 'start',
-            'font-family': MONO_FONT_STACK,
+            'font-family': monoFont,
             'font-size': fs(9.5),
             fill: pal.muted,
             ...(!transparentBg
@@ -1910,7 +1940,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
       const numRightX = hb.x + (layout.isTinyView ? 14 : 20);
       svgEl('text', {
         x: numRightX, y: midY + 4, 'text-anchor': 'end',
-        'font-family': MONO_FONT_STACK, 'font-size': fs(layout.isTinyView ? 9.5 : 10.5), fill: pal.mutedAlt
+        'font-family': monoFont, 'font-size': fs(layout.isTinyView ? 9.5 : 10.5), fill: pal.mutedAlt
       }, hdrG).textContent = String(displayNum);
 
       const gx = hb.x + (layout.isTinyView ? 19 : 27);
@@ -1930,7 +1960,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
         if (tier.name === '') {
           if (!hideMeta) {
             svgEl('text', {
-              x: nameX, y: midY + 4, 'font-family': SYMBOL_FONT_STACK, 'font-size': fs(isPrimaryBand ? 11.5 : 10.5), fill: pal.meta, opacity: isPrimaryBand ? '1' : '0.75',
+              x: nameX, y: midY + 4, 'font-family': symbolFont, 'font-size': fs(isPrimaryBand ? 11.5 : 10.5), fill: pal.meta, opacity: isPrimaryBand ? '1' : '0.75',
               ...(isExp ? {} : { 'data-legend-keys': 'meta-symbols' })
             }, nameWrap).textContent = '∅';
           }
@@ -1939,7 +1969,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
           const nameFont = `500 ${namePxSize.toFixed(2)}px ${SANS_FONT_STACK}`;
           const displayName = truncateTierNameMiddle(tier.name, maxNameW, nameFont);
           svgEl('text', {
-            x: nameX, y: midY + 4, 'font-family': SANS_FONT_STACK,
+            x: nameX, y: midY + 4, 'font-family': sansFont,
             'font-size': String(Number(namePxSize.toFixed(2))), 'font-weight': '500',
             fill: isPrimaryBand ? pal.ink : pal.muted
           }, nameWrap).textContent = displayName;
@@ -2027,29 +2057,29 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
                   const my = ly + lh / 2;
                   const cpTarget = isExp ? ivG : svgEl('g', { 'data-legend-keys': 'collapsed-pause', 'pointer-events': 'none' }, ivG);
                   const durStr = formatSilenceDur(ct1 - ct0);
-                  const durFont = `${(9 * fScale).toFixed(2)}px ${MONO_FONT_STACK}`;
+                  const durFont = `${(9 * fScale).toFixed(2)}px ${monoFont}`;
                   const txtW = measurePx(durStr, durFont);
                   const slashW = 8;
                   const gap = 3;
                   if (colW >= slashW + gap + txtW + 6) {
                     const startX = mx - (slashW + gap + txtW) / 2;
-                    svgEl('line', { x1: startX, y1: my + 4.5, x2: startX + 3, y2: my - 4.5, stroke: pal.anchorStroke, 'stroke-width': sw(1) }, cpTarget);
-                    svgEl('line', { x1: startX + 4.5, y1: my + 4.5, x2: startX + 7.5, y2: my - 4.5, stroke: pal.anchorStroke, 'stroke-width': sw(1) }, cpTarget);
+                    svgEl('line', { x1: startX, y1: my + 4.5, x2: startX + 3, y2: my - 4.5, stroke: pal.mutedAlt, 'stroke-width': sw(1) }, cpTarget);
+                    svgEl('line', { x1: startX + 4.5, y1: my + 4.5, x2: startX + 7.5, y2: my - 4.5, stroke: pal.mutedAlt, 'stroke-width': sw(1) }, cpTarget);
                     svgEl(
                       'text',
                       {
                         x: startX + slashW + gap,
                         y: my + 3.1 * fScale,
                         'text-anchor': 'start',
-                        'font-family': MONO_FONT_STACK,
+                        'font-family': monoFont,
                         'font-size': fs(9),
                         fill: pal.mutedAlt
                       },
                       cpTarget
                     ).textContent = durStr;
                   } else {
-                    svgEl('line', { x1: mx - 4, y1: my + 5, x2: mx - 0.5, y2: my - 5, stroke: pal.anchorStroke, 'stroke-width': sw(1) }, cpTarget);
-                    svgEl('line', { x1: mx + 1.5, y1: my + 5, x2: mx + 5, y2: my - 5, stroke: pal.anchorStroke, 'stroke-width': sw(1) }, cpTarget);
+                    svgEl('line', { x1: mx - 4, y1: my + 5, x2: mx - 0.5, y2: my - 5, stroke: pal.mutedAlt, 'stroke-width': sw(1) }, cpTarget);
+                    svgEl('line', { x1: mx + 1.5, y1: my + 5, x2: mx + 5, y2: my - 5, stroke: pal.mutedAlt, 'stroke-width': sw(1) }, cpTarget);
                   }
                 }
               }
@@ -2063,9 +2093,9 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
                       x: vi.x0 + vi.w / 2,
                       y: ly + lh / 2 + 3.2 * fScale,
                       'text-anchor': 'middle',
-                      'font-family': MONO_FONT_STACK,
+                      'font-family': monoFont,
                       'font-size': fs(9.5),
-                      fill: pal.faintTick,
+                      fill: pal.mutedAlt,
                       ...(isExp ? {} : { 'pointer-events': 'none' })
                     },
                     ivG
@@ -2079,7 +2109,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             } else {
               const tieY = ly + lh / 2;
               const contTarget = isExp ? ivG : svgEl('g', { 'data-legend-keys': 'continuation', 'pointer-events': 'none' }, ivG);
-              svgEl('polygon', { points: `${vi.x0},${tieY - 3.5} ${vi.x0 + 5},${tieY} ${vi.x0},${tieY + 3.5}`, fill: pal.mutedAlt }, contTarget);
+              svgEl('polygon', { points: `${vi.x0},${tieY - 3.5} ${vi.x0 + 5},${tieY} ${vi.x0},${tieY + 3.5}`, fill: pal.muted }, contTarget);
               let renderedGhost = false;
               if (!isEmpty && vi.w >= 34) {
                 const availGhostW = vi.w - (vi.clippedRight ? 22 : 16);
@@ -2099,16 +2129,16 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
                 }
                 const ghostW = measurePx(ghostStr, ghostFont);
                 if (ghostW <= availGhostW + 2) {
-                  svgEl('text', { x: vi.x0 + 8.5, y: tieY + 4, 'text-anchor': 'start', 'font-family': fontFamily, 'font-size': fs(11), 'font-style': 'italic', fill: pal.faint }, contTarget).textContent = ghostStr;
+                  svgEl('text', { x: vi.x0 + 8.5, y: tieY + 4, 'text-anchor': 'start', 'font-family': fontFamily, 'font-size': fs(11), 'font-style': 'italic', fill: pal.muted }, contTarget).textContent = ghostStr;
                   const railStart = vi.x0 + 8.5 + ghostW + 6;
                   const railEnd = vi.x1 - (vi.clippedRight ? 9 : 6);
-                  if (railEnd - railStart >= 10) svgEl('line', { x1: railStart, y1: tieY, x2: railEnd, y2: tieY, stroke: pal.rule, 'stroke-width': sw(0.85), 'stroke-dasharray': '2 2' }, contTarget);
+                  if (railEnd - railStart >= 10) svgEl('line', { x1: railStart, y1: tieY, x2: railEnd, y2: tieY, stroke: pal.anchorStroke, 'stroke-width': sw(0.85), 'stroke-dasharray': '2 2' }, contTarget);
                   renderedGhost = true;
                 }
               }
               if (!renderedGhost) {
-                svgEl('line', { x1: vi.x0 + 2, y1: tieY - 1.5, x2: vi.x1 - 6, y2: tieY - 1.5, stroke: pal.faintTick, 'stroke-width': sw(0.9) }, contTarget);
-                svgEl('line', { x1: vi.x0 + 2, y1: tieY + 1.5, x2: vi.x1 - 6, y2: tieY + 1.5, stroke: pal.faintTick, 'stroke-width': sw(0.9) }, contTarget);
+                svgEl('line', { x1: vi.x0 + 2, y1: tieY - 1.5, x2: vi.x1 - 6, y2: tieY - 1.5, stroke: pal.faint, 'stroke-width': sw(0.9) }, contTarget);
+                svgEl('line', { x1: vi.x0 + 2, y1: tieY + 1.5, x2: vi.x1 - 6, y2: tieY + 1.5, stroke: pal.faint, 'stroke-width': sw(0.9) }, contTarget);
               }
             }
 
@@ -2117,7 +2147,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             } else {
               const tieY = ly + lh / 2;
               svgEl('polygon', {
-                points: `${vi.x1 - 5},${tieY - 3.5} ${vi.x1},${tieY} ${vi.x1 - 5},${tieY + 3.5}`, fill: pal.mutedAlt,
+                points: `${vi.x1 - 5},${tieY - 3.5} ${vi.x1},${tieY} ${vi.x1 - 5},${tieY + 3.5}`, fill: pal.muted,
                 ...(isExp ? {} : { 'data-legend-keys': 'continuation', 'pointer-events': 'none' })
               }, ivG);
             }
@@ -2136,16 +2166,30 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
                 }
               }
               const textAvailW = Math.max(8, vi.w - leftInset - rightInset);
-              const textCenterX = vi.x0 + leftInset + textAvailW / 2;
-              const needsClip = layout.scaleMode === 'linear' || vi.rich.width > textAvailW - 4;
+              const safeSidePad = textAvailW >= 22 ? 6 : Math.max(2.5, textAvailW * 0.16);
+              const padL = leftInset > 0 ? 2 : safeSidePad;
+              const padR = rightInset > 0 ? 2 : safeSidePad;
+              const innerAvailW = Math.max(5, textAvailW - padL - padR);
+              const textCenterX = vi.x0 + leftInset + padL + innerAvailW / 2;
+              const fitScale =
+                vi.rich.width > innerAvailW
+                  ? Math.max(0.72, Math.min(1, innerAvailW / vi.rich.width))
+                  : 1;
+              const drawY = ly + (lh - vi.rich.height * fitScale) / 2 + 1;
+              const needsClip = layout.scaleMode === 'linear' || vi.rich.width * fitScale > innerAvailW + 0.5;
               if (needsClip) {
                 const cid = `${pfx}ivc-${band.bandIndex}-${ti}-${ivClipCounter++}`;
                 const icp = svgEl('clipPath', { id: cid }, defs);
-                svgEl('rect', { x: vi.x0 + Math.max(1, leftInset), y: ly + 1, width: Math.max(1, textAvailW - 2), height: Math.max(1, lh - 2) }, icp);
+                svgEl('rect', {
+                  x: vi.x0 + Math.max(1, leftInset + padL - 0.5),
+                  y: ly + 1,
+                  width: Math.max(1, innerAvailW + 1),
+                  height: Math.max(1, lh - 2)
+                }, icp);
                 const clipWrap = svgEl('g', { 'clip-path': `url(#${cid})` }, ivG);
-                renderRichTextSVG(clipWrap, vi.rich, textCenterX, ly + (lh - vi.rich.height) / 2 + 1, 'middle', 12.5, richStyle);
+                renderRichTextSVG(clipWrap, vi.rich, textCenterX, drawY, 'middle', 12.5, richStyle, fitScale);
               } else {
-                renderRichTextSVG(ivG, vi.rich, textCenterX, ly + (lh - vi.rich.height) / 2 + 1, 'middle', 12.5, richStyle);
+                renderRichTextSVG(ivG, vi.rich, textCenterX, drawY, 'middle', 12.5, richStyle, fitScale);
               }
             }
           }
@@ -2288,13 +2332,21 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
       svgEl('line', { x1: xLeft, y1: yMid, x2: xRight, y2: yMid, stroke: pal.ink, 'stroke-width': sw(1.1) }, sbG);
       svgEl('line', { x1: xLeft, y1: yMid - 3.5, x2: xLeft, y2: yMid + 3.5, stroke: pal.ink, 'stroke-width': sw(1.1) }, sbG);
       svgEl('line', { x1: xRight, y1: yMid - 3.5, x2: xRight, y2: yMid + 3.5, stroke: pal.ink, 'stroke-width': sw(1.1) }, sbG);
-      svgEl('text', { x: xLeft - 6, y: yMid + 3.5, 'text-anchor': 'end', 'font-family': MONO_FONT_STACK, 'font-size': fs(9.5), fill: pal.muted }, sbG).textContent = spec.label;
+      svgEl('text', { x: xLeft - 6, y: yMid + 3.5, 'text-anchor': 'end', 'font-family': monoFont, 'font-size': fs(9.5), fill: pal.muted }, sbG).textContent = spec.label;
     }
   }
 
   // Tier 2: Embedded Bottom Legend Bar
   if (isExp && layout.legendLayout) {
-    renderEmbeddedLegendSVG(svg, layout.legendLayout, { pal, sScale, idPrefix: pfx });
+    renderEmbeddedLegendSVG(svg, layout.legendLayout, {
+      pal,
+      sScale,
+      idPrefix: pfx,
+      sansFontFamily: sansFont,
+      ipaFontFamily: fontFamily,
+      monoFontFamily: monoFont,
+      symbolFontFamily: symbolFont
+    });
   }
 
   // Tail embedded spectrogram <defs>

@@ -1,10 +1,11 @@
 import type { TextGrid, Tier } from '../../bridge/types';
 import { measurePx, splitGraphemes } from '../../layout/richText';
 import {
+  IPA_CHAR_RE,
+  POSTER_CJK_SERIF_STACK,
   POSTER_IPA_STACK,
   POSTER_MONO_STACK,
   POSTER_SANS_STACK,
-  POSTER_SERIF_STACK,
   countActiveIntervals,
   escapeXml,
   fmtNum,
@@ -77,7 +78,6 @@ const POINT_PIGMENT_CYCLE = [PAL.sealRed, PAL.bambooMid, PAL.jadeRim, PAL.inkDee
 
 const COMBINING_RE = /\p{M}/gu;
 const CJK_RE = /[\u3400-\u9fff\uf900-\ufaff\u3000-\u303f\uff00-\uffef]/g;
-const IPA_GLYPH_RE = /[\u0250-\u02AF\u02B0-\u02FF\u0300-\u036F\u1D00-\u1DBF]/;
 
 interface FanRingStyle {
   swatchFill: string;
@@ -403,8 +403,8 @@ function buildFanDualScaleMap(intervalTiers: Tier[], tMin: number, tMax: number)
         const units = visualBaseUnits(txt);
         const neededPx =
           units <= 3.1
-            ? Math.max(25.0, units * fontSize + 12)
-            : Math.min(rMid * spanRad * 0.76, units * fontSize * 0.98 + 22);
+            ? Math.max(29.0, units * fontSize + 17)
+            : Math.min(rMid * spanRad * 0.76, units * fontSize * 0.98 + 26);
         const minShare = neededPx / (rMid * spanRad);
         const curShare = covered.reduce((acc, s) => acc + s.weight, 0);
         if (curShare < minShare && curShare > 0) {
@@ -598,8 +598,8 @@ function renderFanCurvedArcTextSvg(opts: {
   const { cx, cy, rMid, rThick, deg1, deg2, text, fontSize, fontWeight, fontFamily, fill, letterSpacing } = opts;
   if (!text) return '';
   const dSpan = deg2 - deg1;
-  const padDeg = Math.min(1.15, dSpan * 0.06);
-  const availArc = Math.max(14, rMid * degToRad(dSpan - 2 * padDeg) - 6);
+  const padDeg = Math.min(1.4, dSpan * 0.085);
+  const availArc = Math.max(12, rMid * degToRad(dSpan - 2 * padDeg) - 8);
   const degMid = 0.5 * (deg1 + deg2);
 
   let effSize = Math.min(fontSize, rThick * 0.68);
@@ -620,7 +620,7 @@ function renderFanCurvedArcTextSvg(opts: {
   const FULLWIDTH_PUNC_RE = /^[，。、！？；：]$/;
   const gs = splitGraphemes(display);
   const widths = gs.map((g) => {
-    const gFont = IPA_GLYPH_RE.test(g) ? POSTER_IPA_STACK : fontFamily;
+    const gFont = IPA_CHAR_RE.test(g) ? POSTER_IPA_STACK : fontFamily;
     const effCss = `${fontWeight} ${effSize.toFixed(1)}px ${gFont}`;
     if (g.trim() === '') return Math.max(effSize * 0.28, measurePx(' ', effCss));
     const measured = Math.max(effSize * 0.28, measurePx(g, effCss));
@@ -641,7 +641,7 @@ function renderFanCurvedArcTextSvg(opts: {
     const angDeg = degMid + dDeg;
     const rotDeg = angDeg + 90; // upright tangential along upper arch (-128°..+7°)
     const [px, py] = polarXY(cx, cy, rMid, angDeg);
-    const gFont = IPA_GLYPH_RE.test(g) ? POSTER_IPA_STACK : fontFamily;
+    const gFont = IPA_CHAR_RE.test(g) ? POSTER_IPA_STACK : fontFamily;
     out.push(
       `<text x="0" y="0" transform="translate(${fmtNum(px)} ${fmtNum(py)}) rotate(${fmtNum(rotDeg)})" font-family="${escapeXml(gFont)}" font-size="${fmtNum(effSize)}" font-weight="${fontWeight}" fill="${fill}" text-anchor="middle" dominant-baseline="central">${escapeXml(g)}</text>`
     );
@@ -1020,16 +1020,30 @@ export function renderFoldingFanPosterSvg(params: RenderFoldingFanParams): {
           ? 2.0
           : Math.ceil(scaleMap.totalDur / 6);
   const firstTick = Math.ceil((tMin + stepSec * 0.28) / stepSec) * stepSec;
+  const tickFontCss = `400 7.6px ${POSTER_MONO_STACK}`;
+  const rTickText = rCadenceIn - 12.2;
+  const arcSpanPx = degToRad(degEnd - degStart) * rTickText;
+  let lastTickRightPx = 10.0;
   for (let t = firstTick; t < tMax - stepSec * 0.22; t += stepSec) {
     const deg = scaleMap.timeToInnerDeg(t);
     const [x1, y1] = polarXY(cx, cy, rCadenceIn - 4.2, deg);
     const [x2, y2] = polarXY(cx, cy, rCadenceIn, deg);
-    const [tx, ty] = polarXY(cx, cy, rCadenceIn - 12.2, deg);
+    const [tx, ty] = polarXY(cx, cy, rTickText, deg);
     const lbl = Math.abs(t - Math.round(t)) < 0.05 ? `${Math.round(t)}s` : `${t.toFixed(1)}s`;
+    const lblW = measurePx(lbl, tickFontCss);
+    const arcPosPx = degToRad(deg - degStart) * rTickText;
+    const boxLeftPx = arcPosPx - lblW * 0.5;
+    const boxRightPx = arcPosPx + lblW * 0.5;
+    const showTickLabel = boxLeftPx >= lastTickRightPx + 7.0 && boxRightPx <= arcSpanPx - 10.0;
     fanBaseParts.push(
-      `<line x1="${fmtNum(x1)}" y1="${fmtNum(y1)}" x2="${fmtNum(x2)}" y2="${fmtNum(y2)}" stroke="#8F7858" stroke-width="0.72" opacity="0.72"/>`,
-      `<text x="${fmtNum(tx)}" y="${fmtNum(ty)}" text-anchor="middle" dominant-baseline="central" font-family="${escapeXml(POSTER_MONO_STACK)}" font-size="7.6" fill="#7D6C54" opacity="0.88">${lbl}</text>`
+      `<line x1="${fmtNum(x1)}" y1="${fmtNum(y1)}" x2="${fmtNum(x2)}" y2="${fmtNum(y2)}" stroke="#8F7858" stroke-width="0.72" opacity="0.72"/>`
     );
+    if (showTickLabel) {
+      lastTickRightPx = boxRightPx;
+      fanBaseParts.push(
+        `<text x="${fmtNum(tx)}" y="${fmtNum(ty)}" text-anchor="middle" dominant-baseline="central" font-family="${escapeXml(POSTER_MONO_STACK)}" font-size="7.6" fill="#7D6C54" opacity="0.88">${lbl}</text>`
+      );
+    }
   }
 
   // Subtle frequency axis micro-ticks along right guard outer normal (`0k / mid / max`)
@@ -1370,7 +1384,7 @@ export function renderFoldingFanPosterSvg(params: RenderFoldingFanParams): {
       const arcLenPx = rMid * degToRad(dSpan);
       const units = visualBaseUnits(txt);
 
-      let fontFamily = POSTER_SERIF_STACK;
+      let fontFamily = POSTER_CJK_SERIF_STACK;
       let fontSize = nTiers <= 2 ? 14.2 : nTiers === 3 ? 13.6 : 13.2;
       let fill = isNarrowNuance ? PAL.sealDark : style.textColor;
       let fontWeight = '600';
@@ -1393,28 +1407,30 @@ export function renderFoldingFanPosterSvg(params: RenderFoldingFanParams): {
       // - Atomic short tokens (single-char words, IPA phones) stay upright centered so combining marks stay crystal sharp
       const useCurvedArc = isUtterance || isPhraseTier || units > 2.8 || txt.includes(' ');
       if (!useCurvedArc) {
+        const uprightFont = !isIpa && IPA_CHAR_RE.test(txt) ? POSTER_IPA_STACK : fontFamily;
         const effBase = Math.min(fontSize, rThick * 0.68);
-        const baseCss = `${fontWeight} ${effBase.toFixed(1)}px ${fontFamily}`;
+        const baseCss = `${fontWeight} ${effBase.toFixed(1)}px ${uprightFont}`;
         const measuredW = measurePx(txt, baseCss);
-        const maxBoxW = Math.min(arcLenPx - 4, rThick * 0.92);
+        const sideMargin = Math.min(9.5, Math.max(6.0, arcLenPx * 0.22));
+        const maxBoxW = Math.min(Math.max(6, arcLenPx - sideMargin), rThick * 0.9);
         let effSize = effBase;
         let display = txt;
         if (measuredW > maxBoxW && measuredW > 0) {
           const ratio = maxBoxW / measuredW;
-          if (ratio >= 0.66) {
-            effSize = Math.max(8.4, effBase * ratio);
+          if (ratio >= 0.58) {
+            effSize = Math.max(8.0, effBase * ratio);
           } else {
-            effSize = Math.max(8.0, effBase * 0.68);
+            effSize = Math.max(8.0, effBase * 0.64);
             display = truncateByGraphemes(
               txt,
-              Math.max(8, maxBoxW),
-              `${fontWeight} ${effSize.toFixed(1)}px ${fontFamily}`
+              Math.max(6, maxBoxW),
+              `${fontWeight} ${effSize.toFixed(1)}px ${uprightFont}`
             );
           }
         }
         const [px, py] = polarXY(cx, cy, rMid + filletThick * 0.5, dMid);
         annotationParts.push(
-          `<text x="${fmtNum(px)}" y="${fmtNum(py)}" text-anchor="middle" dominant-baseline="central" font-family="${escapeXml(fontFamily)}" font-size="${fmtNum(effSize)}" font-weight="${fontWeight}" fill="${fill}">${escapeXml(display)}</text>`
+          `<text x="${fmtNum(px)}" y="${fmtNum(py)}" text-anchor="middle" dominant-baseline="central" font-family="${escapeXml(uprightFont)}" font-size="${fmtNum(effSize)}" font-weight="${fontWeight}" fill="${fill}">${escapeXml(display)}</text>`
         );
       } else {
         const opticalOutwardNudge = isIpa || isPinyin ? 0.6 : 1.5;
@@ -1451,8 +1467,8 @@ export function renderFoldingFanPosterSvg(params: RenderFoldingFanParams): {
     const [mix, miy] = polarXY(cx, cy, 0.5 * (rSpecIn + rSpecOut), dInMid);
     const [mox, moy] = polarXY(cx, cy, 0.5 * (rBridgeOut + rLeafOut), dOutMid);
     annotationParts.push(
-      `<text x="${fmtNum(mix)}" y="${fmtNum(miy)}" text-anchor="middle" dominant-baseline="central" font-family="${escapeXml(POSTER_SERIF_STACK)}" font-size="9.6" fill="#5D8384" opacity="0.66">//</text>`,
-      `<text x="${fmtNum(mox)}" y="${fmtNum(moy)}" text-anchor="middle" dominant-baseline="central" font-family="${escapeXml(POSTER_SERIF_STACK)}" font-size="10.2" fill="#A2937C" opacity="0.68">//</text>`
+      `<text x="${fmtNum(mix)}" y="${fmtNum(miy)}" text-anchor="middle" dominant-baseline="central" font-family="${escapeXml(POSTER_CJK_SERIF_STACK)}" font-size="9.6" fill="#5D8384" opacity="0.66">//</text>`,
+      `<text x="${fmtNum(mox)}" y="${fmtNum(moy)}" text-anchor="middle" dominant-baseline="central" font-family="${escapeXml(POSTER_CJK_SERIF_STACK)}" font-size="10.2" fill="#A2937C" opacity="0.68">//</text>`
     );
   }
 
@@ -1513,10 +1529,10 @@ export function renderFoldingFanPosterSvg(params: RenderFoldingFanParams): {
     const tickY1 = ey + ny * 8.2;
     const maxW = Math.max(40, gx - 28);
     const fullLabel = idxLabel ? `${idxLabel} ${text}` : text;
-    const shortLbl = truncateByGraphemes(fullLabel, maxW, `500 9.6px ${POSTER_SERIF_STACK}`);
+    const shortLbl = truncateByGraphemes(fullLabel, maxW, `500 9.6px ${POSTER_CJK_SERIF_STACK}`);
     annotationParts.push(
       `<line x1="${fmtNum(tickX0)}" y1="${fmtNum(tickY0)}" x2="${fmtNum(tickX1)}" y2="${fmtNum(tickY1)}" stroke="${color}" stroke-width="0.75" opacity="0.65"/>`,
-      `<text x="${fmtNum(gx)}" y="${fmtNum(gy)}" text-anchor="end" dominant-baseline="central" font-family="${escapeXml(POSTER_SERIF_STACK)}" font-size="9.6" font-weight="500" letter-spacing="0.3" fill="${color}">${escapeXml(shortLbl)}</text>`
+      `<text x="${fmtNum(gx)}" y="${fmtNum(gy)}" text-anchor="end" dominant-baseline="central" font-family="${escapeXml(POSTER_CJK_SERIF_STACK)}" font-size="9.6" font-weight="500" letter-spacing="0.3" fill="${color}">${escapeXml(shortLbl)}</text>`
     );
   };
   pushRingGuide(
@@ -1590,23 +1606,23 @@ export function renderFoldingFanPosterSvg(params: RenderFoldingFanParams): {
     const titleStr = truncateByGraphemes(
       config.copy.title.trim() || autoCopy.title,
       460,
-      `600 52px ${POSTER_SERIF_STACK}`
+      `600 52px ${POSTER_CJK_SERIF_STACK}`
     );
     const subStr = truncateByGraphemes(
       config.copy.subtitle.trim() || autoCopy.subtitle,
       590,
-      `400 13.8px ${POSTER_SERIF_STACK}`
+      `400 13.8px ${POSTER_CJK_SERIF_STACK}`
     );
     const footStr = config.copy.footer.trim() || autoCopy.footer;
 
     const titleGs = splitGraphemes(titleStr);
     const titleMeasuredW =
-      measurePx(titleStr, `600 54px ${POSTER_SERIF_STACK}`) + Math.max(0, titleGs.length - 1) * 7.5;
+      measurePx(titleStr, `600 54px ${POSTER_CJK_SERIF_STACK}`) + Math.max(0, titleGs.length - 1) * 7.5;
     const sealX = Math.min(720, Math.max(132, marginX + titleMeasuredW + 18));
 
     const edParts: string[] = [
       // Upper-left Song/Ming calligraphy title lockup
-      `<text x="${marginX}" y="112" font-family="${escapeXml(POSTER_SERIF_STACK)}" font-size="54" font-weight="600" letter-spacing="8" fill="${PAL.inkDeep}">${escapeXml(titleStr)}</text>`,
+      `<text x="${marginX}" y="112" font-family="${escapeXml(POSTER_CJK_SERIF_STACK)}" font-size="54" font-weight="600" letter-spacing="8" fill="${PAL.inkDeep}">${escapeXml(titleStr)}</text>`,
       // Refined Song/Ming Carved Cinnabar White-Text Seal Stamp 「听竹」
       `<g transform="translate(${fmtNum(sealX)}, 71)">` +
         `<path d="M 3.2,1.1 L 25.4,0.8 C 27.2,0.9 28.1,2.0 28.2,3.9 L 28.0,36.6 C 27.8,38.4 26.8,39.4 24.9,39.6 L 3.8,39.3 C 1.8,39.1 0.9,38.0 0.8,36.0 L 1.0,3.8 C 1.1,2.0 1.9,1.2 3.2,1.1 Z" fill="${PAL.sealRed}" opacity="0.93"/>` +
@@ -1618,16 +1634,16 @@ export function renderFoldingFanPosterSvg(params: RenderFoldingFanParams): {
         `<circle cx="15.0" cy="1.8" r="0.45" fill="${PAL.paper}" opacity="0.38"/>` +
         // Authentic vertically stacked classical Song serif glyphs 「听 / 竹」
         `<g transform="translate(14.3, 12.8) scale(0.92, 1.04)">` +
-          `<text x="0" y="0" text-anchor="middle" dominant-baseline="central" font-family="${escapeXml(POSTER_SERIF_STACK)}" font-size="13.8" font-weight="700" fill="${PAL.paperHi}">听</text>` +
+          `<text x="0" y="0" text-anchor="middle" dominant-baseline="central" font-family="${escapeXml(POSTER_CJK_SERIF_STACK)}" font-size="13.8" font-weight="700" fill="${PAL.paperHi}">听</text>` +
         `</g>` +
         `<g transform="translate(14.3, 27.6) scale(0.92, 1.04)">` +
-          `<text x="0" y="0" text-anchor="middle" dominant-baseline="central" font-family="${escapeXml(POSTER_SERIF_STACK)}" font-size="13.8" font-weight="700" fill="${PAL.paperHi}">竹</text>` +
+          `<text x="0" y="0" text-anchor="middle" dominant-baseline="central" font-family="${escapeXml(POSTER_CJK_SERIF_STACK)}" font-size="13.8" font-weight="700" fill="${PAL.paperHi}">竹</text>` +
         `</g>` +
         `</g>`,
-      `<text x="${marginX + 2}" y="150" font-family="${escapeXml(POSTER_SERIF_STACK)}" font-size="13.8" letter-spacing="0.9" fill="#635B50">${escapeXml(subStr)}</text>`,
+      `<text x="${marginX + 2}" y="150" font-family="${escapeXml(POSTER_CJK_SERIF_STACK)}" font-size="13.8" letter-spacing="0.9" fill="#635B50">${escapeXml(subStr)}</text>`,
 
       // Top-right Song/Ming archival colophon balancing the composition
-      `<text x="${trimW - marginX}" y="76" text-anchor="end" font-family="${escapeXml(POSTER_SERIF_STACK)}" font-size="9.4" font-weight="500" letter-spacing="1.4" fill="${PAL.inkSoft}">${escapeXml(autoCopy.sideLabel)}</text>`,
+      `<text x="${trimW - marginX}" y="76" text-anchor="end" font-family="${escapeXml(POSTER_CJK_SERIF_STACK)}" font-size="9.4" font-weight="500" letter-spacing="1.4" fill="${PAL.inkSoft}">${escapeXml(autoCopy.sideLabel)}</text>`,
       `<rect x="${trimW - marginX - 66}" y="86" width="48" height="1.7" fill="${PAL.jadeRim}" opacity="0.82"/>`,
       `<rect x="${trimW - marginX - 15}" y="86" width="15" height="1.7" fill="${PAL.bambooMid}" opacity="0.82"/>`,
       `<text x="${trimW - marginX}" y="101" text-anchor="end" font-family="${escapeXml(POSTER_MONO_STACK)}" font-size="7.3" letter-spacing="0.6" fill="#928778">${totalLayers > 0 ? `${String(totalLayers).padStart(2, '0')} LAYERS` : 'ACOUSTIC FAN'}  ·  ${hasAudio ? `0–${(maxFreq / 1000).toFixed(0)} kHz` : 'TEXTGRID ONLY'}</text>`
@@ -1644,7 +1660,7 @@ export function renderFoldingFanPosterSvg(params: RenderFoldingFanParams): {
     edParts.push(
       `<rect x="${lx0}" y="${ySec}" width="42" height="2.4" fill="${PAL.jadeRim}"/>`,
       `<rect x="${lx0 + 45}" y="${ySec}" width="11" height="2.4" fill="${PAL.bambooMid}"/>`,
-      `<text x="${lx0}" y="${ySec + 18}" font-family="${escapeXml(POSTER_SERIF_STACK)}" font-size="10.4" font-weight="700" letter-spacing="0.7" fill="${PAL.inkDeep}">${totalLayers > 0 ? `${totalLayers} 层拆解  ·  由内向外` : '扇面声学  ·  由内向外'}</text>`
+      `<text x="${lx0}" y="${ySec + 18}" font-family="${escapeXml(POSTER_CJK_SERIF_STACK)}" font-size="10.4" font-weight="700" letter-spacing="0.7" fill="${PAL.inkDeep}">${totalLayers > 0 ? `${totalLayers} 层拆解  ·  由内向外` : '扇面声学  ·  由内向外'}</text>`
     );
 
     // Left Zone Tier Legend Rows (swatches 1:1 with each fan ring's actual Song/Ming pigment)
@@ -1659,7 +1675,7 @@ export function renderFoldingFanPosterSvg(params: RenderFoldingFanParams): {
       edParts.push(
         `<rect x="${lx0}" y="${fmtNum(ry - 4.5)}" width="9" height="9" rx="1.2" fill="${style.swatchFill}"${swStroke}/>`,
         `<text x="${lx0 + 15}" y="${fmtNum(ry)}" font-family="${escapeXml(POSTER_MONO_STACK)}" font-size="7.6" font-weight="700" fill="${PAL.inkSoft}" dominant-baseline="central">${String(i + 1).padStart(2, '0')}</text>`,
-        `<text x="${lx0 + 34}" y="${fmtNum(ry)}" font-family="${escapeXml(POSTER_SERIF_STACK)}" font-size="8.6" font-weight="600" fill="${PAL.inkDeep}" dominant-baseline="central">${escapeXml(truncateByGraphemes(tier.name || `第 ${i + 1} 层`, 132, `600 8.6px ${POSTER_SERIF_STACK}`))}</text>`,
+        `<text x="${lx0 + 34}" y="${fmtNum(ry)}" font-family="${escapeXml(POSTER_CJK_SERIF_STACK)}" font-size="8.6" font-weight="600" fill="${PAL.inkDeep}" dominant-baseline="central">${escapeXml(truncateByGraphemes(tier.name || `第 ${i + 1} 层`, 132, `600 8.6px ${POSTER_CJK_SERIF_STACK}`))}</text>`,
         `<text x="${leftEndX}" y="${fmtNum(ry)}" font-family="${escapeXml(POSTER_SANS_STACK)}" font-size="7.4" fill="${PAL.inkSoft}" text-anchor="end" dominant-baseline="central">${cnt} 个区间</text>`
       );
     });
@@ -1668,7 +1684,7 @@ export function renderFoldingFanPosterSvg(params: RenderFoldingFanParams): {
       edParts.push(
         `<circle cx="${lx0 + 4.5}" cy="${fmtNum(ry)}" r="4.5" fill="${PAL.sealRed}"/>`,
         `<text x="${lx0 + 15}" y="${fmtNum(ry)}" font-family="${escapeXml(POSTER_MONO_STACK)}" font-size="7.6" font-weight="700" fill="${PAL.inkSoft}" dominant-baseline="central">${String(nTiers + 1).padStart(2, '0')}</text>`,
-        `<text x="${lx0 + 34}" y="${fmtNum(ry)}" font-family="${escapeXml(POSTER_SERIF_STACK)}" font-size="8.6" font-weight="600" fill="${PAL.inkDeep}" dominant-baseline="central">${escapeXml(truncateByGraphemes(pointTier.name || '标点', 132, `600 8.6px ${POSTER_SERIF_STACK}`))}</text>`,
+        `<text x="${lx0 + 34}" y="${fmtNum(ry)}" font-family="${escapeXml(POSTER_CJK_SERIF_STACK)}" font-size="8.6" font-weight="600" fill="${PAL.inkDeep}" dominant-baseline="central">${escapeXml(truncateByGraphemes(pointTier.name || '标点', 132, `600 8.6px ${POSTER_CJK_SERIF_STACK}`))}</text>`,
         `<text x="${leftEndX}" y="${fmtNum(ry)}" font-family="${escapeXml(POSTER_SANS_STACK)}" font-size="7.4" fill="${PAL.inkSoft}" text-anchor="end" dominant-baseline="central">${resolvedPoints.length} 个标点</text>`
       );
     }
@@ -1681,9 +1697,9 @@ export function renderFoldingFanPosterSvg(params: RenderFoldingFanParams): {
       : '纯宣纸时序扇面（未载入录音）';
     edParts.push(
       `<line x1="${lx0}" y1="${fmtNum(noteLineY)}" x2="${leftEndX}" y2="${fmtNum(noteLineY)}" stroke="${PAL.paperRule}" stroke-width="0.65"/>`,
-      `<text x="${lx0}" y="${fmtNum(noteLineY + 15)}" font-family="${escapeXml(POSTER_SERIF_STACK)}" font-size="7.8" font-weight="700" fill="${PAL.inkDeep}" dominant-baseline="central">扇面声景</text>`,
+      `<text x="${lx0}" y="${fmtNum(noteLineY + 15)}" font-family="${escapeXml(POSTER_CJK_SERIF_STACK)}" font-size="7.8" font-weight="700" fill="${PAL.inkDeep}" dominant-baseline="central">扇面声景</text>`,
       `<text x="${lx0 + 46}" y="${fmtNum(noteLineY + 15)}" font-family="${escapeXml(POSTER_SANS_STACK)}" font-size="7.3" fill="${PAL.inkSoft}" dominant-baseline="central">${escapeXml(acousticDesc)}</text>`,
-      `<text x="${lx0}" y="${fmtNum(noteLineY + 32.5)}" font-family="${escapeXml(POSTER_SERIF_STACK)}" font-size="7.8" font-weight="700" fill="${PAL.inkDeep}" dominant-baseline="central">竹骨连线</text>`,
+      `<text x="${lx0}" y="${fmtNum(noteLineY + 32.5)}" font-family="${escapeXml(POSTER_CJK_SERIF_STACK)}" font-size="7.8" font-weight="700" fill="${PAL.inkDeep}" dominant-baseline="central">竹骨连线</text>`,
       `<text x="${lx0 + 46}" y="${fmtNum(noteLineY + 32.5)}" font-family="${escapeXml(POSTER_SANS_STACK)}" font-size="7.3" fill="${PAL.inkSoft}" dominant-baseline="central">连接内弧物理时长与外弧自适应字格</text>`
     );
 
@@ -1708,7 +1724,7 @@ export function renderFoldingFanPosterSvg(params: RenderFoldingFanParams): {
 
       edParts.push(
         `<rect x="${rx0}" y="${ySec}" width="62" height="2.4" fill="${PAL.sealRed}"/>`,
-        `<text x="${rx0}" y="${ySec + 18}" font-family="${escapeXml(POSTER_SERIF_STACK)}" font-size="10.4" font-weight="700" letter-spacing="0.6" fill="${PAL.inkDeep}">${escapeXml(pointTier?.name || '标记点')}  ·  01–${String(resolvedPoints.length).padStart(2, '0')}${overflow > 0 ? ` (+${overflow})` : ''}</text>`,
+        `<text x="${rx0}" y="${ySec + 18}" font-family="${escapeXml(POSTER_CJK_SERIF_STACK)}" font-size="10.4" font-weight="700" letter-spacing="0.6" fill="${PAL.inkDeep}">${escapeXml(pointTier?.name || '标记点')}  ·  01–${String(resolvedPoints.length).padStart(2, '0')}${overflow > 0 ? ` (+${overflow})` : ''}</text>`,
         `<text x="${trimW - marginX}" y="${ySec + 18}" text-anchor="end" font-family="${escapeXml(POSTER_MONO_STACK)}" font-size="7.2" fill="#928778">${tMin.toFixed(2)} – ${tMax.toFixed(2)}s</text>`
       );
 
@@ -1731,11 +1747,12 @@ export function renderFoldingFanPosterSvg(params: RenderFoldingFanParams): {
           `<circle cx="${fmtNum(cxCol + 7.5)}" cy="${fmtNum(ey)}" r="${fmtNum(badgeR - 1.4)}" fill="none" stroke="${PAL.paperHi}" stroke-opacity="0.32" stroke-width="0.42"/>`,
           `<text x="${fmtNum(cxCol + 7.5)}" y="${fmtNum(ey)}" font-family="${escapeXml(POSTER_SANS_STACK)}" font-size="${fmtNum(rowFs - 0.4)}" font-weight="800" fill="${PAL.paperHi}" text-anchor="middle" dominant-baseline="central">${pt.idx + 1}</text>`,
           `<text x="${fmtNum(cxCol + 51)}" y="${fmtNum(ey)}" font-family="${escapeXml(POSTER_MONO_STACK)}" font-size="${fmtNum(rowFs - 0.4)}" fill="${PAL.inkSoft}" text-anchor="end" dominant-baseline="central">${pt.time.toFixed(2)}s</text>`,
-          `<text x="${fmtNum(cxCol + 59)}" y="${fmtNum(ey)}" font-family="${escapeXml(POSTER_IPA_STACK)}" font-size="${fmtNum(rowFs)}" font-weight="600" fill="${PAL.inkDeep}" dominant-baseline="central">${escapeXml(truncateByGraphemes(pt.mark, note ? 80 : colW - 60, `600 ${rowFs}px ${POSTER_IPA_STACK}`))}</text>`
+          `<text x="${fmtNum(cxCol + 59)}" y="${fmtNum(ey)}" font-family="${escapeXml(IPA_CHAR_RE.test(pt.mark) ? POSTER_IPA_STACK : POSTER_SANS_STACK)}" font-size="${fmtNum(rowFs)}" font-weight="600" fill="${PAL.inkDeep}" dominant-baseline="central">${escapeXml(truncateByGraphemes(pt.mark, note ? 80 : colW - 60, `600 ${rowFs}px ${IPA_CHAR_RE.test(pt.mark) ? POSTER_IPA_STACK : POSTER_SANS_STACK}`))}</text>`
         );
         if (note) {
+          const noteFont = IPA_CHAR_RE.test(note) ? POSTER_IPA_STACK : POSTER_CJK_SERIF_STACK;
           edParts.push(
-            `<text x="${fmtNum(cxCol + colW)}" y="${fmtNum(ey)}" font-family="${escapeXml(POSTER_SERIF_STACK)}" font-size="${fmtNum(rowFs)}" fill="${PAL.inkMid}" text-anchor="end" dominant-baseline="central">${escapeXml(truncateByGraphemes(note, 98, `400 ${rowFs}px ${POSTER_SERIF_STACK}`))}</text>`
+            `<text x="${fmtNum(cxCol + colW)}" y="${fmtNum(ey)}" font-family="${escapeXml(noteFont)}" font-size="${fmtNum(rowFs)}" fill="${PAL.inkMid}" text-anchor="end" dominant-baseline="central">${escapeXml(truncateByGraphemes(note, 98, `400 ${rowFs}px ${noteFont}`))}</text>`
           );
         }
       }
@@ -1783,7 +1800,7 @@ export function renderFoldingFanPosterSvg(params: RenderFoldingFanParams): {
 
       edParts.push(
         `<rect x="${rx0}" y="${ySec}" width="62" height="2.4" fill="${PAL.sealRed}"/>`,
-        `<text x="${rx0}" y="${ySec + 18}" font-family="${escapeXml(POSTER_SERIF_STACK)}" font-size="10.4" font-weight="700" letter-spacing="0.6" fill="${PAL.inkDeep}">${escapeXml(heading)}${overflow > 0 ? ` (+${overflow})` : ''}</text>`,
+        `<text x="${rx0}" y="${ySec + 18}" font-family="${escapeXml(POSTER_CJK_SERIF_STACK)}" font-size="10.4" font-weight="700" letter-spacing="0.6" fill="${PAL.inkDeep}">${escapeXml(heading)}${overflow > 0 ? ` (+${overflow})` : ''}</text>`,
         `<text x="${trimW - marginX}" y="${ySec + 18}" text-anchor="end" font-family="${escapeXml(POSTER_MONO_STACK)}" font-size="7.2" fill="#928778">${tMin.toFixed(2)} – ${tMax.toFixed(2)}s</text>`
       );
 
@@ -1802,7 +1819,7 @@ export function renderFoldingFanPosterSvg(params: RenderFoldingFanParams): {
         edParts.push(
           `<rect x="${fmtNum(cxCol)}" y="${fmtNum(ey - 6.5)}" width="13" height="13" rx="1.6" fill="${item.pigment}"/>`,
           `<text x="${fmtNum(cxCol + 6.5)}" y="${fmtNum(ey)}" font-family="${escapeXml(POSTER_SANS_STACK)}" font-size="7.2" font-weight="800" fill="${PAL.paperHi}" text-anchor="middle" dominant-baseline="central">${i + 1}</text>`,
-          `<text x="${fmtNum(cxCol + 20)}" y="${fmtNum(ey)}" font-family="${escapeXml(POSTER_SERIF_STACK)}" font-size="8.2" font-weight="600" fill="${PAL.inkDeep}" dominant-baseline="central">${escapeXml(truncateByGraphemes(item.text, colW - 88, `600 8.2px ${POSTER_SERIF_STACK}`))}</text>`,
+          `<text x="${fmtNum(cxCol + 20)}" y="${fmtNum(ey)}" font-family="${escapeXml(IPA_CHAR_RE.test(item.text) ? POSTER_IPA_STACK : POSTER_CJK_SERIF_STACK)}" font-size="8.2" font-weight="600" fill="${PAL.inkDeep}" dominant-baseline="central">${escapeXml(truncateByGraphemes(item.text, colW - 88, `600 8.2px ${IPA_CHAR_RE.test(item.text) ? POSTER_IPA_STACK : POSTER_CJK_SERIF_STACK}`))}</text>`,
           `<text x="${fmtNum(cxCol + colW)}" y="${fmtNum(ey)}" font-family="${escapeXml(POSTER_MONO_STACK)}" font-size="7.1" fill="${PAL.inkSoft}" text-anchor="end" dominant-baseline="central">${item.xmin.toFixed(2)}–${item.xmax.toFixed(2)}s</text>`
         );
       }
@@ -1811,7 +1828,7 @@ export function renderFoldingFanPosterSvg(params: RenderFoldingFanParams): {
     // Bottom quiet archival colophon hairline + edition footer
     edParts.push(
       `<line x1="${marginX}" y1="1134" x2="${trimW - marginX}" y2="1134" stroke="${PAL.paperRule}" stroke-opacity="0.72" stroke-width="0.5"/>`,
-      `<text x="${marginX}" y="1150" font-family="${escapeXml(POSTER_SERIF_STACK)}" font-size="7.6" letter-spacing="0.4" fill="#857A6A" dominant-baseline="central">${escapeXml(truncateByGraphemes(footStr, 560, `400 7.6px ${POSTER_SERIF_STACK}`))}</text>`,
+      `<text x="${marginX}" y="1150" font-family="${escapeXml(POSTER_CJK_SERIF_STACK)}" font-size="7.6" letter-spacing="0.4" fill="#857A6A" dominant-baseline="central">${escapeXml(truncateByGraphemes(footStr, 560, `400 7.6px ${POSTER_CJK_SERIF_STACK}`))}</text>`,
       `<text x="${trimW - marginX}" y="1150" text-anchor="end" font-family="${escapeXml(POSTER_MONO_STACK)}" font-size="6.8" letter-spacing="1.1" fill="#9E9281" dominant-baseline="central">SONG / MING FOLDING FAN EDITION</text>`
     );
 

@@ -1,6 +1,8 @@
 import type { TextGrid, Tier } from '../../bridge/types';
 import { measurePx, splitGraphemes } from '../../layout/richText';
 import {
+  IPA_CHAR_RE,
+  POSTER_DISPLAY_SANS_STACK,
   POSTER_IPA_STACK,
   POSTER_MONO_STACK,
   POSTER_SANS_STACK,
@@ -114,7 +116,8 @@ function hzToAngle(hz: number): number {
 
 function formatBraunPointShort(rawMark: string, customNote?: string): string {
   if (customNote && customNote.trim()) {
-    return truncateByGraphemes(customNote.trim(), 72, `500 9.6px ${POSTER_SANS_STACK}`);
+    const noteTrim = customNote.trim();
+    return truncateByGraphemes(noteTrim, 72, `500 9.6px ${IPA_CHAR_RE.test(noteTrim) ? POSTER_IPA_STACK : POSTER_SANS_STACK}`);
   }
   const m = resolvePosterText(rawMark);
   if (!m) return '';
@@ -136,7 +139,7 @@ function formatBraunPointShort(rawMark: string, customNote?: string): string {
   if (/^!?H\*$/i.test(m)) return '重读';
   if (/^[HL]-\s*\/\s*B2$/i.test(m)) return '停顿';
   if (/B4/i.test(m)) return '句尾降调';
-  return truncateByGraphemes(m, 72, `500 9.6px ${POSTER_SANS_STACK}`);
+  return truncateByGraphemes(m, 72, `500 9.6px ${IPA_CHAR_RE.test(m) ? POSTER_IPA_STACK : POSTER_SANS_STACK}`);
 }
 
 function formatBraunPointFull(rawMark: string, customNote?: string): string {
@@ -367,7 +370,7 @@ function buildElasticTextRuler(
       const i1 = Math.max(i0 + 1, findKnotIdx(b));
       if (i1 > M) continue;
       const textPx = measurePx(txt, fontCss);
-      const needed = Math.min(trackWidth * 0.78, textPx + (row.isIpa ? 9 : 14));
+      const needed = Math.min(trackWidth * 0.78, textPx + (row.isIpa ? 16 : 20));
       constraints.push({ i0, i1, req: needed });
     }
   }
@@ -883,7 +886,7 @@ export function renderBraunStripPosterSvg(params: RenderBraunStripParams): {
       const kHzStr = audioSampleRate > 0 ? `${(audioSampleRate / 1000).toFixed(1).replace(/\.0$/, '')} kHz` : 'TEXTGRID';
       const rightHeader = autoCopy.sideLabel || `VOICE RECORDER · ${duration.toFixed(2)}s`;
       editorialParts.push(
-        `<text x="66" y="47" font-size="14.5" font-weight="700" letter-spacing="2.2" fill="${BRAUN.ink}" font-family="${escapeXml(POSTER_SANS_STACK)}">T·GRID</text>`,
+        `<text x="66" y="47" font-size="14.5" font-weight="700" letter-spacing="2.2" fill="${BRAUN.ink}" font-family="${escapeXml(POSTER_DISPLAY_SANS_STACK)}">T·GRID</text>`,
         `<line x1="142" y1="35" x2="142" y2="49" stroke="#BDBCB5" stroke-width="0.85"/>`,
         `<text x="152" y="47" font-size="11.2" font-weight="700" letter-spacing="1.2" fill="${BRAUN.orange}" font-family="${escapeXml(POSTER_MONO_STACK)}">TG-60</text>`,
         `<text x="206" y="47" font-size="8.6" font-weight="600" letter-spacing="1.4" fill="${BRAUN.muted}" font-family="${escapeXml(POSTER_MONO_STACK)}">AUDIO-LINGUISTIC STRIP RECORDER</text>`,
@@ -954,13 +957,13 @@ export function renderBraunStripPosterSvg(params: RenderBraunStripParams): {
 
       if (!line2) {
         editorialParts.push(
-          `<text x="498" y="138" font-size="20.4" font-weight="700" letter-spacing="-0.2" fill="${BRAUN.ink}" font-family="${escapeXml(POSTER_SANS_STACK)}">${escapeXml(line1)}</text>`,
+          `<text x="498" y="138" font-size="20.4" font-weight="700" letter-spacing="-0.2" fill="${BRAUN.ink}" font-family="${escapeXml(POSTER_DISPLAY_SANS_STACK)}">${escapeXml(line1)}</text>`,
           `<text x="498" y="161" font-size="11.2" font-weight="400" fill="${BRAUN.sub}" font-family="${escapeXml(POSTER_SANS_STACK)}">${escapeXml(truncateByGraphemes(subStr, rightW, `400 11.2px ${POSTER_SANS_STACK}`))}</text>`
         );
       } else {
         editorialParts.push(
-          `<text x="498" y="133" font-size="18.2" font-weight="700" letter-spacing="-0.15" fill="${BRAUN.ink}" font-family="${escapeXml(POSTER_SANS_STACK)}">${escapeXml(line1)}</text>`,
-          `<text x="498" y="157" font-size="18.2" font-weight="700" letter-spacing="-0.15" fill="${BRAUN.ink}" font-family="${escapeXml(POSTER_SANS_STACK)}">${escapeXml(line2)}</text>`,
+          `<text x="498" y="133" font-size="18.2" font-weight="700" letter-spacing="-0.15" fill="${BRAUN.ink}" font-family="${escapeXml(POSTER_DISPLAY_SANS_STACK)}">${escapeXml(line1)}</text>`,
+          `<text x="498" y="157" font-size="18.2" font-weight="700" letter-spacing="-0.15" fill="${BRAUN.ink}" font-family="${escapeXml(POSTER_DISPLAY_SANS_STACK)}">${escapeXml(line2)}</text>`,
           `<text x="498" y="177" font-size="10.8" font-weight="400" fill="${BRAUN.sub}" font-family="${escapeXml(POSTER_SANS_STACK)}">${escapeXml(truncateByGraphemes(subStr, rightW, `400 10.8px ${POSTER_SANS_STACK}`))}</text>`
         );
       }
@@ -1222,24 +1225,48 @@ export function renderBraunStripPosterSvg(params: RenderBraunStripParams): {
         tickValues.push(tv);
       }
     }
-    if (Math.abs(tEnd - tickValues[tickValues.length - 1]) > tickStep * 0.35) {
+    if (Math.abs(tEnd - tickValues[tickValues.length - 1]) > 1e-4) {
       tickValues.push(tEnd);
     }
 
-    const majorTickXs: number[] = [];
-    let lastTickX = -999;
-    for (const tv of tickValues) {
-      const insideSil = silences.some((s) => tv > s.start + 0.03 && tv < s.end - 0.03);
-      if (insideSil) continue;
+    const tickFontCss = `500 8.4px ${POSTER_MONO_STACK}`;
+    const tickCandidates = tickValues.map((tv, idx) => {
+      const isEndpoint = idx === 0 || idx === tickValues.length - 1;
       const tx = acousticRuler.timeToX(tv);
-      if (silenceBreakCenters.some((cx) => Math.abs(tx - cx) < 13.5)) continue;
-      if (tx - lastTickX < 28) continue;
-      lastTickX = tx;
-      majorTickXs.push(tx);
       const anchor = tx < xTrackLeft + 14 ? 'start' : tx > xTrackRight - 14 ? 'end' : 'middle';
+      const label = `${tv.toFixed(1)}s`;
+      const w = measurePx(label, tickFontCss);
+      const x0 = anchor === 'start' ? tx : anchor === 'end' ? tx - w : tx - w * 0.5;
+      const x1 = anchor === 'start' ? tx + w : anchor === 'end' ? tx : tx + w * 0.5;
+      const insideSil = !isEndpoint && silences.some((s) => tv > s.start + 0.03 && tv < s.end - 0.03);
+      const nearBreak = !isEndpoint && silenceBreakCenters.some((cx) => Math.abs(tx - cx) < 13.5);
+      return { idx, isEndpoint, tx, anchor, label, x0, x1, valid: !insideSil && !nearBreak };
+    });
+
+    const placedTickBoxes: Array<{ x0: number; x1: number }> = [];
+    const acceptedTickIdx = new Set<number>();
+    const minTickClearPx = 9.0;
+    const priorityTicks = [...tickCandidates].sort(
+      (a, b) => Number(b.isEndpoint) - Number(a.isEndpoint) || a.tx - b.tx
+    );
+    for (const c of priorityTicks) {
+      if (!c.valid) continue;
+      const collides = placedTickBoxes.some(
+        (pb) => c.x0 < pb.x1 + minTickClearPx && c.x1 + minTickClearPx > pb.x0
+      );
+      if (!collides) {
+        acceptedTickIdx.add(c.idx);
+        placedTickBoxes.push({ x0: c.x0, x1: c.x1 });
+      }
+    }
+
+    const majorTickXs: number[] = [];
+    for (const c of tickCandidates) {
+      if (!acceptedTickIdx.has(c.idx)) continue;
+      majorTickXs.push(c.tx);
       acousticParts.push(
-        `<line x1="${fmtNum(tx)}" y1="${fmtNum(yRulerLine - 5.8)}" x2="${fmtNum(tx)}" y2="${fmtNum(yRulerLine)}" stroke="#353430" stroke-width="0.8"/>`,
-        `<text x="${fmtNum(tx)}" y="${fmtNum(yRulerLine - 7.8)}" text-anchor="${anchor}" font-size="8.4" font-weight="500" fill="${BRAUN.sub}" font-family="${escapeXml(POSTER_MONO_STACK)}">${tv.toFixed(1)}s</text>`
+        `<line x1="${fmtNum(c.tx)}" y1="${fmtNum(yRulerLine - 5.8)}" x2="${fmtNum(c.tx)}" y2="${fmtNum(yRulerLine)}" stroke="#353430" stroke-width="0.8"/>`,
+        `<text x="${fmtNum(c.tx)}" y="${fmtNum(yRulerLine - 7.8)}" text-anchor="${c.anchor}" font-size="8.4" font-weight="500" fill="${BRAUN.sub}" font-family="${escapeXml(POSTER_MONO_STACK)}">${c.label}</text>`
       );
     }
 
@@ -1553,16 +1580,18 @@ export function renderBraunStripPosterSvg(params: RenderBraunStripParams): {
           if (clippedRight && !clippedLeft) displayTxt = displayTxt + ' →';
 
           let fSz = row.fontSize;
+          const sidePad = Math.min(11, Math.max(6.5, cellW * 0.22));
+          const maxTxtW = Math.max(5, cellW - sidePad);
           const measured = measurePx(displayTxt, `${row.fontWeight} ${fSz.toFixed(1)}px ${fontStack}`);
-          if (measured > cellW - 4 && cellW > 8) {
-            const ratio = (cellW - 4) / Math.max(1, measured);
-            if (ratio >= 0.68) {
-              fSz = Math.max(8.0, fSz * ratio);
+          if (measured > maxTxtW && cellW > 8) {
+            const ratio = maxTxtW / Math.max(1, measured);
+            if (ratio >= 0.62) {
+              fSz = Math.max(7.6, fSz * ratio);
             } else {
-              fSz = Math.max(7.8, fSz * 0.72);
+              fSz = Math.max(7.6, fSz * 0.66);
               displayTxt = truncateByGraphemes(
                 displayTxt,
-                Math.max(6, cellW - 5),
+                Math.max(5, maxTxtW - 1),
                 `${row.fontWeight} ${fSz.toFixed(1)}px ${fontStack}`
               );
             }
@@ -1652,11 +1681,12 @@ export function renderBraunStripPosterSvg(params: RenderBraunStripParams): {
           }
         } else {
           // Compact inline placement for Emblem 1:1 mode
-          const ptFontCss = `${row.fontWeight} ${row.fontSize.toFixed(1)}px ${POSTER_SANS_STACK}`;
           const visiblePts = segPts.map((pt) => {
             const px = textRuler.timeToTextX(clamp(pt.time, tStart, tEnd));
+            const ptFont = IPA_CHAR_RE.test(pt.shortLabel) ? POSTER_IPA_STACK : POSTER_SANS_STACK;
+            const ptFontCss = `${row.fontWeight} ${row.fontSize.toFixed(1)}px ${ptFont}`;
             const w = measurePx(pt.shortLabel, ptFontCss) + 8;
-            return { x: px, label: pt.shortLabel, w };
+            return { x: px, label: pt.shortLabel, w, font: ptFont };
           });
           let lastRight0 = -999;
           let lastRight1 = -999;
@@ -1674,7 +1704,7 @@ export function renderBraunStripPosterSvg(params: RenderBraunStripParams): {
             pointParts.push(
               `<line x1="${fmtNum(vp.x)}" y1="${fmtNum(yCur)}" x2="${fmtNum(vp.x)}" y2="${fmtNum(yCur + 5.5)}" stroke="${BRAUN.orange}" stroke-width="1.0"/>`,
               `<circle cx="${fmtNum(vp.x)}" cy="${fmtNum(yCur + 5.5)}" r="1.5" fill="${BRAUN.orange}"/>`,
-              `<text x="${fmtNum(boxX)}" y="${fmtNum(textY)}" text-anchor="middle" font-size="${fmtNum(row.fontSize)}" font-weight="${row.fontWeight}" fill="${BRAUN.inkSoft}" font-family="${escapeXml(POSTER_SANS_STACK)}">${escapeXml(vp.label)}</text>`
+              `<text x="${fmtNum(boxX)}" y="${fmtNum(textY)}" text-anchor="middle" font-size="${fmtNum(row.fontSize)}" font-weight="${row.fontWeight}" fill="${BRAUN.inkSoft}" font-family="${escapeXml(vp.font)}">${escapeXml(vp.label)}</text>`
             );
           }
         }
@@ -1744,7 +1774,6 @@ export function renderBraunStripPosterSvg(params: RenderBraunStripParams): {
     const colW = (dirW - colGap * (dirCols - 1)) / dirCols;
     const listTop = dirTop + 28;
     const entryFontSize = dirCols === 3 ? 8.6 : 9.4;
-    const entryFontCss = `500 ${entryFontSize.toFixed(1)}px ${POSTER_SANS_STACK}`;
 
     for (let i = 0; i < dirEntries.length; i++) {
       const entry = dirEntries[i];
@@ -1755,13 +1784,15 @@ export function renderBraunStripPosterSvg(params: RenderBraunStripParams): {
       const timeStr = `${entry.time.toFixed(2)}s`;
       const textStartX = cx0 + (dirCols === 3 ? 52 : 58);
       const availTextW = Math.max(40, cx0 + colW - textStartX - 2);
+      const entryFont = IPA_CHAR_RE.test(entry.fullLabel) ? POSTER_IPA_STACK : POSTER_SANS_STACK;
+      const entryFontCss = `500 ${entryFontSize.toFixed(1)}px ${entryFont}`;
       const safeLabel = truncateByGraphemes(entry.fullLabel, availTextW, entryFontCss);
 
       editorialParts.push(
         `<circle cx="${fmtNum(cx0 + 6.5)}" cy="${fmtNum(cyMid)}" r="5.6" fill="${BRAUN.orange}"/>`,
         `<text x="${fmtNum(cx0 + 6.5)}" y="${fmtNum(cyMid + 2.5)}" text-anchor="middle" font-size="7.0" font-weight="700" fill="#FFFFFF" font-family="${escapeXml(POSTER_MONO_STACK)}">${entry.badge}</text>`,
         `<text x="${fmtNum(cx0 + 16)}" y="${fmtNum(cyMid + 2.9)}" font-size="${dirCols === 3 ? '7.8' : '8.4'}" font-weight="500" fill="${BRAUN.muted}" font-family="${escapeXml(POSTER_MONO_STACK)}">${escapeXml(timeStr)}</text>`,
-        `<text x="${fmtNum(textStartX)}" y="${fmtNum(cyMid + 3.1)}" font-size="${fmtNum(entryFontSize)}" font-weight="500" fill="${BRAUN.inkSoft}" font-family="${escapeXml(POSTER_SANS_STACK)}">${escapeXml(safeLabel)}</text>`
+        `<text x="${fmtNum(textStartX)}" y="${fmtNum(cyMid + 3.1)}" font-size="${fmtNum(entryFontSize)}" font-weight="500" fill="${BRAUN.inkSoft}" font-family="${escapeXml(entryFont)}">${escapeXml(safeLabel)}</text>`
       );
     }
   }

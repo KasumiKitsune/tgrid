@@ -2,19 +2,26 @@ import type { PlatformBridge, TextGrid } from '../bridge/types';
 import { isValidPraatTrigraphAt } from './praatTrigraphCodes';
 
 export const IPA_FONT_STACK =
-  '"Charis SIL", "Doulos SIL", "Gentium Plus", "Gentium Book Plus", "Segoe UI", "Cambria", "Lucida Sans Unicode", "Noto Sans", "DejaVu Sans", "Liberation Sans", "FreeSans", "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+  '"TGrid IPA Sans", "Andika", "Charis SIL", "Doulos SIL", "Gentium Plus", "Gentium Book Plus", "Segoe UI", "Lucida Grande", "Helvetica Neue", "Geneva", "Cambria", "Lucida Sans Unicode", "Noto Sans", "DejaVu Sans", "Liberation Sans", "FreeSans", "Inter", "Noto Sans CJK SC", "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols 2", sans-serif';
 export const SERIF_FONT_STACK =
-  '"Times New Roman", "Noto Serif SC", "Songti SC", "SimSun", Georgia, serif';
+  '"TGrid IPA Serif", "Charis SIL", "Gentium Plus", "Doulos SIL", "Times New Roman", "Source Han Serif SC", "Noto Serif SC", "Songti SC", "STZhongsong", "SimSun", "DejaVu Serif", "Noto Sans Symbols 2", serif';
 export const SANS_FONT_STACK =
-  '"Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+  '"Inter", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei", "WenQuanYi Micro Hei", system-ui, -apple-system, sans-serif';
 export const MONO_FONT_STACK =
-  '"JetBrains Mono", "SF Mono", "Cascadia Code", "Consolas", monospace';
+  '"JetBrains Mono", "SF Mono", "Cascadia Code", "Menlo", "Consolas", "DejaVu Sans Mono", "Liberation Mono", "Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols 2", monospace';
 export const SYMBOL_FONT_STACK =
   '"Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols 2", "Noto Sans Symbols", "DejaVu Sans", "Cambria Math", "Lucida Sans Unicode", sans-serif';
 
+// Concise single-primary-font stacks for journal vector compatibility (Adobe Illustrator / Inkscape)
+export const IPA_COMPAT_FONT_STACK = '"Andika", sans-serif';
+export const SERIF_COMPAT_FONT_STACK = '"Charis SIL", "Times New Roman", serif';
+export const SANS_COMPAT_FONT_STACK = '"Inter", "Noto Sans SC", sans-serif';
+export const MONO_COMPAT_FONT_STACK = '"JetBrains Mono", monospace';
+export const SYMBOL_COMPAT_FONT_STACK = '"Segoe UI Symbol", "Apple Symbols", sans-serif';
+
 export const FONT_TEXT = `12.5px ${IPA_FONT_STACK}`;
-export const FONT_GLOSS = `italic 9.5px ${IPA_FONT_STACK}`;
-export const FONT_GLOSS_RAW = `9px ${MONO_FONT_STACK}`;
+export const FONT_GLOSS = `11.2px ${IPA_FONT_STACK}`;
+export const FONT_GLOSS_RAW = `10.2px ${MONO_FONT_STACK}`;
 export const FONT_TIER = `500 12px ${SANS_FONT_STACK}`;
 export const FONT_TICK = `10.5px ${MONO_FONT_STACK}`;
 export const FONT_PT = `11.5px ${IPA_FONT_STACK}`;
@@ -25,6 +32,10 @@ function getMeasureCtx(): CanvasRenderingContext2D | null {
     measureCtx = document.createElement('canvas').getContext('2d');
   }
   return measureCtx;
+}
+
+export function resetFontMeasureCache(): void {
+  measureCtx = null;
 }
 
 export function measurePx(text: string, font: string): number {
@@ -416,7 +427,7 @@ export function layoutRichText(
       lineH: 17,
       gloss: null,
       glossLines: [],
-      glossLineH: 13,
+      glossLineH: 15,
       glossH: 0,
       glossIsRaw: false
     };
@@ -560,16 +571,17 @@ export function layoutRichText(
   }
 
   const lineH = Math.round(17 * fontScale);
-  const glossLineH = Math.round(12.5 * fontScale);
-  const glossFontSize = (glossIsRaw ? 9 : 9.5) * fontScale;
+  const glossLineH = Math.round((glossIsRaw ? 14 : 15) * fontScale);
+  const glossFontSize = (glossIsRaw ? 10.2 : 11.2) * fontScale;
+  const glossGap = glossIsRaw ? Math.round(2 * fontScale) : Math.round(3 * fontScale);
   const glossFont = glossIsRaw
     ? `${glossFontSize.toFixed(2)}px ${MONO_FONT_STACK}`
-    : `italic ${glossFontSize.toFixed(2)}px ${richOpts?.fontFamily || IPA_FONT_STACK}`;
+    : `${glossFontSize.toFixed(2)}px ${richOpts?.fontFamily || IPA_FONT_STACK}`;
   const maxGlossLines = maxWidth > 0 && maxWidth < 56 ? 2 : 3;
   const glossWrap = gloss
     ? wrapGlossText(gloss, maxWidth, glossFont, glossIsRaw, maxGlossLines)
     : { lines: [], maxLineW: 0 };
-  const glossH = glossWrap.lines.length > 0 ? glossWrap.lines.length * glossLineH + Math.round(1 * fontScale) : 0;
+  const glossH = glossWrap.lines.length > 0 ? glossWrap.lines.length * glossLineH + glossGap : 0;
   const width = Math.max(
     visualLines.reduce((m, l) => Math.max(m, l.width), 0),
     glossWrap.maxLineW

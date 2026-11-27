@@ -19,6 +19,10 @@ import type {
 
 export const POSTER_SANS_STACK = SANS_FONT_STACK;
 export const POSTER_SERIF_STACK = SERIF_FONT_STACK;
+export const POSTER_CJK_SERIF_STACK =
+  '"Source Han Serif SC", "Noto Serif SC", "Songti SC", "STZhongsong", "STSong", "FZXiaoBiaoSong-B05S", "SimSun", "DejaVu Serif", serif';
+export const POSTER_DISPLAY_SANS_STACK =
+  '"Inter", "Helvetica Neue", "Arial Black", "Segoe UI", "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
 export const POSTER_IPA_STACK = IPA_FONT_STACK;
 export const POSTER_MONO_STACK = MONO_FONT_STACK;
 
@@ -53,7 +57,8 @@ export const BAUHAUS_R_BRIDGE0 = 165.0;
 export const BAUHAUS_R_BRIDGE1 = 190.0;
 
 const COMBINING_RE = /\p{M}/u;
-const IPA_CHAR_RE = /[\u0250-\u02AF\u02B0-\u02FF\u0300-\u036F\u1D00-\u1DBF]/;
+export const IPA_CHAR_RE =
+  /[\u00E6\u00E7\u00F0\u00F8\u0127\u014B\u0153\u0188\u0199\u01A5\u01AD\u01C0-\u01C3\u0221\u0234-\u0236\u0241\u0250-\u02AF\u02B0-\u02FF\u0300-\u036F\u03B2\u03B8\u03C7\u1D00-\u1DBF\u1DC4-\u1DC9\u203F\u2C71\uA700-\uA71F\uA7F9\uAB66\uAB67]/;
 const IPA_NAME_RE = /ipa|phon|音标|音素|宽式|严式|窄式/i;
 
 export function escapeXml(s: string): string {
@@ -503,7 +508,7 @@ export function solvePolarLayout(params: {
     const fontStack = ring.isIpaLike ? POSTER_IPA_STACK : POSTER_SANS_STACK;
     const fontWeight = template === 'bauhaus' ? 700 : 600;
     const fontCss = `${fontWeight} ${ring.fontSize.toFixed(1)}px ${fontStack}`;
-    const basePad = template === 'vinyl' ? (ring.isIpaLike ? 11.5 : 14.0) : 16.0;
+    const basePad = template === 'vinyl' ? (ring.isIpaLike ? 15.5 : 17.5) : 18.0;
 
     for (const iv of tier.intervals) {
       if (iv.xmax <= tMin + 1e-8 || iv.xmin >= tMax - 1e-8) continue;
@@ -795,7 +800,8 @@ export function renderVinylArcTextSvg(opts: {
   const degMid = 0.5 * (degStart + degEnd);
   const degMidRad = (degMid * Math.PI) / 180;
   const lowerHemi = Math.sin(degMidRad) > 0.02;
-  const availArc = (Math.abs(degEnd - degStart) * Math.PI * rMid) / 180;
+  const rEff = lowerHemi ? rMid + 0.65 : rMid;
+  const availArc = (Math.abs(degEnd - degStart) * Math.PI * rEff) / 180;
   if (availArc < 4.5) return '';
 
   const graphemes = splitGraphemes(text);
@@ -806,27 +812,28 @@ export function renderVinylArcTextSvg(opts: {
   const isShortAtomic = !text.includes(' ') && graphemes.length <= 3;
   if ((singleUnit && isShortAtomic) || (!text.includes(' ') && graphemes.length <= 2)) {
     const gw = Math.max(1, measurePx(text, fontCss));
-    const maxW = Math.max(6, availArc - 2.6);
+    const sideMargin = Math.min(8.0, Math.max(4.8, availArc * 0.22));
+    const maxW = Math.max(4.5, availArc - sideMargin);
     let effSize = fontSize;
     let display = text;
     if (gw > maxW) {
       const ratio = maxW / gw;
-      if (ratio >= 0.62) {
-        effSize = fontSize * ratio;
-      } else if (rThick >= 14 && availArc < 13 && graphemes.length <= 4) {
+      if (ratio >= 0.56) {
+        effSize = Math.max(5.0, fontSize * ratio);
+      } else if (rThick >= 14 && availArc < 14 && graphemes.length <= 4) {
         // Ultra-narrow sector: rotate along radial spoke
-        const spokeScale = Math.min(1, (rThick - 3) / gw);
-        effSize = Math.max(5.5, fontSize * Math.max(0.62, spokeScale));
+        const spokeScale = Math.min(1, (rThick - 4) / gw);
+        effSize = Math.max(5.2, fontSize * Math.max(0.58, spokeScale));
         const [px, py] = polarPtVinyl(cx, cy, rMid, degMid);
         const isLeft = Math.cos(degMidRad) < -0.01;
         const spokeRot = isLeft ? degMid + 180 : degMid;
         return `<text x="0" y="0" transform="translate(${fmtNum(px)} ${fmtNum(py)}) rotate(${fmtNum(spokeRot)})" font-family="${escapeXml(fontFamily)}" font-size="${fmtNum(effSize)}" font-weight="${fontWeight}" fill="${fill}" text-anchor="middle" dominant-baseline="central">${escapeXml(display)}</text>`;
       } else {
-        effSize = Math.max(5.6, fontSize * 0.66);
+        effSize = Math.max(5.4, fontSize * 0.62);
         display = truncateByGraphemes(text, maxW, `${fontWeight} ${effSize.toFixed(1)}px ${fontFamily}`);
       }
     }
-    const [px, py] = polarPtVinyl(cx, cy, rMid, degMid);
+    const [px, py] = polarPtVinyl(cx, cy, rEff, degMid);
     const rotDeg = degMid + (lowerHemi ? -90 : 90);
     return `<text x="0" y="0" transform="translate(${fmtNum(px)} ${fmtNum(py)}) rotate(${fmtNum(rotDeg)})" font-family="${escapeXml(fontFamily)}" font-size="${fmtNum(effSize)}" font-weight="${fontWeight}" fill="${fill}" text-anchor="middle" dominant-baseline="central">${escapeXml(display)}</text>`;
   }
@@ -835,13 +842,13 @@ export function renderVinylArcTextSvg(opts: {
   const totalW = Math.max(1, measurePx(text, fontCss));
   let effSize = fontSize;
   let displayText = text;
-  const maxArcW = Math.max(10, availArc - 6.0);
+  const maxArcW = Math.max(8, availArc - Math.min(10.5, Math.max(6.8, availArc * 0.18)));
   if (totalW > maxArcW) {
     const ratio = maxArcW / totalW;
-    if (ratio >= 0.68) {
+    if (ratio >= 0.64) {
       effSize = fontSize * ratio;
     } else {
-      effSize = fontSize * 0.72;
+      effSize = fontSize * 0.68;
       displayText = truncateByGraphemes(text, maxArcW, `${fontWeight} ${effSize.toFixed(1)}px ${fontFamily}`);
     }
   }
@@ -860,10 +867,10 @@ export function renderVinylArcTextSvg(opts: {
     cursor += gw;
     if (!g.trim()) continue;
     const s = cxLocal - sumW * 0.5;
-    const dDeg = ((s / rMid) * 180) / Math.PI;
+    const dDeg = ((s / rEff) * 180) / Math.PI;
     const angDeg = lowerHemi ? degMid - dDeg : degMid + dDeg;
     const rotDeg = angDeg + (lowerHemi ? -90 : 90);
-    const [px, py] = polarPtVinyl(cx, cy, rMid, angDeg);
+    const [px, py] = polarPtVinyl(cx, cy, rEff, angDeg);
     parts.push(
       `<text x="0" y="0" transform="translate(${fmtNum(px)} ${fmtNum(py)}) rotate(${fmtNum(rotDeg)})" font-family="${escapeXml(fontFamily)}" font-size="${fmtNum(effSize)}" font-weight="${fontWeight}" fill="${fill}" text-anchor="middle" dominant-baseline="central">${escapeXml(g)}</text>`
     );
@@ -900,7 +907,7 @@ export function renderBauhausUprightTokenSvg(opts: {
 
   const cAbs = Math.abs(Math.cos(phiMid));
   const sAbs = Math.abs(Math.sin(phiMid));
-  const availW = Math.max(11.0, tangSpan * cAbs + radialSpan * sAbs - 5.0);
+  const availW = Math.max(10.0, tangSpan * cAbs + radialSpan * sAbs - 6.5);
 
   const baseFontCss = `${fontWeight} ${fontSize.toFixed(1)}px ${fontFamily}`;
   const gw = measurePx(text, baseFontCss);
@@ -939,21 +946,23 @@ export function renderBauhausSyllableTokenSvg(opts: {
   const { cx, cy, rIn, rOut, deg0, deg1, text, fontSize, fontWeight, fontFamily, fill } = opts;
   if (!text) return '';
   const degMid = 0.5 * (deg0 + deg1);
-  const rMid = 0.5 * (rIn + rOut);
-  const [mx, my] = polarPtBauhaus(cx, cy, rMid, degMid);
+  const rMidBase = 0.5 * (rIn + rOut);
 
-  const radialMaxW = Math.max(10.0, rOut - rIn - 4.0);
-  const tangMaxW = Math.max(10.0, (((Math.abs(deg1 - deg0) * Math.PI) / 180) * rMid) - 4.5);
+  const radialMaxW = Math.max(10.0, rOut - rIn - 4.5);
+  const tangMaxW = Math.max(9.0, (((Math.abs(deg1 - deg0) * Math.PI) / 180) * rMidBase) - 6.5);
   const gLen = splitGraphemes(text).length;
 
   let rotDeg: number;
   let maxW: number;
   const preferRadial = Math.abs(degMid) > 72.0 && gLen <= 3 && radialMaxW >= tangMaxW * 0.92;
+  const lowerHemi = !preferRadial && Math.abs(degMid) > 89.0;
+  const rMid = lowerHemi ? rMidBase + 0.85 : rMidBase;
+  const [mx, my] = polarPtBauhaus(cx, cy, rMid, degMid);
   if (preferRadial) {
     rotDeg = degMid < 0 ? degMid + 90.0 : degMid - 90.0;
     maxW = radialMaxW;
   } else {
-    rotDeg = degMid;
+    rotDeg = lowerHemi ? degMid + 180.0 : degMid;
     maxW = tangMaxW;
   }
 
@@ -1010,11 +1019,12 @@ export function renderBauhausCurvedSpanSvg(opts: {
   const pLo = spansFullArch ? Math.max(deg0, -68.0) : deg0;
   const pHi = spansFullArch ? Math.min(deg1, 68.0) : deg1;
   const degMid = 0.5 * (pLo + pHi);
-  const rawArc = ((Math.abs(pHi - pLo) * Math.PI) / 180) * rMid;
-  const edgePad = Math.min(8.0, Math.max(3.5, rawArc * 0.12));
+  // Flip tangential direction 180° past 3/9 o'clock equator (y > cy) with optical radial centering
+  const lowerHemi = Math.abs(degMid) > 89.0;
+  const rEff = lowerHemi ? rMid + 0.85 : rMid;
+  const rawArc = ((Math.abs(pHi - pLo) * Math.PI) / 180) * rEff;
+  const edgePad = Math.min(10.0, Math.max(5.5, rawArc * 0.16));
   const availArc = Math.max(10.0, rawArc - edgePad);
-  // Keep clockwise reading direction consistent across the entire -106°..+118° Bauhaus sunburst
-  const lowerHemi = Math.abs(degMid) > 125.0;
 
   let effSize = fontSize;
   let displayText = text;
@@ -1046,10 +1056,10 @@ export function renderBauhausCurvedSpanSvg(opts: {
     cursor += gw + letterSpacingPt;
     if (!g.trim()) continue;
     const s = cxLocal - totalW * 0.5;
-    const dDeg = ((s / rMid) * 180) / Math.PI;
+    const dDeg = ((s / rEff) * 180) / Math.PI;
     const degC = lowerHemi ? degMid - dDeg : degMid + dDeg;
     const rotDeg = lowerHemi ? degC + 180 : degC;
-    const [px, py] = polarPtBauhaus(cx, cy, rMid, degC);
+    const [px, py] = polarPtBauhaus(cx, cy, rEff, degC);
     out.push(
       `<text x="0" y="0" transform="translate(${fmtNum(px)} ${fmtNum(py)}) rotate(${fmtNum(rotDeg)})" font-family="${escapeXml(fontFamily)}" font-size="${fmtNum(effSize)}" font-weight="${fontWeight}" fill="${fill}" text-anchor="middle" dominant-baseline="central">${escapeXml(g)}</text>`
     );

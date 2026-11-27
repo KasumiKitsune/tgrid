@@ -453,7 +453,7 @@ export const TiersPanel: React.FC = () => {
                         <button
                           type="button"
                           className="compact"
-                          style={{ height: 22, padding: '0 6px', fontSize: 10.5 }}
+                          style={{ height: 22, padding: '0 6px', fontSize: 11 }}
                           title="新建区间层并继承当前层全部边界（清空文本）"
                           onClick={() => duplicateTier(idx, { copyText: false })}
                         >
@@ -464,7 +464,7 @@ export const TiersPanel: React.FC = () => {
                       <button
                         type="button"
                         className="compact"
-                        style={{ height: 22, padding: '0 6px', fontSize: 10.5 }}
+                        style={{ height: 22, padding: '0 6px', fontSize: 11 }}
                         title="复制整层（含边界与全部标注文本）"
                         onClick={() => duplicateTier(idx, { copyText: true })}
                       >
@@ -475,7 +475,7 @@ export const TiersPanel: React.FC = () => {
                         <button
                           type="button"
                           className="compact"
-                          style={{ height: 22, padding: '0 6px', fontSize: 10.5 }}
+                          style={{ height: 22, padding: '0 6px', fontSize: 11 }}
                           title="按当前层所有非空区间中点派生新点层"
                           onClick={() => derivePointTierFromIntervals(idx, 'mid')}
                         >

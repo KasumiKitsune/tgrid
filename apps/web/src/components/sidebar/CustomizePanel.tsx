@@ -476,7 +476,7 @@ export const CustomizePanel: React.FC = () => {
                 <button
                   type="button"
                   className="compact"
-                  style={{ height: 21, padding: '0 7px', fontSize: 10.5 }}
+                  style={{ height: 22, padding: '0 7px', fontSize: 11 }}
                   onClick={() => resetFloatingBarConfig()}
                 >
                   <UiIcon name="reset" size={11} />
@@ -673,7 +673,7 @@ export const CustomizePanel: React.FC = () => {
                   <div
                     style={{
                       padding: '5px 8px',
-                      fontSize: 10.5,
+                      fontSize: 11,
                       fontWeight: 600,
                       letterSpacing: '0.03em',
                       color: 'var(--ink-muted)',
@@ -740,7 +740,7 @@ export const CustomizePanel: React.FC = () => {
                                   style={{
                                     height: 22,
                                     padding: '0 5px',
-                                    fontSize: 10,
+                                    fontSize: 11,
                                     color: 'var(--ink-muted)'
                                   }}
                                   title="恢复此动作默认快捷键"

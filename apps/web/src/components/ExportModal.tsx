@@ -589,6 +589,34 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
                   </button>
                 </div>
               </div>
+              {prefs.format === 'svg' && (
+                <div className="export-svg-font-block">
+                  <div className="export-sub-row">
+                    <span className="setting-label">SVG 字体</span>
+                    <div className="segmented" role="group">
+                      <button
+                        type="button"
+                        className={`compact ${prefs.svgFontMode === 'embed' ? 'active' : ''}`}
+                        onClick={() => updatePrefs({ svgFontMode: 'embed' }, false)}
+                      >
+                        内嵌音标字体（推荐）
+                      </button>
+                      <button
+                        type="button"
+                        className={`compact ${prefs.svgFontMode === 'compat' ? 'active' : ''}`}
+                        onClick={() => updatePrefs({ svgFontMode: 'compat' }, false)}
+                      >
+                        期刊排版兼容
+                      </button>
+                    </div>
+                  </div>
+                  <p className="export-font-hint">
+                    {prefs.svgFontMode === 'embed'
+                      ? '内嵌精简 SIL 音标字体子集，跨设备、浏览器与 Typst 排版保真。'
+                      : '输出精简单字体声明（Andika / Charis SIL 等），便于 Illustrator、Inkscape 二次编辑。'}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* 2. Range & Tiers */}
@@ -1102,27 +1130,27 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
                           />
                           <span>精简矢量体积</span>
                         </label>
-                        <div className="export-sub-row">
-                          <span className="setting-label">字体兼容</span>
-                          <div className="segmented" role="group">
-                            <button
-                              type="button"
-                              className={`compact ${prefs.fontStrategy === 'ipa' ? 'active' : ''}`}
-                              onClick={() => updatePrefs({ fontStrategy: 'ipa' })}
-                            >
-                              完整音标字体栈（推荐）
-                            </button>
-                            <button
-                              type="button"
-                              className={`compact ${prefs.fontStrategy === 'serif' ? 'active' : ''}`}
-                              onClick={() => updatePrefs({ fontStrategy: 'serif' })}
-                            >
-                              通用衬线体
-                            </button>
-                          </div>
-                        </div>
                       </>
                     )}
+                    <div className="export-sub-row">
+                      <span className="setting-label">字体风格</span>
+                      <div className="segmented" role="group">
+                        <button
+                          type="button"
+                          className={`compact ${prefs.fontStrategy === 'ipa' ? 'active' : ''}`}
+                          onClick={() => updatePrefs({ fontStrategy: 'ipa' })}
+                        >
+                          无衬线音标体（默认）
+                        </button>
+                        <button
+                          type="button"
+                          className={`compact ${prefs.fontStrategy === 'serif' ? 'active' : ''}`}
+                          onClick={() => updatePrefs({ fontStrategy: 'serif' })}
+                        >
+                          学术衬线体
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}

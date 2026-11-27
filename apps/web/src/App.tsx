@@ -13,7 +13,7 @@ import {
   setTabAudioBuffer
 } from './audio/tabAudioStore';
 import { createSample, type BuiltinSample } from './data/samples';
-import { prefetchTrigraphCache } from './layout/richText';
+import { prefetchTrigraphCache, resetFontMeasureCache } from './layout/richText';
 import {
   buildExportZipBytes,
   getBaseStem,
@@ -712,6 +712,37 @@ export function App() {
       active = false;
     };
   }, [isDesktop, openFilePayloads]);
+
+  // Trigger IPA WebFont load & re-measure Canvas text layout once ready (eliminates cold-start width drift)
+  useEffect(() => {
+    if (typeof document === 'undefined' || !('fonts' in document)) return;
+    const fontSet = document.fonts;
+    let active = true;
+    const triggerReflow = () => {
+      if (!active) return;
+      resetFontMeasureCache();
+      useEditorStore.getState().bumpDocVersion();
+    };
+    const isIpaFace = (f: FontFace) => {
+      const fam = f.family.replace(/['"]/g, '').trim();
+      return fam === 'TGrid IPA Sans' || fam === 'TGrid IPA Serif';
+    };
+    const onLoadingDone = (ev: Event) => {
+      const faces = (ev as FontFaceSetLoadEvent).fontfaces;
+      if (!faces || faces.length === 0 || faces.some(isIpaFace)) {
+        triggerReflow();
+      }
+    };
+    fontSet.addEventListener?.('loadingdone', onLoadingDone);
+    void fontSet.load?.('400 12.5px "TGrid IPA Sans"').catch(() => []);
+    void fontSet.ready.then(() => {
+      triggerReflow();
+    });
+    return () => {
+      active = false;
+      fontSet.removeEventListener?.('loadingdone', onLoadingDone);
+    };
+  }, []);
 
   // Zero-white-flash startup reveal on desktop (with guaranteed safety-net timeout)
   useEffect(() => {

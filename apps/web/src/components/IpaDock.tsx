@@ -113,6 +113,12 @@ function isCombining(sym: string): boolean {
   );
 }
 
+function isMicroGlyph(sym: string): boolean {
+  if (!sym || sym.length !== 1) return false;
+  const cp = sym.codePointAt(0) || 0;
+  return cp >= 0xa700 && cp <= 0xa716;
+}
+
 function displayGlyph(sym: string): string {
   if (sym === '\u0361') return '\u25CC\u0361\u25CC';
   if (sym === '\u035C') return '\u25CC\u035C\u25CC';
@@ -403,7 +409,9 @@ export const IpaDock: React.FC<IpaDockProps> = ({ onInsertSymbol }) => {
               key={sym}
               type="button"
               tabIndex={-1}
-              className={`ipa-key recent-key ${isCombining(sym) ? 'diacritic' : ''}`}
+              className={`ipa-key recent-key ${isCombining(sym) ? 'diacritic' : ''} ${
+                isMicroGlyph(sym) ? 'micro-glyph' : ''
+              }`}
               onMouseEnter={() => inspectSymbol(sym)}
               onMouseDown={(e) => handleKeyPress(e, sym)}
             >
@@ -428,7 +436,9 @@ export const IpaDock: React.FC<IpaDockProps> = ({ onInsertSymbol }) => {
                     key={`${cfg.sym}-${idx}`}
                     type="button"
                     tabIndex={-1}
-                    className={`ipa-key ${cfg.wide ? 'wide' : ''} ${isCombining(cfg.sym) ? 'diacritic' : ''} ${cfg.tiebar ? 'tiebar' : ''}`}
+                    className={`ipa-key ${cfg.wide ? 'wide' : ''} ${isCombining(cfg.sym) ? 'diacritic' : ''} ${
+                      isMicroGlyph(cfg.sym) ? 'micro-glyph' : ''
+                    } ${cfg.tiebar ? 'tiebar' : ''}`}
                     onMouseEnter={() => inspectSymbol(cfg.sym)}
                     onMouseDown={(e) => handleKeyPress(e, cfg.sym, cfg.tiebar)}
                   >

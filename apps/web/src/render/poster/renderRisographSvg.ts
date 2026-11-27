@@ -1,10 +1,12 @@
 import type { TextGrid, Tier } from '../../bridge/types';
 import { measurePx, splitGraphemes } from '../../layout/richText';
 import {
+  IPA_CHAR_RE,
+  POSTER_CJK_SERIF_STACK,
+  POSTER_DISPLAY_SANS_STACK,
   POSTER_IPA_STACK,
   POSTER_MONO_STACK,
   POSTER_SANS_STACK,
-  POSTER_SERIF_STACK,
   escapeXml,
   fmtNum,
   hasCombiningMarks,
@@ -1073,20 +1075,30 @@ export function renderRisographPosterSvg(params: RenderRisographParams): {
   // Subtle time-axis calibration hairlines & non-colliding timestamps below spectrogram
   if (timeAxis.breaks.length === 0) {
     const stepSec = duration <= 3.5 ? 0.5 : duration <= 8 ? 1.0 : 2.0;
+    const endX = timeAxis.timeToX(tMax);
+    const tickCss = `600 9.4px ${POSTER_MONO_STACK}`;
+    const endLbl = `${tMax.toFixed(2)}s`;
+    const endBoxLeft = endX - measurePx(endLbl, tickCss);
+    let lastTickRight = -100;
     for (let dt = 0; dt <= duration + 0.01; dt += stepSec) {
       if (dt > duration - 0.18 && Math.abs(dt - duration) > 0.02) continue;
       const tVal = tMin + dt;
       const tx = timeAxis.timeToX(tVal);
       const anchor = dt < 0.05 ? 'start' : 'middle';
+      const lbl = `${tVal.toFixed(1)}s`;
+      const lblW = measurePx(lbl, tickCss);
+      const boxL = anchor === 'start' ? tx : tx - lblW * 0.5;
+      const boxR = anchor === 'start' ? tx + lblW : tx + lblW * 0.5;
+      if (boxL < lastTickRight + 10 || boxR > endBoxLeft - 10) continue;
+      lastTickRight = boxR;
       acousticParts.push(
         `<line x1="${fmtNum(tx)}" y1="${specBot + 1.5}" x2="${fmtNum(tx)}" y2="${specBot + 5.5}" stroke="${RISO.navy}" stroke-opacity="0.46" stroke-width="0.75"/>`,
-        `<text x="${fmtNum(tx)}" y="${specBot + 16}" text-anchor="${anchor}" font-size="9.4" font-weight="600" fill="${RISO.navy}" fill-opacity="0.52" font-family="${escapeXml(POSTER_MONO_STACK)}">${tVal.toFixed(1)}s</text>`
+        `<text x="${fmtNum(tx)}" y="${specBot + 16}" text-anchor="${anchor}" font-size="9.4" font-weight="600" fill="${RISO.navy}" fill-opacity="0.52" font-family="${escapeXml(POSTER_MONO_STACK)}">${lbl}</text>`
       );
     }
-    const endX = timeAxis.timeToX(tMax);
     acousticParts.push(
       `<line x1="${fmtNum(endX)}" y1="${specBot + 1.5}" x2="${fmtNum(endX)}" y2="${specBot + 5.5}" stroke="${RISO.navy}" stroke-opacity="0.46" stroke-width="0.75"/>`,
-      `<text x="${fmtNum(endX)}" y="${specBot + 16}" text-anchor="end" font-size="9.4" font-weight="600" fill="${RISO.navy}" fill-opacity="0.52" font-family="${escapeXml(POSTER_MONO_STACK)}">${tMax.toFixed(2)}s</text>`
+      `<text x="${fmtNum(endX)}" y="${specBot + 16}" text-anchor="end" font-size="9.4" font-weight="600" fill="${RISO.navy}" fill-opacity="0.52" font-family="${escapeXml(POSTER_MONO_STACK)}">${endLbl}</text>`
     );
   } else {
     let lastLabelX = -100;
@@ -1379,10 +1391,11 @@ export function renderRisographPosterSvg(params: RenderRisographParams): {
     // Row 1: Broad IPA / Secondary tier
     if (hasAnyRow1 && cl.row1Text) {
       let bFont = 13.8;
-      while (measurePx(cl.row1Text, `500 ${bFont.toFixed(1)}px ${POSTER_IPA_STACK}`) > cl.w - 4 && bFont > 9.8) {
+      const maxRow1W = Math.max(16, cl.w - 8);
+      while (measurePx(cl.row1Text, `500 ${bFont.toFixed(1)}px ${POSTER_IPA_STACK}`) > maxRow1W && bFont > 9.8) {
         bFont -= 0.7;
       }
-      const bDisp = truncateByGraphemes(cl.row1Text, cl.w - 2, `500 ${bFont.toFixed(1)}px ${POSTER_IPA_STACK}`);
+      const bDisp = truncateByGraphemes(cl.row1Text, maxRow1W, `500 ${bFont.toFixed(1)}px ${POSTER_IPA_STACK}`);
       annotationParts.push(
         `<text x="${fmtNum(cl.xc)}" y="${fmtNum(rowBroadY)}" text-anchor="middle" font-size="${fmtNum(bFont)}" font-weight="500" fill="${RISO.navy}" fill-opacity="0.78" font-family="${escapeXml(POSTER_IPA_STACK)}">${escapeXml(bDisp)}</text>`
       );
@@ -1411,8 +1424,8 @@ export function renderRisographPosterSvg(params: RenderRisographParams): {
             );
           })
         );
-        if (maxRowW > cl.w - 4 && maxRowW > 0) {
-          nFont = Math.max(10.2, nFont * ((cl.w - 4) / maxRowW));
+        if (maxRowW > cl.w - 8 && maxRowW > 0) {
+          nFont = Math.max(10.0, nFont * ((cl.w - 8) / maxRowW));
         }
 
         const fontCss = `600 ${nFont.toFixed(1)}px ${POSTER_IPA_STACK}`;
@@ -1461,19 +1474,22 @@ export function renderRisographPosterSvg(params: RenderRisographParams): {
         let chosenStamp = candidateTags[0];
         if (candidateTags.length >= 2) {
           const joined = `${candidateTags[0]} · ${candidateTags[1]}`;
-          if (measurePx(joined, `600 9.6px ${POSTER_SANS_STACK}`) <= cl.w - 10) {
+          const joinFont = IPA_CHAR_RE.test(joined) ? POSTER_IPA_STACK : POSTER_SANS_STACK;
+          if (measurePx(joined, `600 9.6px ${joinFont}`) <= cl.w - 20) {
             chosenStamp = joined;
           }
         }
-        let tFont = 10.8;
-        while (measurePx(chosenStamp, `600 ${tFont.toFixed(1)}px ${POSTER_SANS_STACK}`) > cl.w - 12 && tFont > 8.6) {
+        const stampFont = IPA_CHAR_RE.test(chosenStamp) ? POSTER_IPA_STACK : POSTER_SANS_STACK;
+        const maxStampTextW = Math.max(18, cl.w - 22);
+        let tFont = 10.6;
+        while (measurePx(chosenStamp, `600 ${tFont.toFixed(1)}px ${stampFont}`) > maxStampTextW && tFont > 8.6) {
           tFont -= 0.4;
         }
-        const dispTone = truncateByGraphemes(chosenStamp, cl.w - 10, `600 ${tFont.toFixed(1)}px ${POSTER_SANS_STACK}`);
-        const stampW = Math.min(cl.w - 2, measurePx(dispTone, `600 ${tFont.toFixed(1)}px ${POSTER_SANS_STACK}`) + 14);
+        const dispTone = truncateByGraphemes(chosenStamp, maxStampTextW, `600 ${tFont.toFixed(1)}px ${stampFont}`);
+        const stampW = Math.min(cl.w, measurePx(dispTone, `600 ${tFont.toFixed(1)}px ${stampFont}`) + 22);
         pointParts.push(
           `<rect x="${fmtNum(cl.xc - stampW * 0.5)}" y="${fmtNum(rowToneY - 13.5)}" width="${fmtNum(stampW)}" height="20" rx="10" fill="${pm.color}" fill-opacity="${cl.inkKey === 'yellow' ? '0.44' : '0.17'}" style="mix-blend-mode:multiply"/>`,
-          `<text x="${fmtNum(cl.xc)}" y="${fmtNum(rowToneY - 0.5)}" text-anchor="middle" font-size="${fmtNum(tFont)}" font-weight="600" fill="${RISO.navy}" fill-opacity="0.90" font-family="${escapeXml(POSTER_SANS_STACK)}">${escapeXml(dispTone)}</text>`
+          `<text x="${fmtNum(cl.xc)}" y="${fmtNum(rowToneY - 0.5)}" text-anchor="middle" font-size="${fmtNum(tFont)}" font-weight="600" fill="${RISO.navy}" fill-opacity="0.90" font-family="${escapeXml(stampFont)}">${escapeXml(dispTone)}</text>`
         );
       } else {
         pointParts.push(
@@ -1573,23 +1589,25 @@ export function renderRisographPosterSvg(params: RenderRisographParams): {
       const tagX = timeX + (tMax >= 10 ? 40 : 35);
       const availTextW = Math.max(40, cx0 + colW - tagX);
 
+      const tagFont = IPA_CHAR_RE.test(entry.primaryTag) ? POSTER_IPA_STACK : POSTER_SANS_STACK;
       if (entry.detailNote) {
         const tagMaxW = Math.min(availTextW * 0.52, nCols === 3 ? 88 : 132);
-        const tagCss = `700 9.6px ${POSTER_SANS_STACK}`;
+        const tagCss = `700 9.6px ${tagFont}`;
         const tagDisp = truncateByGraphemes(entry.primaryTag, tagMaxW, tagCss);
         const tagW = measurePx(tagDisp, tagCss);
         const noteX = tagX + tagW + 8;
         const noteAvailW = Math.max(24, cx0 + colW - noteX);
-        const noteDisp = truncateByGraphemes(entry.detailNote, noteAvailW, `500 9.0px ${POSTER_SANS_STACK}`);
+        const noteFont = IPA_CHAR_RE.test(entry.detailNote) ? POSTER_IPA_STACK : POSTER_SANS_STACK;
+        const noteDisp = truncateByGraphemes(entry.detailNote, noteAvailW, `500 9.0px ${noteFont}`);
 
         pointParts.push(
-          `<text x="${fmtNum(tagX)}" y="${fmtNum(ry)}" font-size="9.6" font-weight="700" fill="${RISO.navy}" fill-opacity="0.94" font-family="${escapeXml(POSTER_SANS_STACK)}">${escapeXml(tagDisp)}</text>`,
-          `<text x="${fmtNum(noteX)}" y="${fmtNum(ry)}" font-size="9.0" font-weight="500" fill="${RISO.muted}" fill-opacity="0.88" font-family="${escapeXml(POSTER_SANS_STACK)}">${escapeXml(noteDisp)}</text>`
+          `<text x="${fmtNum(tagX)}" y="${fmtNum(ry)}" font-size="9.6" font-weight="700" fill="${RISO.navy}" fill-opacity="0.94" font-family="${escapeXml(tagFont)}">${escapeXml(tagDisp)}</text>`,
+          `<text x="${fmtNum(noteX)}" y="${fmtNum(ry)}" font-size="9.0" font-weight="500" fill="${RISO.muted}" fill-opacity="0.88" font-family="${escapeXml(noteFont)}">${escapeXml(noteDisp)}</text>`
         );
       } else {
-        const tagDisp = truncateByGraphemes(entry.primaryTag, availTextW, `700 9.6px ${POSTER_SANS_STACK}`);
+        const tagDisp = truncateByGraphemes(entry.primaryTag, availTextW, `700 9.6px ${tagFont}`);
         pointParts.push(
-          `<text x="${fmtNum(tagX)}" y="${fmtNum(ry)}" font-size="9.6" font-weight="700" fill="${RISO.navy}" fill-opacity="0.94" font-family="${escapeXml(POSTER_SANS_STACK)}">${escapeXml(tagDisp)}</text>`
+          `<text x="${fmtNum(tagX)}" y="${fmtNum(ry)}" font-size="9.6" font-weight="700" fill="${RISO.navy}" fill-opacity="0.94" font-family="${escapeXml(tagFont)}">${escapeXml(tagDisp)}</text>`
         );
       }
     });
@@ -1604,7 +1622,7 @@ export function renderRisographPosterSvg(params: RenderRisographParams): {
     const titleCn = truncateByGraphemes(
       config.copy.title.trim() || autoCopy.title,
       280,
-      `900 35px ${POSTER_SERIF_STACK}`
+      `900 35px ${POSTER_CJK_SERIF_STACK}`
     );
 
     // Top 3-Plate Risograph Overprint Press Bar (iconic printmaker signature)
@@ -1623,10 +1641,10 @@ export function renderRisographPosterSvg(params: RenderRisographParams): {
     // Monumental Misaligned Overprint Title (`VOICE & PRINT` + Chinese serif lockup)
     const titleY = 142;
     edParts.push(
-      `<text x="${fmtNum(contentLeft + 2.5)}" y="${fmtNum(titleY + 2.1)}" font-size="54" font-weight="900" letter-spacing="-1.0" fill="${RISO.yellow}" fill-opacity="0.94" font-family="${escapeXml(POSTER_SANS_STACK)}" style="mix-blend-mode:multiply">VOICE &amp; PRINT</text>`,
-      `<text x="${contentLeft}" y="${titleY}" font-size="54" font-weight="900" letter-spacing="-1.0" fill="${RISO.pink}" fill-opacity="0.92" font-family="${escapeXml(POSTER_SANS_STACK)}" style="mix-blend-mode:multiply">VOICE &amp; PRINT</text>`,
-      `<text x="${fmtNum(contentRight + 1.8)}" y="${fmtNum(titleY - 1 + 1.4)}" text-anchor="end" font-size="35" font-weight="900" fill="${RISO.pink}" fill-opacity="0.44" font-family="${escapeXml(POSTER_SERIF_STACK)}" style="mix-blend-mode:multiply">${escapeXml(titleCn)}</text>`,
-      `<text x="${contentRight}" y="${titleY - 1}" text-anchor="end" font-size="35" font-weight="900" fill="${RISO.cyan}" fill-opacity="0.95" font-family="${escapeXml(POSTER_SERIF_STACK)}" style="mix-blend-mode:multiply">${escapeXml(titleCn)}</text>`
+      `<text x="${fmtNum(contentLeft + 2.5)}" y="${fmtNum(titleY + 2.1)}" font-size="54" font-weight="900" letter-spacing="-1.0" fill="${RISO.yellow}" fill-opacity="0.94" font-family="${escapeXml(POSTER_DISPLAY_SANS_STACK)}" style="mix-blend-mode:multiply">VOICE &amp; PRINT</text>`,
+      `<text x="${contentLeft}" y="${titleY}" font-size="54" font-weight="900" letter-spacing="-1.0" fill="${RISO.pink}" fill-opacity="0.92" font-family="${escapeXml(POSTER_DISPLAY_SANS_STACK)}" style="mix-blend-mode:multiply">VOICE &amp; PRINT</text>`,
+      `<text x="${fmtNum(contentRight + 1.8)}" y="${fmtNum(titleY - 1 + 1.4)}" text-anchor="end" font-size="35" font-weight="900" fill="${RISO.pink}" fill-opacity="0.44" font-family="${escapeXml(POSTER_CJK_SERIF_STACK)}" style="mix-blend-mode:multiply">${escapeXml(titleCn)}</text>`,
+      `<text x="${contentRight}" y="${titleY - 1}" text-anchor="end" font-size="35" font-weight="900" fill="${RISO.cyan}" fill-opacity="0.95" font-family="${escapeXml(POSTER_CJK_SERIF_STACK)}" style="mix-blend-mode:multiply">${escapeXml(titleCn)}</text>`
     );
 
     // Right 3-dot acoustic legend (measure first so subtitle never collides!)

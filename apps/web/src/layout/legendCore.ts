@@ -57,10 +57,10 @@ export const WARM_PALETTE: ScorePalette = {
   paper: '#FFFFFF',
   ink: '#141413',
   border: '#2A2926',
-  muted: '#5F5C55',
-  mutedAlt: '#66635B',
-  faint: '#747169',
-  faintTick: '#78756C',
+  muted: '#54514A',
+  mutedAlt: '#524F48',
+  faint: '#5E5B53',
+  faintTick: '#5C5951',
   rule: '#C8C4BA',
   gridMajor: '#C9C5BB',
   gridMinor: '#E5E2DA',
@@ -97,10 +97,10 @@ export const BW_PALETTE: ScorePalette = {
   paper: '#FFFFFF',
   ink: '#000000',
   border: '#000000',
-  muted: '#404040',
-  mutedAlt: '#404040',
-  faint: '#666666',
-  faintTick: '#737373',
+  muted: '#3B3B3B',
+  mutedAlt: '#454545',
+  faint: '#525252',
+  faintTick: '#545454',
   rule: '#B5B5B5',
   gridMajor: '#BDBDBD',
   gridMinor: '#E0E0E0',
@@ -717,12 +717,14 @@ export function renderBand0AxisLabels(
     isExp: boolean;
     sem: boolean;
     bNum: number;
+    sansFontFamily?: string;
   }
 ): void {
   const gutterW = Math.max(0, band.originX - opts.padX);
   const gutterAvail = Math.max(0, gutterW - 6);
   if (gutterAvail < 18) return;
 
+  const sansFont = opts.sansFontFamily || SANS_FONT_STACK;
   const fontSize = (opts.isTinyView ? 8.5 : 9) * opts.fScale;
   const font = `${fontSize.toFixed(1)}px ${SANS_FONT_STACK}`;
   const isEn = opts.lang === 'en';
@@ -760,7 +762,7 @@ export function renderBand0AxisLabels(
         x: labelX,
         y: trackY,
         'text-anchor': 'end',
-        'font-family': SANS_FONT_STACK,
+        'font-family': sansFont,
         'font-size': String(Number(fontSize.toFixed(2))),
         fill: opts.pal.muted
       },
@@ -775,7 +777,7 @@ export function renderBand0AxisLabels(
         x: labelX,
         y: band.tiersTopY - 4,
         'text-anchor': 'end',
-        'font-family': SANS_FONT_STACK,
+        'font-family': sansFont,
         'font-size': String(Number(fontSize.toFixed(2))),
         fill: opts.pal.muted
       },
@@ -855,7 +857,14 @@ export function renderSwatchSVG(
   x: number,
   y: number,
   pal: ScorePalette,
-  opts: { sScale?: number; inlinePatterns?: boolean; idPrefix?: string } = {}
+  opts: {
+    sScale?: number;
+    inlinePatterns?: boolean;
+    idPrefix?: string;
+    ipaFontFamily?: string;
+    monoFontFamily?: string;
+    symbolFontFamily?: string;
+  } = {}
 ): SVGElement {
   const sScale = opts.sScale || 1;
   const inlinePatterns = Boolean(opts.inlinePatterns);
@@ -928,10 +937,10 @@ export function renderSwatchSVG(
       }
     }
   } else if (key === 'trigraph') {
-    svgEl('text', { x: x + 4.5, y: y + 8.8, 'text-anchor': 'middle', 'font-family': IPA_FONT_STACK, 'font-size': '9.5', fill: pal.ink }, g).textContent = 'ʂ';
-    svgEl('text', { x: x + 15.2, y: y + 8.8, 'text-anchor': 'middle', 'font-family': MONO_FONT_STACK, 'font-size': '7', fill: pal.gloss }, g).textContent = '\\s.';
+    svgEl('text', { x: x + 4.5, y: y + 8.8, 'text-anchor': 'middle', 'font-family': opts.ipaFontFamily || IPA_FONT_STACK, 'font-size': '9.5', fill: pal.ink }, g).textContent = 'ʂ';
+    svgEl('text', { x: x + 15.2, y: y + 8.8, 'text-anchor': 'middle', 'font-family': opts.monoFontFamily || MONO_FONT_STACK, 'font-size': '7', fill: pal.gloss }, g).textContent = '\\s.';
   } else if (key === 'meta-symbols') {
-    svgEl('text', { x: x + 11, y: y + 9, 'text-anchor': 'middle', 'font-family': SYMBOL_FONT_STACK, 'font-size': '8.2', fill: pal.meta }, g).textContent = '␣↵↪';
+    svgEl('text', { x: x + 11, y: y + 9, 'text-anchor': 'middle', 'font-family': opts.symbolFontFamily || SYMBOL_FONT_STACK, 'font-size': '8.2', fill: pal.meta }, g).textContent = '␣↵↪';
   } else if (key === 'zero-dur') {
     svgEl('polygon', { points: `${x + 11},${y + 1} ${x + 14.8},${y + 6} ${x + 11},${y + 11} ${x + 7.2},${y + 6}`, fill: pal.zeroBg, stroke: pal.isBw ? '#333333' : pal.amber, 'stroke-width': sw(1.15) }, g);
   } else if (key === 'gap') {
@@ -974,12 +983,58 @@ export function renderSwatchSVG(
   return g;
 }
 
+const LEG_SUBSCRIPT_MAP: Record<string, string> = {
+  '₀': '0',
+  '₁': '1',
+  '₂': '2',
+  '₃': '3'
+};
+
+function appendSubscriptRichLabel(textEl: Element, label: string, baseFontSize: number): void {
+  const parts = label.split(/([₀₁₂₃])/g);
+  if (parts.length <= 1) {
+    textEl.textContent = label;
+    return;
+  }
+  const subFontSize = String(Number((baseFontSize * 0.74).toFixed(2)));
+  let shifted = false;
+  for (const part of parts) {
+    if (!part) continue;
+    const mapped = LEG_SUBSCRIPT_MAP[part];
+    if (mapped) {
+      svgEl(
+        'tspan',
+        {
+          ...(shifted ? {} : { dy: '1.8' }),
+          'font-size': subFontSize
+        },
+        textEl
+      ).textContent = mapped;
+      shifted = true;
+    } else if (shifted) {
+      svgEl('tspan', { dy: '-1.8' }, textEl).textContent = part;
+      shifted = false;
+    } else {
+      svgEl('tspan', {}, textEl).textContent = part;
+    }
+  }
+}
+
 export function renderEmbeddedLegendSVG(
   svg: Element,
   legendLayout: EmbeddedLegendLayout,
-  opts: { pal: ScorePalette; sScale?: number; idPrefix?: string }
+  opts: {
+    pal: ScorePalette;
+    sScale?: number;
+    idPrefix?: string;
+    sansFontFamily?: string;
+    ipaFontFamily?: string;
+    monoFontFamily?: string;
+    symbolFontFamily?: string;
+  }
 ): SVGElement {
   const sScale = opts.sScale || 1;
+  const sansFont = opts.sansFontFamily || SANS_FONT_STACK;
   const sw = (v: number) => Number((v * sScale).toFixed(2));
   const rootG = svgEl('g', { id: 'export-legend' }, svg);
 
@@ -1001,7 +1056,7 @@ export function renderEmbeddedLegendSVG(
         x: sb.textX + (lineObj.cont ? 8 : 0),
         y: sb.textStartY + idx * sb.lineH,
         'text-anchor': 'start',
-        'font-family': SANS_FONT_STACK,
+        'font-family': sansFont,
         'font-size': String(legendLayout.structFontSize),
         fill: opts.pal.muted
       }, structG).textContent = lineObj.text;
@@ -1026,16 +1081,20 @@ export function renderEmbeddedLegendSVG(
       renderSwatchSVG(symG, cell.item, cell.swatchX, cell.swatchY, opts.pal, {
         sScale,
         inlinePatterns: false,
-        idPrefix: opts.idPrefix
+        idPrefix: opts.idPrefix,
+        ipaFontFamily: opts.ipaFontFamily,
+        monoFontFamily: opts.monoFontFamily,
+        symbolFontFamily: opts.symbolFontFamily
       });
-      svgEl('text', {
+      const lblEl = svgEl('text', {
         x: cell.labelX,
         y: cell.labelY,
         'text-anchor': 'start',
-        'font-family': SANS_FONT_STACK,
+        'font-family': sansFont,
         'font-size': String(legendLayout.itemFontSize),
         fill: opts.pal.ink
-      }, symG).textContent = cell.displayLabel;
+      }, symG);
+      appendSubscriptRichLabel(lblEl, cell.displayLabel, legendLayout.itemFontSize);
     }
   }
 

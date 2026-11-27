@@ -1,6 +1,7 @@
 import type { TextGrid } from '../../bridge/types';
 import { isTauriRuntime } from '../../bridge/PlatformBridge';
 import { prefetchTrigraphCache } from '../../layout/richText';
+import { ensureIpaFontsLoaded, injectIpaFontsIntoSvg } from '../../utils/ipaFontEmbed';
 import {
   computeEffectivePngScale,
   getBaseStem,
@@ -171,7 +172,10 @@ export async function renderPoster(input: PosterRenderInput): Promise<PosterResu
   );
 
   // Slice to active time range while preserving original tier indices 1:1
-  const slicedTg = await bridge.sliceTextGrid(tg, { tMin, tMax });
+  const [slicedTg] = await Promise.all([
+    bridge.sliceTextGrid(tg, { tMin, tMax }),
+    ensureIpaFontsLoaded(['sans'])
+  ]);
   await prefetchTrigraphCache(slicedTg, bridge);
 
   const isEmblem = config.framing === 'emblem_1_1';
@@ -449,6 +453,7 @@ export async function renderPosterPngBlob(input: PosterRenderInput): Promise<{
   scaleCapped: boolean;
 }> {
   const res = await renderPoster({ ...input, previewMode: false });
+  const embeddedSvg = await injectIpaFontsIntoSvg(res.svgMarkup);
   const { effectiveScale, scaleCapped } = computeEffectivePngScale(
     res.widthPt,
     res.heightPt,
@@ -457,7 +462,7 @@ export async function renderPosterPngBlob(input: PosterRenderInput): Promise<{
   const w = Math.max(1, Math.round(res.widthPt * effectiveScale));
   const h = Math.max(1, Math.round(res.heightPt * effectiveScale));
 
-  const url = URL.createObjectURL(new Blob([res.svgMarkup], { type: 'image/svg+xml;charset=utf-8' }));
+  const url = URL.createObjectURL(new Blob([embeddedSvg], { type: 'image/svg+xml;charset=utf-8' }));
 
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -490,7 +495,7 @@ export async function renderPosterPngBlob(input: PosterRenderInput): Promise<{
       URL.revokeObjectURL(url);
       let detail = '';
       try {
-        const parsed = new DOMParser().parseFromString(res.svgMarkup, 'image/svg+xml');
+        const parsed = new DOMParser().parseFromString(embeddedSvg, 'image/svg+xml');
         const errNode = parsed.querySelector('parsererror');
         if (errNode?.textContent) {
           detail = ` (${errNode.textContent.replace(/\s+/g, ' ').trim().slice(0, 140)})`;
@@ -514,10 +519,11 @@ export async function exportPosterSvg(
   input: PosterRenderInput
 ): Promise<{ savedPath: string | null; filename: string; bytes: number }> {
   const res = await renderPoster({ ...input, previewMode: false });
+  const embeddedSvg = await injectIpaFontsIntoSvg(res.svgMarkup);
+  const svgBytes = new TextEncoder().encode(embeddedSvg);
   const fname = `${buildPosterFileStem(input.filename, input.config.template, input.config.framing)}.svg`;
 
   if (isTauriRuntime()) {
-    const svgBytes = new TextEncoder().encode(res.svgMarkup);
     const savedPath = await input.bridge.saveNativeFileDialog(
       fname,
       [{ name: '矢量海报 (SVG)', extensions: ['svg'] }],
@@ -527,8 +533,8 @@ export async function exportPosterSvg(
     return { savedPath, filename: fname, bytes: svgBytes.length };
   }
 
-  triggerBlobDownload(new Blob([res.svgMarkup], { type: 'image/svg+xml;charset=utf-8' }), fname);
-  return { savedPath: null, filename: fname, bytes: res.estimatedBytes };
+  triggerBlobDownload(new Blob([embeddedSvg], { type: 'image/svg+xml;charset=utf-8' }), fname);
+  return { savedPath: null, filename: fname, bytes: svgBytes.length };
 }
 
 export async function exportPosterPng(
@@ -590,9 +596,10 @@ export async function copyPosterPngToClipboard(
  */
 export async function printPosterPdf(input: PosterRenderInput): Promise<{ printTriggered: boolean }> {
   const res = await renderPoster({ ...input, previewMode: false });
+  const embeddedSvg = await injectIpaFontsIntoSvg(res.svgMarkup);
   const wMm = (res.widthPt * 25.4) / 72;
   const hMm = (res.heightPt * 25.4) / 72;
-  const cleanSvg = res.svgMarkup.replace(/^<\?xml[^>]*\?>\s*/i, '');
+  const cleanSvg = embeddedSvg.replace(/^<\?xml[^>]*\?>\s*/i, '');
 
   const iframe = document.createElement('iframe');
   iframe.setAttribute('aria-hidden', 'true');
@@ -655,7 +662,15 @@ export async function printPosterPdf(input: PosterRenderInput): Promise<{ printT
 </html>`);
     doc.close();
 
-    // Wait briefly for embedded data-URI raster images inside SVG to decode
+    // Wait briefly for embedded data-URI fonts & raster images inside iframe to settle
+    try {
+      await Promise.race([
+        doc.fonts?.ready ?? Promise.resolve(),
+        new Promise<void>((resolve) => setTimeout(resolve, 1200))
+      ]);
+    } catch {
+      // ignore font check error in print iframe
+    }
     await new Promise<void>((resolve) => setTimeout(resolve, 160));
 
     let printTriggered = false;

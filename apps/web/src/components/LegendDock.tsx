@@ -9,6 +9,22 @@ import {
   type LegendCatalogItem
 } from '../layout/legendCore';
 
+const SUBSCRIPT_MAP: Record<string, string> = {
+  '₀': '0',
+  '₁': '1',
+  '₂': '2',
+  '₃': '3'
+};
+
+function renderLegendLabelNodes(label: string): React.ReactNode {
+  const parts = label.split(/([₀₁₂₃])/g);
+  if (parts.length <= 1) return label;
+  return parts.map((part, idx) => {
+    const mapped = SUBSCRIPT_MAP[part];
+    return mapped ? <sub key={idx}>{mapped}</sub> : part;
+  });
+}
+
 const MiniStructureSvg: React.FC<{ scaleMode: 'elastic' | 'linear' }> = ({ scaleMode }) => {
   const ref = useRef<SVGSVGElement>(null);
   useEffect(() => {
@@ -172,7 +188,7 @@ export const LegendDock: React.FC = () => {
               onBlur={() => setHoverKey(null)}
             >
               <SwatchSvg item={item} />
-              <span>{item.label}</span>
+              <span>{renderLegendLabelNodes(item.label)}</span>
             </div>
           ))}
         </div>

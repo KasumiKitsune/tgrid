@@ -750,8 +750,8 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
           }
           const unwrapped = layoutRichText(iv.text, 0, textFontMeasure, mode, effectiveRichOpts);
           const capW = unwrapped.gloss ? MAX_GLOSS_INTERVAL_W : MAX_SINGLE_INTERVAL_W;
-          const desiredW = Math.min(unwrapped.width + 22, Math.max(curSpanW, capW));
-          const desiredFloorW = Math.min(unwrapped.width + 22, Math.max(curFloorSpanW, capW));
+          const desiredW = Math.min(unwrapped.width + 28, Math.max(curSpanW, capW));
+          const desiredFloorW = Math.min(unwrapped.width + 28, Math.max(curFloorSpanW, capW));
           if (curSpanW < desiredW || curFloorSpanW < desiredFloorW) {
             let useAll = true;
             for (let c = aIdx; c < bIdx; c++) {
@@ -1376,7 +1376,8 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
 
     const placedTickXs: number[] = [];
     if (!hideTicks) {
-      const MIN_TICK_GAP = 15;
+      const MIN_TICK_GAP = Math.ceil(20 * fontScale);
+      const minEndpointGap = Math.ceil(17 * fontScale);
       const tickOrder = spineCols.map((col, idx) => {
         let prio = 0;
         if (col.t === tg.xmin || col.t === tg.xmax) prio = 3;
@@ -1386,7 +1387,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       });
       tickOrder.sort((a, b2) => b2.prio - a.prio || a.idx - b2.idx);
       for (const item of tickOrder) {
-        const minGap = item.prio >= 2 ? 12 : MIN_TICK_GAP;
+        const minGap = item.prio >= 2 ? minEndpointGap : MIN_TICK_GAP;
         let collides = false;
         for (let p = 0; p < placedTickXs.length; p++) {
           if (Math.abs(item.x - placedTickXs[p]) < minGap) {
@@ -1394,7 +1395,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
             break;
           }
         }
-        if (!collides || item.idx === 0) {
+        if (!collides || (item.idx === 0 && placedTickXs.length === 0)) {
           spineCols[item.idx].labelVisible = true;
           placedTickXs.push(item.x);
         }
@@ -1420,6 +1421,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
           (t) => globalIsoLabelMap.get(t) ?? formatDisplayTick(t, tickPrecision, tickFixedDecimals)
         );
     const isolatedPointTicks: IsolatedPointTick[] = [];
+    const isoTickGap = Math.ceil(19 * fontScale);
     for (let i = 0; i < isoTimes.length; i++) {
       const t = isoTimes[i];
       const x = elasticXLocal(t);
@@ -1427,7 +1429,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       let collides = false;
       if (!hideTicks) {
         for (let p = 0; p < placedTickXs.length; p++) {
-          if (Math.abs(x - placedTickXs[p]) < 15) {
+          if (Math.abs(x - placedTickXs[p]) < isoTickGap) {
             collides = true;
             break;
           }
@@ -1476,11 +1478,16 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
           const x1 = clippedRight ? originX + bandContentW : xForGlobalIdx(tToIdx.get(iv.xmax)!);
           const w = Math.max(1.5, x1 - x0);
           const showText = !clippedLeft && iv.text !== '';
-          const richMaxW = isLinear ? Math.max(12, w - 6) : Math.max(24, w - 12);
+          const horizMargin = isLinear
+            ? Math.min(12, Math.max(6, Math.round(w * 0.22)))
+            : Math.min(18, Math.max(12, Math.round(w * 0.28)));
+          const richMaxW = Math.max(14, w - horizMargin);
           const rich = showText
             ? layoutRichText(iv.text, richMaxW, textFontMeasure, mode, effectiveRichOpts)
             : null;
-          const needH = rich ? Math.max(baseLaneH, rich.height + 12) : baseLaneH;
+          const needH = rich
+            ? Math.max(baseLaneH, rich.height + Math.round((rich.gloss ? 16 : 12) * fontScale))
+            : baseLaneH;
           if (needH > laneMaxH[iv.lane]) laneMaxH[iv.lane] = needH;
 
           const segT0 = Math.max(iv.xmin, startT);

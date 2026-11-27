@@ -573,7 +573,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         }}
                       >
                         <span className="sb-field-lbl">音高范围 (F0)</span>
-                        <span className="sb-kv-val mono" style={{ fontSize: 10.5 }}>
+                        <span className="sb-kv-val mono" style={{ fontSize: 11 }}>
                           {Math.round(effF0.floor)}–{Math.round(effF0.ceil)} Hz
                         </span>
                       </div>

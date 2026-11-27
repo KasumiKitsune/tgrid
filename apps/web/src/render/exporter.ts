@@ -7,8 +7,13 @@ import {
   resolveScreenCueOpacities
 } from '../layout/legendCore';
 import {
+  IPA_COMPAT_FONT_STACK,
   IPA_FONT_STACK,
+  MONO_COMPAT_FONT_STACK,
+  SANS_COMPAT_FONT_STACK,
+  SERIF_COMPAT_FONT_STACK,
   SERIF_FONT_STACK,
+  SYMBOL_COMPAT_FONT_STACK,
   formatDisplayTick,
   prefetchTrigraphCache
 } from '../layout/richText';
@@ -18,6 +23,12 @@ import {
   type EditorSelection
 } from './renderScoreSvg';
 import type { F0RangeBounds } from '../utils/f0Range';
+import {
+  detectReferencedIpaFonts,
+  ensureIpaFontsLoaded,
+  estimateEmbeddedFontBytes,
+  injectIpaFontsIntoSvg
+} from '../utils/ipaFontEmbed';
 
 export interface ExportPrefs {
   format: 'svg' | 'png';
@@ -45,6 +56,7 @@ export interface ExportPrefs {
   semanticGroups: boolean;
   roundCoords: boolean;
   fontStrategy: 'ipa' | 'serif';
+  svgFontMode: 'embed' | 'compat';
   legendMode: 'full' | 'compact' | 'off';
   legendLang: 'zh' | 'en';
   activePreset: 'screen' | 'journal' | 'slides' | 'lines' | null;
@@ -80,6 +92,7 @@ export const DEFAULT_EXPORT_PREFS: ExportPrefs = {
   semanticGroups: true,
   roundCoords: true,
   fontStrategy: 'ipa',
+  svgFontMode: 'embed',
   legendMode: 'compact',
   legendLang: 'zh',
   activePreset: null
@@ -94,6 +107,8 @@ export function loadExportPrefs(): ExportPrefs {
       if (dr !== 45 && dr !== 52 && dr !== 58) {
         merged.specDynRange = dr === 40 ? 45 : 52;
       }
+      merged.fontStrategy = (raw as { fontStrategy?: unknown }).fontStrategy === 'serif' ? 'serif' : 'ipa';
+      merged.svgFontMode = (raw as { svgFontMode?: unknown }).svgFontMode === 'compat' ? 'compat' : 'embed';
       // Never carry single-file custom time bounds across sessions
       merged.customStart = null;
       merged.customEnd = null;
@@ -383,7 +398,8 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
     tMin,
     tMax
   });
-  await prefetchTrigraphCache(vtg, bridge);
+  const ipaVariant = prefs.fontStrategy === 'serif' ? 'serif' : 'sans';
+  await Promise.all([prefetchTrigraphCache(vtg, bridge), ensureIpaFontsLoaded([ipaVariant])]);
 
   const dur = Math.max(0.05, (Number.isFinite(vtg.xmax) ? vtg.xmax : 1) - (Number.isFinite(vtg.xmin) ? vtg.xmin : 0));
 
@@ -432,6 +448,12 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
   }
 
   const fontFamily = prefs.fontStrategy === 'serif' ? SERIF_FONT_STACK : IPA_FONT_STACK;
+  const isCompatSvg = prefs.format === 'svg' && prefs.svgFontMode === 'compat';
+  const exportFontFamily = isCompatSvg
+    ? prefs.fontStrategy === 'serif'
+      ? SERIF_COMPAT_FONT_STACK
+      : IPA_COMPAT_FONT_STACK
+    : fontFamily;
   const fontScale = prefs.presentationBoost ? 1.14 : 1;
   const strokeScale = prefs.presentationBoost ? 1.25 : 1;
   const captionHeight = prefs.showCaption ? 26 : 0;
@@ -583,7 +605,10 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
     exportCtx: {
       palette: getExportPalette(prefs.palette),
       transparentBg: prefs.transparentBg,
-      fontFamily,
+      fontFamily: exportFontFamily,
+      sansFontFamily: isCompatSvg ? SANS_COMPAT_FONT_STACK : undefined,
+      monoFontFamily: isCompatSvg ? MONO_COMPAT_FONT_STACK : undefined,
+      symbolFontFamily: isCompatSvg ? SYMBOL_COMPAT_FONT_STACK : undefined,
       fontScale,
       strokeScale,
       trigraphMode: prefs.trigraphMode,
@@ -616,7 +641,15 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
   let svgMarkup = '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(offSvg);
   if (prefs.roundCoords) svgMarkup = compactSvgMarkup(svgMarkup);
 
-  const svgBytes = new TextEncoder().encode(svgMarkup).length;
+  const shouldEmbedFonts = prefs.format === 'png' || prefs.svgFontMode !== 'compat';
+  if (!previewMode && shouldEmbedFonts) {
+    svgMarkup = await injectIpaFontsIntoSvg(svgMarkup);
+  }
+
+  let svgBytes = new TextEncoder().encode(svgMarkup).length;
+  if (previewMode && prefs.format === 'svg' && shouldEmbedFonts) {
+    svgBytes += estimateEmbeddedFontBytes(detectReferencedIpaFonts(svgMarkup));
+  }
   let estimatedBytes = svgBytes;
   if (prefs.format === 'svg' && specStrategy === 'external-zip') {
     const assetSum = externalAssets.reduce((acc, a) => acc + (a.data ? a.data.length : a.estimatedBytes || 0), 0);
@@ -642,7 +675,7 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
 export async function renderOffscreenPngBlob(
   input: ExportSceneInput
 ): Promise<{ blob: Blob; width: number; height: number; effectiveScale: number; scaleCapped: boolean }> {
-  const pre = await renderOffscreenExport({ ...input, prefs: { ...input.prefs, format: 'png' }, previewMode: false });
+  const pre = await renderOffscreenExport({ ...input, prefs: { ...input.prefs, format: 'png', svgFontMode: 'embed' }, previewMode: false });
   const scale = pre.effectiveScale;
   const w = Math.max(1, Math.round(pre.layout.width * scale));
   const h = Math.max(1, Math.round(pre.layout.height * scale));
