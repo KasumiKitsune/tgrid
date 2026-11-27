@@ -38,6 +38,7 @@ import {
 import { UiIcon } from '../Icons';
 import { IpaImePopover, IpaModePill } from '../IpaImePopover';
 import { ScrubNumberInput } from '../ScrubNumberInput';
+import { ToggleSwitch } from '../ToggleSwitch';
 import { isIpaRelatedElement, useIpaIme } from '../useIpaIme';
 import { CollapsibleSection } from './CollapsibleSection';
 
@@ -1568,15 +1569,12 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
                 </div>
               </div>
 
-              <label className={`export-check ${isReadOnly ? 'is-disabled' : ''}`}>
-                <input
-                  type="checkbox"
-                  disabled={isReadOnly}
-                  checked={linkAdjacent}
-                  onChange={(e) => setLinkAdjacent(e.target.checked)}
-                />
-                <span>联动相邻边界</span>
-              </label>
+              <ToggleSwitch
+                label="联动相邻边界"
+                disabled={isReadOnly}
+                checked={linkAdjacent}
+                onChange={setLinkAdjacent}
+              />
             </div>
           </CollapsibleSection>
 

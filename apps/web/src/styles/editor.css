@@ -1,5 +1,6 @@
 @import './corpus.css';
 @import './ribbon.css';
+@import './preferences.css';
 
 #app {
   display: flex;
@@ -3035,6 +3036,11 @@ button.active .export-btn-sub {
   border-color: var(--ink);
 }
 
+.export-check input[type="checkbox"]:focus-visible {
+  outline: 1.5px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
 .export-check input[type="checkbox"]:checked {
   background: var(--ink);
   border-color: var(--ink);
@@ -3056,6 +3062,266 @@ button.active .export-btn-sub {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* Instrument Scale Track Toggle Switch (Scheme B · Primary Blue) */
+.tg-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  font-size: 12px;
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+  line-height: 1.35;
+}
+
+.tg-switch.is-compact {
+  display: inline-flex;
+  width: auto;
+  justify-content: flex-start;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+.tg-switch.is-disabled {
+  cursor: not-allowed;
+}
+
+.tg-switch-label {
+  min-width: 0;
+}
+
+.tg-switch.is-disabled .tg-switch-label {
+  color: var(--ink-faint);
+}
+
+.tg-switch-ctrl {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.tg-switch-in {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.tg-switch-in:disabled {
+  cursor: not-allowed;
+}
+
+.tg-switch-track {
+  position: relative;
+  display: block;
+  width: 32px;
+  height: 16px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--rule);
+  pointer-events: none;
+  transition: background-color 200ms var(--ease), border-color 160ms var(--ease);
+}
+
+.tg-switch-in:focus-visible + .tg-switch-track {
+  outline: 1.5px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.tg-switch-in:disabled + .tg-switch-track {
+  opacity: 0.44;
+}
+
+.tg-switch-mark-i,
+.tg-switch-mark-o {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  transition:
+    opacity 180ms var(--ease),
+    background-color 160ms var(--ease),
+    border-color 160ms var(--ease),
+    height 140ms var(--ease);
+}
+
+.tg-switch-mark-i {
+  left: 6px;
+  width: 1px;
+  height: 6px;
+  background: var(--accent-blue);
+  opacity: 0;
+}
+
+.tg-switch-mark-o {
+  right: 5px;
+  width: 5px;
+  height: 5px;
+  border: 1px solid var(--rule-hover);
+  opacity: 0.9;
+}
+
+.tg-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  background: var(--ink-muted);
+  transform-origin: center;
+  transition:
+    transform 210ms var(--ease),
+    background-color 170ms var(--ease);
+}
+
+.tg-switch-thumb::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  background: var(--bg-sheet);
+  opacity: 0;
+  transition: opacity 150ms var(--ease), background-color 150ms var(--ease);
+}
+
+/* Hover (OFF) */
+.tg-switch:hover:not(.is-disabled) .tg-switch-track,
+.tg-switch-in:hover:not(:disabled) + .tg-switch-track {
+  border-color: var(--ink);
+}
+
+.tg-switch:hover:not(.is-disabled) .tg-switch-thumb,
+.tg-switch-in:hover:not(:disabled) + .tg-switch-track .tg-switch-thumb {
+  background: var(--ink);
+}
+
+.tg-switch:hover:not(.is-disabled) .tg-switch-thumb::after,
+.tg-switch-in:hover:not(:disabled) + .tg-switch-track .tg-switch-thumb::after {
+  opacity: 0.35;
+}
+
+.tg-switch:hover:not(.is-disabled) .tg-switch-mark-o,
+.tg-switch-in:hover:not(:disabled) + .tg-switch-track .tg-switch-mark-o {
+  border-color: var(--ink-muted);
+}
+
+/* Active / Pressed (OFF) */
+.tg-switch:active:not(.is-disabled) .tg-switch-thumb,
+.tg-switch-in:active:not(:disabled) + .tg-switch-track .tg-switch-thumb,
+.tg-switch-in.is-pressed:not(:disabled) + .tg-switch-track .tg-switch-thumb {
+  transform: translateX(1px) scale(0.9) scaleX(1.12);
+}
+
+.tg-switch:active:not(.is-disabled) .tg-switch-mark-o,
+.tg-switch-in:active:not(:disabled) + .tg-switch-track .tg-switch-mark-o,
+.tg-switch-in.is-pressed:not(:disabled) + .tg-switch-track .tg-switch-mark-o {
+  border-color: var(--ink);
+  opacity: 1;
+}
+
+/* Checked (ON · Primary Blue) */
+.tg-switch-in:checked + .tg-switch-track {
+  background: var(--accent-blue-soft);
+  border-color: var(--accent-blue);
+}
+
+.tg-switch-in:checked + .tg-switch-track .tg-switch-mark-i {
+  opacity: 0.92;
+}
+
+.tg-switch-in:checked + .tg-switch-track .tg-switch-mark-o {
+  opacity: 0;
+}
+
+.tg-switch-in:checked + .tg-switch-track .tg-switch-thumb {
+  transform: translateX(16px);
+  background: var(--accent-blue);
+}
+
+.tg-switch-in:checked + .tg-switch-track .tg-switch-thumb::after {
+  background: var(--bg-sheet);
+}
+
+/* Hover (ON) */
+.tg-switch:hover:not(.is-disabled) .tg-switch-in:checked + .tg-switch-track,
+.tg-switch-in:checked:hover:not(:disabled) + .tg-switch-track {
+  border-color: var(--ink);
+}
+
+.tg-switch:hover:not(.is-disabled) .tg-switch-in:checked + .tg-switch-track .tg-switch-thumb,
+.tg-switch-in:checked:hover:not(:disabled) + .tg-switch-track .tg-switch-thumb {
+  background: var(--accent-blue);
+}
+
+.tg-switch:hover:not(.is-disabled) .tg-switch-in:checked + .tg-switch-track .tg-switch-thumb::after,
+.tg-switch-in:checked:hover:not(:disabled) + .tg-switch-track .tg-switch-thumb::after {
+  opacity: 0.45;
+}
+
+/* Active / Pressed (ON) */
+.tg-switch:active:not(.is-disabled) .tg-switch-in:checked + .tg-switch-track .tg-switch-thumb,
+.tg-switch-in:checked:active:not(:disabled) + .tg-switch-track .tg-switch-thumb,
+.tg-switch-in:checked.is-pressed:not(:disabled) + .tg-switch-track .tg-switch-thumb {
+  transform: translateX(15px) scale(0.9) scaleX(1.12);
+}
+
+.tg-switch:active:not(.is-disabled) .tg-switch-in:checked + .tg-switch-track .tg-switch-mark-i,
+.tg-switch-in:checked:active:not(:disabled) + .tg-switch-track .tg-switch-mark-i,
+.tg-switch-in:checked.is-pressed:not(:disabled) + .tg-switch-track .tg-switch-mark-i {
+  opacity: 1;
+  height: 8px;
+}
+
+/* Compact Size (28x14px) */
+.tg-switch.is-compact .tg-switch-track {
+  width: 28px;
+  height: 14px;
+}
+
+.tg-switch.is-compact .tg-switch-thumb {
+  width: 8px;
+  height: 8px;
+}
+
+.tg-switch.is-compact .tg-switch-thumb::after {
+  inset: 2px;
+}
+
+.tg-switch.is-compact .tg-switch-mark-i {
+  left: 5px;
+  height: 5px;
+}
+
+.tg-switch.is-compact .tg-switch-mark-o {
+  right: 4px;
+  width: 4px;
+  height: 4px;
+}
+
+.tg-switch.is-compact .tg-switch-in:checked + .tg-switch-track .tg-switch-thumb {
+  transform: translateX(14px);
+}
+
+.tg-switch.is-compact:active:not(.is-disabled) .tg-switch-in:checked + .tg-switch-track .tg-switch-thumb,
+.tg-switch.is-compact .tg-switch-in:checked:active:not(:disabled) + .tg-switch-track .tg-switch-thumb,
+.tg-switch.is-compact .tg-switch-in:checked.is-pressed:not(:disabled) + .tg-switch-track .tg-switch-thumb {
+  transform: translateX(13px) scale(0.9) scaleX(1.12);
+}
+
+.tg-switch.is-compact:active:not(.is-disabled) .tg-switch-in:checked + .tg-switch-track .tg-switch-mark-i,
+.tg-switch.is-compact .tg-switch-in:checked:active:not(:disabled) + .tg-switch-track .tg-switch-mark-i,
+.tg-switch.is-compact .tg-switch-in:checked.is-pressed:not(:disabled) + .tg-switch-track .tg-switch-mark-i {
+  height: 7px;
 }
 
 .export-adv-toggle {

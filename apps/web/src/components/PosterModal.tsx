@@ -28,6 +28,7 @@ import { useEditorStore } from '../store/useEditorStore';
 import { resolveF0RangeOverride } from '../utils/f0Range';
 import { getElementRectScale } from '../utils/uiScale';
 import { ChevronIcon, CloseIcon, UiIcon } from './Icons';
+import { ToggleSwitch } from './ToggleSwitch';
 import '../styles/posterModal.css';
 
 interface PosterModalProps {
@@ -923,7 +924,7 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
               <div className="poster-acoustic-row">
                 <span className="setting-label">声学底图</span>
                 <div className="poster-acoustic-checks">
-                  <label className="export-check">
+                  <label className={`export-check${!hasAudio ? ' is-disabled' : ''}`}>
                     <input
                       type="checkbox"
                       disabled={!hasAudio}
@@ -932,7 +933,7 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
                     />
                     <span>频谱</span>
                   </label>
-                  <label className="export-check">
+                  <label className={`export-check${!hasAudio ? ' is-disabled' : ''}`}>
                     <input
                       type="checkbox"
                       disabled={!hasAudio}
@@ -941,7 +942,9 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
                     />
                     <span>波形</span>
                   </label>
-                  <label className="export-check">
+                  <label
+                    className={`export-check${!hasAudio || !analysis?.pitchTrack?.length ? ' is-disabled' : ''}`}
+                  >
                     <input
                       type="checkbox"
                       disabled={!hasAudio || !analysis?.pitchTrack?.length}
@@ -1086,14 +1089,12 @@ export const PosterModal: React.FC<PosterModalProps> = ({ audioBuffer }) => {
               <div className="export-group-head">
                 <span className="export-group-title">文案与题注</span>
                 {!isEmblem && (
-                  <label className="export-check">
-                    <input
-                      type="checkbox"
-                      checked={prefs.pureVisual}
-                      onChange={(e) => updatePrefs({ pureVisual: e.target.checked })}
-                    />
-                    <span>纯视觉模式</span>
-                  </label>
+                  <ToggleSwitch
+                    compact
+                    label="纯视觉模式"
+                    checked={prefs.pureVisual}
+                    onChange={(checked) => updatePrefs({ pureVisual: checked })}
+                  />
                 )}
               </div>
 

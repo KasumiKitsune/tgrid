@@ -59,6 +59,7 @@ import type {
 
 export type IpaInputMode = 'off' | 'yunlong' | 'praat';
 export type SidebarTab = 'inspector' | 'tiers' | 'history' | 'settings' | 'customize';
+export type PreferencesSection = 'editing' | 'general' | 'floating' | 'shortcuts';
 export type EditInspectorMode = 'sidebar' | 'floating';
 export type ExportRangePreset = 'all' | 'view' | 'selection' | 'custom';
 export type RibbonTabId = 'file' | 'annotate' | 'tiers' | 'view' | 'tools' | 'corpus';
@@ -642,6 +643,8 @@ export interface EditorState {
   findBarOpen: boolean;
   findBarReplaceMode: boolean;
   shortcutsOpen: boolean;
+  preferencesOpen: boolean;
+  preferencesSection: PreferencesSection;
   layout: ScoreLayout | null;
   toast: ToastState;
   docVersion: number;
@@ -796,6 +799,8 @@ export interface EditorState {
   openFindBar: (replaceMode?: boolean) => void;
   closeFindBar: () => void;
   setShortcutsOpen: (v: boolean) => void;
+  setPreferencesOpen: (open: boolean, section?: PreferencesSection) => void;
+  setPreferencesSection: (section: PreferencesSection) => void;
   setLayout: (layout: ScoreLayout | null) => void;
   showToast: (message: string, isError?: boolean, action?: ToastAction | null) => void;
   hideToast: () => void;
@@ -1321,6 +1326,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   findBarOpen: false,
   findBarReplaceMode: false,
   shortcutsOpen: false,
+  preferencesOpen: false,
+  preferencesSection: 'editing',
   layout: null,
   toast: { message: '', isError: false, visible: false, action: null },
   docVersion: 1,
@@ -2540,6 +2547,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({ findBarOpen: true, findBarReplaceMode: Boolean(replaceMode) }),
   closeFindBar: () => set({ findBarOpen: false, findBarReplaceMode: false }),
   setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
+  setPreferencesOpen: (preferencesOpen, section) =>
+    set((s) => ({
+      preferencesOpen,
+      preferencesSection: section ?? s.preferencesSection
+    })),
+  setPreferencesSection: (preferencesSection) => set({ preferencesSection }),
   setLayout: (layout) => set({ layout }),
   bumpDocVersion: () => set((s) => ({ docVersion: s.docVersion + 1 })),
 

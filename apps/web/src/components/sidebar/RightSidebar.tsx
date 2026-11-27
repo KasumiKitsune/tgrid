@@ -1,4 +1,5 @@
 import React, { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { formatKeyCombo } from '../../shortcuts/registry';
 import { useEditorStore, type SidebarTab } from '../../store/useEditorStore';
 import { scanTextGridQa } from '../../utils/qaDiagnostics';
 import { getLogicalViewportSize, getViewportZoom } from '../../utils/uiScale';
@@ -18,25 +19,27 @@ interface RightSidebarProps {
   onStartPlayback: (startT: number, endT: number) => void;
   onOpenAudioPicker: () => void;
   onClearAudio: () => void;
-  onBatchConvertIpa: (direction: 'toUnicode' | 'toPraat') => void;
+  onBatchConvertIpa?: (direction: 'toUnicode' | 'toPraat') => void;
 }
 
 const RAIL_ITEMS: Array<{ tab: SidebarTab; title: string; icon: IconName; tooltip: string }> = [
   { tab: 'inspector', title: '属性', icon: 'inspector', tooltip: '属性检查器 (Alt+1)' },
   { tab: 'tiers', title: '层级', icon: 'layers', tooltip: '层级列表与管理 (Alt+2)' },
   { tab: 'history', title: '历史', icon: 'history', tooltip: '操作历史记录 (Alt+3)' },
-  { tab: 'settings', title: '设置', icon: 'gear', tooltip: '界面、版面与声学设置 (Alt+4)' },
-  { tab: 'customize', title: '自定义', icon: 'customize', tooltip: '自定义悬浮工具栏与快捷键 (Alt+5)' }
+  { tab: 'settings', title: '画布与声学', icon: 'waveform', tooltip: '谱面排版与声学图谱 (Alt+4)' }
 ];
 
 export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
-  ({ onStartPlayback, onOpenAudioPicker, onClearAudio, onBatchConvertIpa }, ref) => {
+  ({ onStartPlayback, onOpenAudioPicker, onClearAudio }, ref) => {
     const sidebarOpen = useEditorStore((s) => s.sidebarOpen);
     const sidebarTab = useEditorStore((s) => s.sidebarTab);
     const sidebarWidth = useEditorStore((s) => s.sidebarWidth);
     const setSidebarOpen = useEditorStore((s) => s.setSidebarOpen);
     const toggleSidebarTab = useEditorStore((s) => s.toggleSidebarTab);
     const setSidebarWidth = useEditorStore((s) => s.setSidebarWidth);
+    const preferencesOpen = useEditorStore((s) => s.preferencesOpen);
+    const preferencesSection = useEditorStore((s) => s.preferencesSection);
+    const setPreferencesOpen = useEditorStore((s) => s.setPreferencesOpen);
     const aboutOpen = useEditorStore((s) => s.aboutOpen);
     const setAboutOpen = useEditorStore((s) => s.setAboutOpen);
     const shortcutsOpen = useEditorStore((s) => s.shortcutsOpen);
@@ -116,7 +119,11 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
       window.addEventListener('pointercancel', onUp);
     };
 
-    const activeItem = RAIL_ITEMS.find((r) => r.tab === sidebarTab) || RAIL_ITEMS[0];
+    const activeItem =
+      RAIL_ITEMS.find((r) => r.tab === sidebarTab) ||
+      (sidebarTab === 'customize'
+        ? { tab: 'customize' as SidebarTab, title: '自定义', icon: 'customize' as IconName, tooltip: '自定义' }
+        : RAIL_ITEMS[0]);
 
     let headBadge = '';
     if (sidebarTab === 'tiers') {
@@ -134,6 +141,13 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
       else if (playRange && playRange.end > playRange.start) headBadge = '选区';
       else headBadge = '文档';
     }
+
+    const customizeModalActive =
+      preferencesOpen &&
+      (preferencesSection === 'floating' || preferencesSection === 'shortcuts');
+    const prefsGearActive =
+      preferencesOpen &&
+      (preferencesSection === 'editing' || preferencesSection === 'general');
 
     return (
       <aside
@@ -184,7 +198,6 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
                 <SettingsPanel
                   onOpenAudioPicker={onOpenAudioPicker}
                   onClearAudio={onClearAudio}
-                  onBatchConvertIpa={onBatchConvertIpa}
                 />
               )}
               {sidebarTab === 'customize' && <CustomizePanel />}
@@ -220,7 +233,6 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
                       right: 4,
                       width: 6,
                       height: 6,
-                      borderRadius: '50%',
                       background: 'var(--accent-amber)',
                       boxShadow: '0 0 0 1.5px var(--bg-subtle)',
                       pointerEvents: 'none'
@@ -230,6 +242,17 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
               </button>
             );
           })}
+
+          <button
+            type="button"
+            className={`sidebar-rail-btn ${customizeModalActive ? 'active' : ''}`}
+            title="自定义悬浮条按钮与快捷键 (Alt+5)"
+            aria-label="自定义悬浮条按钮与快捷键"
+            aria-pressed={customizeModalActive}
+            onClick={() => setPreferencesOpen(true, 'floating')}
+          >
+            <UiIcon name="customize" size={16} />
+          </button>
 
           <div className="sidebar-rail-bottom">
             <button
@@ -241,6 +264,18 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
               onClick={() => setShortcutsOpen(true)}
             >
               <ShortcutsIcon size={16} />
+            </button>
+            <button
+              type="button"
+              className={`sidebar-rail-btn ${prefsGearActive ? 'active' : ''}`}
+              title={`偏好设置 (${formatKeyCombo('Mod+,')})`}
+              aria-label="偏好设置"
+              aria-pressed={preferencesOpen}
+              onClick={() =>
+                setPreferencesOpen(!preferencesOpen, preferencesOpen ? undefined : 'editing')
+              }
+            >
+              <UiIcon name="gear" size={16} />
             </button>
             <button
               type="button"

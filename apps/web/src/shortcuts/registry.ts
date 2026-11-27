@@ -456,7 +456,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       {
         id: 'sidebar-tabs',
         keys: ['Alt+1', 'Alt+2', 'Alt+3', 'Alt+4', 'Alt+5'],
-        label: '直达右侧 属性 / 层级 / 历史 / 设置 / 自定义 页',
+        label: '直达 属性 / 层级 / 历史 / 画布与声学 / 悬浮条定制',
         icon: 'inspector',
         scope: 'all',
         rebindable: false
@@ -531,6 +531,14 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         keys: ['Mod+T', 'Mod+W', 'Mod+1..9'],
         label: '新建标签 / 关闭标签 / 跳转指定标签',
         icon: 'tab-add',
+        scope: 'all',
+        rebindable: false
+      },
+      {
+        id: 'preferences-modal',
+        keys: ['Mod+,'],
+        label: '打开偏好设置中心',
+        icon: 'gear',
         scope: 'all',
         rebindable: false
       },

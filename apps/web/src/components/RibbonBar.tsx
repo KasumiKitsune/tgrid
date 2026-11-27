@@ -140,6 +140,9 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
   const openFindBar = useEditorStore((s) => s.openFindBar);
   const setShortcutsOpen = useEditorStore((s) => s.setShortcutsOpen);
   const setAboutOpen = useEditorStore((s) => s.setAboutOpen);
+  const preferencesOpen = useEditorStore((s) => s.preferencesOpen);
+  const preferencesSection = useEditorStore((s) => s.preferencesSection);
+  const setPreferencesOpen = useEditorStore((s) => s.setPreferencesOpen);
   const customShortcuts = useEditorStore((s) => s.customShortcuts);
 
   const showCorpusStatusMarks = useEditorStore((s) => s.showCorpusStatusMarks);
@@ -752,12 +755,12 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
                   sidebarOpen && sidebarTab === 'settings' ? 'ribbon-soft-active' : ''
                 }`}
                 aria-pressed={sidebarOpen && sidebarTab === 'settings'}
-                title="在右侧边栏打开版面、时间精度与声学设置 (Alt+4)"
+                title="在右侧边栏打开画布排版与声学图谱 (Alt+4)"
                 onMouseDown={preventBlur}
                 onClick={() => toggleSidebarTab('settings')}
               >
-                <UiIcon name="gear" size={13} />
-                <span>版面与声学设置</span>
+                <UiIcon name="waveform" size={13} />
+                <span>画布与声学</span>
               </button>
             </div>
           </div>
@@ -1068,11 +1071,11 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
                     sidebarOpen && sidebarTab === 'settings' ? 'ribbon-soft-active' : ''
                   }`}
                   aria-pressed={sidebarOpen && sidebarTab === 'settings'}
-                  title="打开 / 收起设置面板 (Alt+4)"
+                  title="打开 / 收起画布与声学面板 (Alt+4)"
                   onClick={() => toggleSidebarTab('settings')}
                 >
-                  <UiIcon name="gear" size={13} />
-                  <span>设置面板</span>
+                  <UiIcon name="waveform" size={13} />
+                  <span>画布与声学</span>
                 </button>
               </div>
             </div>
@@ -1143,11 +1146,17 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
               <button
                 type="button"
                 className={`ribbon-sm-btn ${
-                  sidebarOpen && sidebarTab === 'customize' ? 'ribbon-soft-active' : ''
+                  preferencesOpen &&
+                  (preferencesSection === 'floating' || preferencesSection === 'shortcuts')
+                    ? 'ribbon-soft-active'
+                    : ''
                 }`}
-                aria-pressed={sidebarOpen && sidebarTab === 'customize'}
-                title="自定义悬浮工具栏与快捷键 (Alt+5)"
-                onClick={() => toggleSidebarTab('customize')}
+                aria-pressed={
+                  preferencesOpen &&
+                  (preferencesSection === 'floating' || preferencesSection === 'shortcuts')
+                }
+                title="自定义悬浮条按钮与快捷键 (Alt+5)"
+                onClick={() => setPreferencesOpen(true, 'floating')}
               >
                 <UiIcon name="customize" size={13} />
                 <span>自定义悬浮条与快捷键</span>
@@ -1166,6 +1175,16 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
               </button>
             </div>
             <div className="ribbon-row">
+              <button
+                type="button"
+                className={`ribbon-sm-btn ${preferencesOpen ? 'ribbon-soft-active' : ''}`}
+                aria-pressed={preferencesOpen}
+                title={`打开偏好设置中心 (${formatKeyCombo('Mod+,')})`}
+                onClick={() => setPreferencesOpen(true, 'editing')}
+              >
+                <UiIcon name="gear" size={13} />
+                <span>偏好设置</span>
+              </button>
               <button
                 type="button"
                 className="ribbon-sm-btn"

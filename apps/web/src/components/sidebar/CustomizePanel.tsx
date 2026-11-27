@@ -114,12 +114,23 @@ function matchesPreset(cfg: FloatingBarConfig, presetKey: FloatingBarPresetKey):
   );
 }
 
-export const CustomizePanel: React.FC = () => {
+export interface CustomizePanelProps {
+  sectionOnly?: 'floating' | 'shortcuts';
+  embedded?: boolean;
+  externalShortcutQuery?: string;
+}
+
+export const CustomizePanel: React.FC<CustomizePanelProps> = ({
+  sectionOnly,
+  embedded = false,
+  externalShortcutQuery
+}) => {
   const [subtab, setSubtab] = useState<CustomizeSubtab>(() => {
-    const initial = pendingSubtabRequest ?? 'floating';
+    const initial = sectionOnly ?? pendingSubtabRequest ?? 'floating';
     pendingSubtabRequest = null;
     return initial;
   });
+  const activeSubtab: CustomizeSubtab = sectionOnly ?? subtab;
 
   // Floating bar state
   const editInspectorMode = useEditorStore((s) => s.editInspectorMode);
@@ -172,11 +183,11 @@ export const CustomizePanel: React.FC = () => {
 
   // Cancel recording when switching away from shortcuts subtab
   useEffect(() => {
-    if (subtab !== 'shortcuts') {
+    if (activeSubtab !== 'shortcuts') {
       setRecordingId(null);
       setPendingConflict(null);
     }
-  }, [subtab]);
+  }, [activeSubtab]);
 
   // Global capture keydown recorder while recording a shortcut
   useEffect(() => {
@@ -257,8 +268,11 @@ export const CustomizePanel: React.FC = () => {
   );
 
   // Filtered shortcut groups
+  const effectiveSearchQuery =
+    externalShortcutQuery !== undefined ? externalShortcutQuery : searchQuery;
+
   const filteredGroups = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const q = effectiveSearchQuery.trim().toLowerCase();
     if (!q) return SHORTCUT_GROUPS;
 
     return SHORTCUT_GROUPS.map((group) => {
@@ -275,7 +289,7 @@ export const CustomizePanel: React.FC = () => {
       });
       return { ...group, entries };
     }).filter((g) => g.entries.length > 0);
-  }, [searchQuery, customShortcuts]);
+  }, [effectiveSearchQuery, customShortcuts]);
 
   const customizedCount = Object.keys(customShortcuts).length;
 
@@ -410,31 +424,33 @@ export const CustomizePanel: React.FC = () => {
   };
 
   return (
-    <div className="cust-root">
-      <div className="cust-subtabs" role="tablist" aria-label="自定义分类">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={subtab === 'floating'}
-          className={subtab === 'floating' ? 'active' : ''}
-          onClick={() => setSubtab('floating')}
-        >
-          <UiIcon name="customize" size={12} />
-          <span>悬浮工具栏</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={subtab === 'shortcuts'}
-          className={subtab === 'shortcuts' ? 'active' : ''}
-          onClick={() => setSubtab('shortcuts')}
-        >
-          <UiIcon name="shortcuts" size={12} />
-          <span>快捷键{customizedCount > 0 ? ` (${customizedCount})` : ''}</span>
-        </button>
-      </div>
+    <div className={`cust-root ${embedded ? 'is-embedded' : ''}`}>
+      {!sectionOnly && (
+        <div className="cust-subtabs" role="tablist" aria-label="自定义分类">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSubtab === 'floating'}
+            className={activeSubtab === 'floating' ? 'active' : ''}
+            onClick={() => setSubtab('floating')}
+          >
+            <UiIcon name="customize" size={12} />
+            <span>悬浮工具栏</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSubtab === 'shortcuts'}
+            className={activeSubtab === 'shortcuts' ? 'active' : ''}
+            onClick={() => setSubtab('shortcuts')}
+          >
+            <UiIcon name="shortcuts" size={12} />
+            <span>快捷键{customizedCount > 0 ? ` (${customizedCount})` : ''}</span>
+          </button>
+        </div>
+      )}
 
-      {subtab === 'floating' ? (
+      {activeSubtab === 'floating' ? (
         <>
           <div
             className="sb-panel-root"
@@ -444,10 +460,10 @@ export const CustomizePanel: React.FC = () => {
               minHeight: 0,
               overflowX: 'hidden',
               overflowY: 'auto',
-              padding: '10px 12px',
+              padding: embedded ? '14px 18px 16px' : '10px 12px',
               display: 'flex',
               flexDirection: 'column',
-              gap: 10
+              gap: embedded ? 12 : 10
             }}
           >
             {editInspectorMode !== 'floating' && (
@@ -499,22 +515,29 @@ export const CustomizePanel: React.FC = () => {
             </div>
 
             <div className="sb-setting-block">
-              <span className="sb-field-lbl">目标对象</span>
-              <div className="segmented sb-seg-full" role="group" aria-label="悬浮工具栏目标对象">
-                {TARGET_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    className={`compact ${target === opt.key ? 'active' : ''}`}
-                    onClick={() => {
-                      setTarget(opt.key);
-                      setDraggingId(null);
-                      setDragOver(null);
-                    }}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
+              <div className="cust-target-header">
+                <span className="sb-field-lbl">目标对象</span>
+                <div className="cust-target-tabs" role="tablist" aria-label="切换要编辑悬浮条的目标对象">
+                  {TARGET_OPTIONS.map((opt) => {
+                    const active = target === opt.key;
+                    return (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        className={`cust-target-tab ${active ? 'is-active' : ''}`}
+                        onClick={() => {
+                          setTarget(opt.key);
+                          setDraggingId(null);
+                          setDragOver(null);
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -628,30 +651,32 @@ export const CustomizePanel: React.FC = () => {
         </>
       ) : (
         <>
-          <div
-            style={{
-              padding: '9px 12px',
-              borderBottom: '1px solid var(--rule)',
-              background: 'var(--bg-subtle)',
-              flexShrink: 0
-            }}
-          >
-            <input
-              type="search"
-              className="cust-key-search"
-              placeholder="搜索动作名或快捷键…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (isComposingEvent(e)) return;
-                if (e.key === 'Escape' && searchQuery) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setSearchQuery('');
-                }
+          {externalShortcutQuery === undefined && (
+            <div
+              style={{
+                padding: embedded ? '10px 18px' : '9px 12px',
+                borderBottom: '1px solid var(--rule)',
+                background: 'var(--bg-subtle)',
+                flexShrink: 0
               }}
-            />
-          </div>
+            >
+              <input
+                type="search"
+                className="cust-key-search"
+                placeholder="搜索动作名或快捷键…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (isComposingEvent(e)) return;
+                  if (e.key === 'Escape' && searchQuery) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setSearchQuery('');
+                  }
+                }}
+              />
+            </div>
+          )}
 
           <div
             style={{
@@ -660,7 +685,7 @@ export const CustomizePanel: React.FC = () => {
               minHeight: 0,
               overflowX: 'hidden',
               overflowY: 'auto',
-              padding: '10px 12px'
+              padding: embedded ? '12px 18px' : '10px 12px'
             }}
           >
             {filteredGroups.length === 0 ? (

@@ -9,7 +9,6 @@ import {
 } from '../shortcuts/registry';
 import { useEditorStore } from '../store/useEditorStore';
 import { CloseIcon, UiIcon } from './Icons';
-import { requestCustomizeSubtab } from './sidebar/CustomizePanel';
 
 interface DeleteMatrixRow {
   target: string;
@@ -75,15 +74,12 @@ export const ShortcutsModal: React.FC = () => {
   const shortcutsOpen = useEditorStore((s) => s.shortcutsOpen);
   const setShortcutsOpen = useEditorStore((s) => s.setShortcutsOpen);
   const customShortcuts = useEditorStore((s) => s.customShortcuts);
-  const setSidebarTab = useEditorStore((s) => s.setSidebarTab);
-  const setSidebarOpen = useEditorStore((s) => s.setSidebarOpen);
+  const setPreferencesOpen = useEditorStore((s) => s.setPreferencesOpen);
   const backdropPointerDownRef = useRef(false);
 
   const handleOpenCustomizeShortcuts = () => {
-    requestCustomizeSubtab('shortcuts');
     setShortcutsOpen(false);
-    setSidebarTab('customize');
-    setSidebarOpen(true);
+    setPreferencesOpen(true, 'shortcuts');
   };
 
   return (

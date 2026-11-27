@@ -3181,6 +3181,10 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             e.code === 'Digit5'
           ) {
             e.preventDefault();
+            if (e.code === 'Digit5') {
+              useEditorStore.getState().setPreferencesOpen(true, 'floating');
+              return;
+            }
             const tab: SidebarTab =
               e.code === 'Digit1'
                 ? 'inspector'
@@ -3188,9 +3192,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                   ? 'tiers'
                   : e.code === 'Digit3'
                     ? 'history'
-                    : e.code === 'Digit4'
-                      ? 'settings'
-                      : 'customize';
+                    : 'settings';
             setSidebarTab(tab);
             setSidebarOpen(true);
             return;

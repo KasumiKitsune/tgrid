@@ -79,6 +79,7 @@ import { PosterModal } from './components/PosterModal';
 import { prunePolarSpecCacheForSession } from './render/poster/polarSpectrogram';
 import { AboutModal } from './components/AboutModal';
 import { ShortcutsModal } from './components/ShortcutsModal';
+import { PreferencesModal } from './components/PreferencesModal';
 import { FindReplaceBar } from './components/FindReplaceBar';
 import { StatusBar } from './components/StatusBar';
 import { UnsavedDialog, type UnsavedDialogState } from './components/UnsavedDialog';
@@ -2731,6 +2732,23 @@ export function App() {
           setPosterOpen(false);
           return;
         }
+        if (st.preferencesOpen) {
+          const activeEl = document.activeElement;
+          if (
+            activeEl instanceof HTMLInputElement &&
+            activeEl.closest('.prefs-modal-card') &&
+            (activeEl.classList.contains('pref-hist-input') ||
+              ((activeEl.classList.contains('prefs-search-input') ||
+                activeEl.classList.contains('cust-key-search')) &&
+                activeEl.value.length > 0))
+          ) {
+            return;
+          }
+          e.preventDefault();
+          e.stopPropagation();
+          st.setPreferencesOpen(false);
+          return;
+        }
         if (st.shortcutsOpen) {
           e.preventDefault();
           e.stopPropagation();
@@ -2756,8 +2774,25 @@ export function App() {
           stNow.posterOpen ||
           stNow.aboutOpen ||
           stNow.shortcutsOpen ||
+          stNow.preferencesOpen ||
           document.querySelector('.modal-backdrop.open')
       );
+
+      // Preferences center toggle (Mod+,)
+      if (ctrl && !e.altKey && !e.shiftKey && (e.key === ',' || e.code === 'Comma')) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (
+          !unsavedDialogRef.current &&
+          !stNow.exportOpen &&
+          !stNow.posterOpen &&
+          !stNow.aboutOpen &&
+          !stNow.shortcutsOpen
+        ) {
+          stNow.setPreferencesOpen(!stNow.preferencesOpen);
+        }
+        return;
+      }
 
       const isFnKey = /^F([1-9]|1[0-2])$/i.test(e.key);
       const isBareEvent = !ctrl && !e.altKey && !isFnKey;
@@ -2822,7 +2857,13 @@ export function App() {
       if (matchGlobalShortcut('shortcuts-modal')) {
         e.preventDefault();
         e.stopPropagation();
-        if (!unsavedDialogRef.current && !stNow.exportOpen && !stNow.posterOpen && !stNow.aboutOpen) {
+        if (
+          !unsavedDialogRef.current &&
+          !stNow.exportOpen &&
+          !stNow.posterOpen &&
+          !stNow.aboutOpen &&
+          !stNow.preferencesOpen
+        ) {
           stNow.setShortcutsOpen(!stNow.shortcutsOpen);
         }
         return;
@@ -3188,6 +3229,8 @@ export function App() {
       <AboutModal />
 
       <ShortcutsModal />
+
+      <PreferencesModal />
 
       <UnsavedDialog
         state={unsavedDialog}
