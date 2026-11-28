@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useEditorStore } from '../store/useEditorStore';
+import type { GlobalScaleMode } from '../layout/computeLayout';
 import {
   WARM_PALETTE,
   collectActiveLegendItems,
@@ -25,7 +26,7 @@ function renderLegendLabelNodes(label: string): React.ReactNode {
   });
 }
 
-const MiniStructureSvg: React.FC<{ scaleMode: 'elastic' | 'linear' }> = ({ scaleMode }) => {
+const MiniStructureSvg: React.FC<{ scaleMode: GlobalScaleMode }> = ({ scaleMode }) => {
   const ref = useRef<SVGSVGElement>(null);
   useEffect(() => {
     const svg = ref.current;
@@ -122,7 +123,8 @@ export const LegendDock: React.FC = () => {
     return selection.kind;
   }, [selection, tg.tiers]);
 
-  const lines = useMemo(() => getStructureLines(scaleMode, 'zh'), [scaleMode]);
+  const effectiveScaleMode: GlobalScaleMode = layout?.effectiveScaleMode ?? scaleMode;
+  const lines = useMemo(() => getStructureLines(effectiveScaleMode, 'zh'), [effectiveScaleMode]);
   const items = useMemo(() => {
     if (!legendOpen || !layout) return [];
     return collectActiveLegendItems(tg, layout, {
@@ -149,7 +151,7 @@ export const LegendDock: React.FC = () => {
     >
       <div className="legend-dock-inner">
         <div className="legend-dock-struct">
-          <MiniStructureSvg scaleMode={scaleMode} />
+          <MiniStructureSvg scaleMode={effectiveScaleMode} />
           <div className="legend-dock-guide">
             {lines.map((line, i) => {
               const colonIdx = line.indexOf('：');

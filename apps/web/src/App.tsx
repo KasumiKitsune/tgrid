@@ -8,7 +8,25 @@ import {
   type TextGridFormat
 } from './bridge/PlatformBridge';
 import { AudioPlayer, decodeAudioPure } from './audio/AudioPlayer';
-import { detectSpeechSegmentsAsync } from './audio/vad';
+import {
+  DEFAULT_VAD_LABEL_CONFIG,
+  applyVadWritePlan,
+  countOverwrittenTextIntervals,
+  createDefaultVadParams,
+  detectSpeechSegmentsAsync,
+  extractVadTrack,
+  getCachedVadTracks,
+  getDefaultVadTarget,
+  postprocessVadTracks,
+  snapVadSegmentsZeroCrossing,
+  type RuleFeatureTrack,
+  type VadExtractProgress,
+  type VadLabelConfig,
+  type VadPostprocessParams,
+  type VadWriteTarget
+} from './audio/vad';
+import type { VadPosteriorTrack } from './bridge/types';
+import type { VadOverlayState, VadPreviewSegmentItem } from './render/renderVadOverlay';
 import {
   deleteTabAudioBuffer,
   getTabAudioBuffer,
@@ -115,8 +133,17 @@ import { CorpusSidebar, filterCorpusItems } from './components/CorpusSidebar';
 import { CorpusNavBar } from './components/CorpusNavBar';
 import { CorpusRecoveryBanner } from './components/CorpusRecoveryBanner';
 import { CloseIcon, UiIcon } from './components/Icons';
-import { ScoreStage, type ScoreStageHandle } from './components/ScoreStage';
+import {
+  ScoreStage,
+  type ScoreStageHandle,
+  type VadStageBannerInfo
+} from './components/ScoreStage';
 import { RightSidebar, type RightSidebarHandle } from './components/sidebar/RightSidebar';
+import {
+  VadPanel,
+  type VadOpenOptions,
+  type VadScopeMode
+} from './components/sidebar/VadPanel';
 import { IpaDock } from './components/IpaDock';
 import { ExportModal } from './components/ExportModal';
 import { PosterModal } from './components/PosterModal';
@@ -155,7 +182,7 @@ import {
   type DropIntakePlan,
   type DropOpenUnit
 } from './utils/dropIntake';
-import { hasAnyCustomStyle } from './style/palettes';
+import { hasAnyCustomStyle, hasCustomLayoutPrefs } from './style/palettes';
 import { reconcileStyleDocument } from './style/reconcileStyle';
 import {
   extractProjectFromSvgText,
@@ -3314,7 +3341,7 @@ export function App() {
   const persistStyleSidecarForDesktop = useCallback(
     async (savedPath: string, styleDoc: StyleDocument) => {
       if (!isDesktop || !savedPath) return;
-      if (!hasAnyCustomStyle(styleDoc)) return;
+      if (!hasAnyCustomStyle(styleDoc) && !hasCustomLayoutPrefs(styleDoc)) return;
       try {
         const sidecarPath = getStyleSidecarPath(savedPath);
         await getPlatformBridge().writeNativeFile(
@@ -5413,14 +5440,637 @@ export function App() {
     playerRef.current?.stop(false);
   }, []);
 
+  // ============================================================================
+  // Interactive Voice Activity Detection (VAD) Session & Real-Time Preview
+  // ============================================================================
+  const vadTg = useEditorStore((s) => s.tg);
+  const vadMode = useEditorStore((s) => s.mode);
+  const vadSelection = useEditorStore((s) => s.selection);
+  const vadPlayRange = useEditorStore((s) => s.playRange);
+  const vadAnalysis = useEditorStore((s) => s.analysis);
+  const vadAudioOffset = useEditorStore((s) => s.audioOffset);
+  const vadAudioDuration = useEditorStore((s) => s.audioDuration);
+  const vadAudioName = useEditorStore((s) => s.audioName);
+  const vadCorpusEntryId = useEditorStore((s) => s.corpusActiveEntryId);
+
+  const [vadOpen, setVadOpen] = useState(false);
+  const [vadScopeMode, setVadScopeMode] = useState<VadScopeMode>('all');
+  const [vadPinnedRange, setVadPinnedRange] = useState<{ start: number; end: number } | null>(null);
+  const [vadPinnedInterval, setVadPinnedInterval] = useState<{
+    tierIndex: number;
+    itemIndex: number;
+  } | null>(null);
+  const [vadParams, setVadParams] = useState<VadPostprocessParams>(() =>
+    createDefaultVadParams('standard', useEditorStore.getState().acousticEngineMode)
+  );
+  const [vadWriteTarget, setVadWriteTarget] = useState<VadWriteTarget>(() =>
+    getDefaultVadTarget(useEditorStore.getState().tg, useEditorStore.getState().selection, 'all')
+  );
+  const [vadLabelConfig, setVadLabelConfig] = useState<VadLabelConfig>(() => ({
+    ...DEFAULT_VAD_LABEL_CONFIG
+  }));
+  const [vadSnapZeroCrossing, setVadSnapZeroCrossing] = useState(true);
+  const [vadShowProbCurve, setVadShowProbCurve] = useState(true);
+  const [vadExcludedKeys, setVadExcludedKeys] = useState<Set<string>>(() => new Set());
+  const [vadActiveSegIdx, setVadActiveSegIdx] = useState<number | null>(null);
+  const [vadHoveredSegIdx, setVadHoveredSegIdx] = useState<number | null>(null);
+  const [vadExtracting, setVadExtracting] = useState(false);
+  const [vadExtractProgress, setVadExtractProgress] = useState<VadExtractProgress | null>(null);
+  const [vadExtractError, setVadExtractError] = useState<string | null>(null);
+  const [vadApplying, setVadApplying] = useState(false);
+  const [vadNeuralTrack, setVadNeuralTrack] = useState<VadPosteriorTrack | null>(null);
+  const [vadRuleTrack, setVadRuleTrack] = useState<RuleFeatureTrack | null>(null);
+
+  const vadAbortRef = useRef<AbortController | null>(null);
+  const vadOpenRef = useRef(false);
+  vadOpenRef.current = vadOpen;
+  const vadActiveSegRef = useRef<number | null>(null);
+  vadActiveSegRef.current = vadActiveSegIdx;
+
+  const vadSegKey = (start: number, end: number) =>
+    `${Math.round(start * 200)}:${Math.round(end * 200)}`;
+
+  const closeVadPanel = useCallback(() => {
+    vadAbortRef.current?.abort();
+    vadAbortRef.current = null;
+    setVadOpen(false);
+    setVadExtracting(false);
+    setVadExtractProgress(null);
+    setVadExtractError(null);
+    setVadActiveSegIdx(null);
+    setVadHoveredSegIdx(null);
+  }, []);
+
+  const openVadPanel = useCallback(
+    (opts?: VadOpenOptions) => {
+      if (opts?.toggle && vadOpenRef.current) {
+        closeVadPanel();
+        return;
+      }
+      const st = useEditorStore.getState();
+      const targetRange =
+        opts?.range ??
+        (st.playRange && st.playRange.end - st.playRange.start >= 0.01 ? st.playRange : null);
+      const explicitIv =
+        opts?.tierIndex !== undefined && opts?.itemIndex !== undefined
+          ? { tierIndex: opts.tierIndex, itemIndex: opts.itemIndex }
+          : st.selection?.kind === 'interval'
+            ? { tierIndex: st.selection.tierIndex, itemIndex: st.selection.itemIndex }
+            : null;
+      const ivObj =
+        explicitIv && st.tg.tiers[explicitIv.tierIndex]?.kind === 'intervalTier'
+          ? st.tg.tiers[explicitIv.tierIndex].intervals[explicitIv.itemIndex]
+          : undefined;
+      const validIv = ivObj && ivObj.xmax > ivObj.xmin + 1e-6 ? explicitIv : null;
+
+      let nextScope: VadScopeMode = opts?.scopeMode ?? 'all';
+      if (!opts?.scopeMode) {
+        if (targetRange) {
+          nextScope = 'range';
+        } else if (
+          validIv &&
+          ivObj &&
+          !(
+            st.tg.tiers.length === 1 &&
+            st.tg.tiers[0].intervals.length === 1 &&
+            ivObj.text.trim() === ''
+          ) &&
+          (ivObj.text.trim() === '' || ivObj.xmax - ivObj.xmin >= 0.4)
+        ) {
+          nextScope = 'interval';
+        } else {
+          nextScope = 'all';
+        }
+      }
+
+      if (nextScope === 'range' && !targetRange) nextScope = 'all';
+      if (nextScope === 'interval' && !validIv) nextScope = 'all';
+
+      const effectiveSel: EditorSelection = validIv
+        ? { kind: 'interval', tierIndex: validIv.tierIndex, itemIndex: validIv.itemIndex }
+        : st.selection;
+
+      const defaultTarget = getDefaultVadTarget(st.tg, effectiveSel, nextScope);
+      const nextTarget: VadWriteTarget = {
+        ...defaultTarget,
+        ...(opts?.writeMode ? { mode: opts.writeMode } : {}),
+        ...(validIv && (opts?.writeMode === 'split-interval' || defaultTarget.mode === 'split-interval')
+          ? { targetTierIndex: validIv.tierIndex, intervalIndex: validIv.itemIndex }
+          : {})
+      };
+
+      setVadScopeMode(nextScope);
+      setVadPinnedRange(targetRange ? { start: targetRange.start, end: targetRange.end } : null);
+      setVadPinnedInterval(validIv);
+      setVadWriteTarget(nextTarget);
+      if (!vadOpenRef.current) {
+        setVadParams((prev) => ({ ...prev, engineMode: st.acousticEngineMode }));
+      }
+      setVadExcludedKeys(new Set());
+      setVadActiveSegIdx(null);
+      setVadHoveredSegIdx(null);
+      setVadExtractError(null);
+      setVadOpen(true);
+    },
+    [closeVadPanel]
+  );
+
+  // Cancel in-flight VAD extraction and reset preview cleanly on tab or corpus entry switch
+  useEffect(() => {
+    vadAbortRef.current?.abort();
+    vadAbortRef.current = null;
+    setVadOpen(false);
+    setVadExtracting(false);
+    setVadExtractProgress(null);
+    setVadExtractError(null);
+    setVadNeuralTrack(null);
+    setVadRuleTrack(null);
+    setVadExcludedKeys(new Set());
+    setVadActiveSegIdx(null);
+    setVadHoveredSegIdx(null);
+  }, [activeTabId, vadCorpusEntryId]);
+
+  const vadHasAudio = Boolean(vadAudioName && (audioBuffer || vadAnalysis?.sessionId));
+  const vadEffectiveAudioDur = useMemo(() => {
+    if (audioBuffer && Number.isFinite(audioBuffer.duration) && audioBuffer.duration > 0) {
+      return audioBuffer.duration;
+    }
+    if (vadAnalysis && Number.isFinite(vadAnalysis.duration) && vadAnalysis.duration > 0) {
+      return vadAnalysis.duration;
+    }
+    return vadAudioDuration > 0 ? vadAudioDuration : 0;
+  }, [audioBuffer, vadAnalysis, vadAudioDuration]);
+
+  const vadResolvedRange = useMemo(() => {
+    if (vadPlayRange && vadPlayRange.end - vadPlayRange.start >= 0.01) return vadPlayRange;
+    return vadPinnedRange;
+  }, [vadPlayRange, vadPinnedRange]);
+
+  const vadResolvedInterval = useMemo(() => {
+    const ref =
+      vadPinnedInterval ??
+      (vadSelection?.kind === 'interval'
+        ? { tierIndex: vadSelection.tierIndex, itemIndex: vadSelection.itemIndex }
+        : null);
+    if (!ref) return null;
+    const tier = vadTg.tiers[ref.tierIndex];
+    if (!tier || tier.kind !== 'intervalTier') return null;
+    const iv = tier.intervals[ref.itemIndex];
+    if (!iv || iv.xmax <= iv.xmin + 1e-6) return null;
+    return { tierIndex: ref.tierIndex, itemIndex: ref.itemIndex, xmin: iv.xmin, xmax: iv.xmax };
+  }, [vadPinnedInterval, vadSelection, vadTg]);
+
+  const vadScopeSpan = useMemo(() => {
+    const docMin = vadTg.xmin;
+    const docMax = vadTg.xmax;
+    const audioMin = vadHasAudio ? vadAudioOffset : docMin;
+    const audioMax =
+      vadHasAudio && vadEffectiveAudioDur > 0 ? vadAudioOffset + vadEffectiveAudioDur : docMax;
+    const clampMin = Math.max(docMin, audioMin);
+    const clampMax = Math.min(docMax, audioMax);
+    const fullStart = clampMax > clampMin ? clampMin : docMin;
+    const fullEnd = clampMax > clampMin ? clampMax : docMax;
+
+    if (vadScopeMode === 'range' && vadResolvedRange) {
+      const s = Math.max(fullStart, Math.min(fullEnd, vadResolvedRange.start));
+      const e = Math.max(s, Math.min(fullEnd, vadResolvedRange.end));
+      if (e > s + 1e-4) return { start: s, end: e };
+    }
+    if (vadScopeMode === 'interval' && vadResolvedInterval) {
+      const s = Math.max(fullStart, Math.min(fullEnd, vadResolvedInterval.xmin));
+      const e = Math.max(s, Math.min(fullEnd, vadResolvedInterval.xmax));
+      if (e > s + 1e-4) return { start: s, end: e };
+    }
+    return { start: fullStart, end: fullEnd };
+  }, [
+    vadTg.xmin,
+    vadTg.xmax,
+    vadHasAudio,
+    vadAudioOffset,
+    vadEffectiveAudioDur,
+    vadScopeMode,
+    vadResolvedRange,
+    vadResolvedInterval
+  ]);
+
+  // Keep writeTarget aligned when user switches scopeMode in the panel
+  const handleVadScopeModeChange = useCallback(
+    (nextMode: VadScopeMode) => {
+      setVadScopeMode(nextMode);
+      setVadExcludedKeys(new Set());
+      setVadActiveSegIdx(null);
+      if (nextMode === 'interval' && vadResolvedInterval) {
+        setVadWriteTarget((prev) => ({
+          ...prev,
+          mode: 'split-interval',
+          targetTierIndex: vadResolvedInterval.tierIndex,
+          intervalIndex: vadResolvedInterval.itemIndex
+        }));
+      } else if (vadWriteTarget.mode === 'split-interval' && nextMode !== 'interval') {
+        const fallback = getDefaultVadTarget(vadTg, null, nextMode);
+        setVadWriteTarget(fallback);
+      }
+    },
+    [vadResolvedInterval, vadWriteTarget.mode, vadTg]
+  );
+
+  // Incremental 30s chunked acoustic extraction whenever VAD panel is open + audio/engine/scope changes
+  useEffect(() => {
+    if (!vadOpen || !vadHasAudio || vadEffectiveAudioDur <= 0) {
+      vadAbortRef.current?.abort();
+      vadAbortRef.current = null;
+      setVadExtracting(false);
+      setVadExtractProgress(null);
+      return;
+    }
+
+    const sessionId = vadAnalysis?.sessionId ?? null;
+    const cached = getCachedVadTracks(sessionId, audioBuffer);
+    setVadNeuralTrack(cached.neuralTrack);
+    setVadRuleTrack(cached.ruleTrack);
+
+    const rangeAudioStart = Math.max(0, vadScopeSpan.start - vadAudioOffset);
+    const rangeAudioEnd = Math.min(vadEffectiveAudioDur, vadScopeSpan.end - vadAudioOffset);
+    if (rangeAudioEnd <= rangeAudioStart + 1e-4) {
+      setVadExtracting(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    vadAbortRef.current?.abort();
+    vadAbortRef.current = controller;
+
+    setVadExtracting(true);
+    setVadExtractError(null);
+    setVadExtractProgress({
+      doneChunks: 0,
+      totalChunks: Math.max(1, Math.ceil((rangeAudioEnd - rangeAudioStart) / 30)),
+      ratio: 0,
+      coveredSec: 0,
+      totalSec: rangeAudioEnd - rangeAudioStart
+    });
+
+    void (async () => {
+      try {
+        const res = await extractVadTrack({
+          sessionId,
+          audioBuffer,
+          audioDuration: vadEffectiveAudioDur,
+          engineMode: vadParams.engineMode,
+          rangeAudioStart,
+          rangeAudioEnd,
+          signal: controller.signal,
+          onProgress: (prog) => {
+            if (!controller.signal.aborted) {
+              setVadExtractProgress(prog);
+            }
+          },
+          onPartialTrack: (partial) => {
+            if (!controller.signal.aborted) {
+              setVadNeuralTrack({ ...partial });
+            }
+          }
+        });
+        if (controller.signal.aborted) return;
+        setVadNeuralTrack(res.neuralTrack ? { ...res.neuralTrack } : null);
+        setVadRuleTrack(res.ruleTrack);
+        setVadExtracting(false);
+      } catch (err) {
+        if (controller.signal.aborted || (err as Error)?.name === 'AbortError') return;
+        setVadExtracting(false);
+        setVadExtractError(err instanceof Error ? err.message : String(err));
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
+  }, [
+    vadOpen,
+    vadHasAudio,
+    vadEffectiveAudioDur,
+    vadAnalysis?.sessionId,
+    audioBuffer,
+    vadParams.engineMode,
+    vadScopeSpan.start,
+    vadScopeSpan.end,
+    vadAudioOffset
+  ]);
+
+  // Fast <2ms 60fps pure postprocessing on cached 10ms frames
+  const vadRawSegments = useMemo(() => {
+    if (!vadOpen || !vadHasAudio || vadEffectiveAudioDur <= 0) return [];
+    return postprocessVadTracks({
+      neuralTrack: vadNeuralTrack,
+      ruleTrack: vadRuleTrack,
+      params: vadParams,
+      ctx: {
+        audioDuration: vadEffectiveAudioDur,
+        audioOffset: vadAudioOffset,
+        scopeStart: vadScopeSpan.start,
+        scopeEnd: vadScopeSpan.end
+      }
+    });
+  }, [
+    vadOpen,
+    vadHasAudio,
+    vadEffectiveAudioDur,
+    vadNeuralTrack,
+    vadRuleTrack,
+    vadParams,
+    vadAudioOffset,
+    vadScopeSpan.start,
+    vadScopeSpan.end
+  ]);
+
+  const vadPreviewSegments = useMemo<VadPreviewSegmentItem[]>(
+    () =>
+      vadRawSegments.map((seg, index) => ({
+        index,
+        start: seg.start,
+        end: seg.end,
+        excluded: vadExcludedKeys.has(vadSegKey(seg.start, seg.end))
+      })),
+    [vadRawSegments, vadExcludedKeys]
+  );
+
+  const vadStats = useMemo(() => {
+    let keptCount = 0;
+    let excludedCount = 0;
+    let speechDurSec = 0;
+    for (const seg of vadPreviewSegments) {
+      if (seg.excluded) {
+        excludedCount++;
+      } else {
+        keptCount++;
+        speechDurSec += Math.max(0, seg.end - seg.start);
+      }
+    }
+    const totalSpan = Math.max(1e-6, vadScopeSpan.end - vadScopeSpan.start);
+    const ratioPct = Math.min(100, Math.round((speechDurSec / totalSpan) * 100));
+    return { keptCount, excludedCount, speechDurSec, ratioPct };
+  }, [vadPreviewSegments, vadScopeSpan.start, vadScopeSpan.end]);
+
+  const vadOverwriteWarning = useMemo(
+    () =>
+      countOverwrittenTextIntervals(
+        vadTg,
+        vadWriteTarget,
+        vadScopeSpan.start,
+        vadScopeSpan.end
+      ),
+    [vadTg, vadWriteTarget, vadScopeSpan.start, vadScopeSpan.end]
+  );
+
+  const vadOverlayState = useMemo<VadOverlayState | null>(() => {
+    if (!vadOpen || !vadHasAudio) return null;
+    const isPartial =
+      vadScopeMode !== 'all' ||
+      vadScopeSpan.start > vadTg.xmin + 1e-4 ||
+      vadScopeSpan.end < vadTg.xmax - 1e-4;
+    const probCurve =
+      vadParams.engineMode === 'neural'
+        ? (vadNeuralTrack?.pVad ?? null)
+        : (vadRuleTrack?.pNorm ?? null);
+    const probOriginSec =
+      vadParams.engineMode === 'neural'
+        ? (vadNeuralTrack?.originSec ?? 0)
+        : (vadRuleTrack?.originSec ?? 0);
+    const probHopMs =
+      vadParams.engineMode === 'neural'
+        ? (vadNeuralTrack?.hopMs ?? 10)
+        : (vadRuleTrack?.hopMs ?? 10);
+
+    return {
+      active: true,
+      segments: vadPreviewSegments,
+      activeSegmentIndex: vadActiveSegIdx,
+      hoveredSegmentIndex: vadHoveredSegIdx,
+      scope: { start: vadScopeSpan.start, end: vadScopeSpan.end, isPartial },
+      targetTierIndex:
+        vadWriteTarget.mode === 'new-tier' ? null : vadWriteTarget.targetTierIndex,
+      showProbabilityCurve: vadShowProbCurve,
+      probCurve,
+      probHopMs,
+      probOriginSec,
+      audioOffset: vadAudioOffset,
+      highProbTh: vadParams.highProbTh,
+      lowProbTh: vadParams.lowProbTh
+    };
+  }, [
+    vadOpen,
+    vadHasAudio,
+    vadScopeMode,
+    vadScopeSpan.start,
+    vadScopeSpan.end,
+    vadTg.xmin,
+    vadTg.xmax,
+    vadParams.engineMode,
+    vadParams.highProbTh,
+    vadParams.lowProbTh,
+    vadNeuralTrack,
+    vadRuleTrack,
+    vadPreviewSegments,
+    vadActiveSegIdx,
+    vadHoveredSegIdx,
+    vadWriteTarget.mode,
+    vadWriteTarget.targetTierIndex,
+    vadShowProbCurve,
+    vadAudioOffset
+  ]);
+
+  const vadStageBanner = useMemo<VadStageBannerInfo | null>(() => {
+    if (!vadOpen || !vadHasAudio) return null;
+    return {
+      keptCount: vadStats.keptCount,
+      excludedCount: vadStats.excludedCount,
+      speechDurSec: vadStats.speechDurSec,
+      ratioPct: vadStats.ratioPct,
+      extracting: vadExtracting,
+      isReadOnly: vadMode === 'read'
+    };
+  }, [vadOpen, vadHasAudio, vadStats, vadExtracting, vadMode]);
+
+  const handleAuditionVadSegment = useCallback(
+    (index: number) => {
+      const seg = vadPreviewSegments[index];
+      if (!seg) return;
+      setVadActiveSegIdx(index);
+      useEditorStore.getState().setPlayRange({ start: seg.start, end: seg.end });
+      handleStartPlayback(seg.start, seg.end);
+    },
+    [vadPreviewSegments, handleStartPlayback]
+  );
+
+  const handleToggleExcludeVadSegment = useCallback(
+    (index: number) => {
+      const seg = vadPreviewSegments[index];
+      if (!seg) return;
+      const key = vadSegKey(seg.start, seg.end);
+      setVadExcludedKeys((prev) => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+    },
+    [vadPreviewSegments]
+  );
+
+  const handleVadCanvasSegmentClick = useCallback(
+    (index: number, altKey: boolean) => {
+      if (altKey) {
+        handleToggleExcludeVadSegment(index);
+      } else {
+        handleAuditionVadSegment(index);
+      }
+    },
+    [handleToggleExcludeVadSegment, handleAuditionVadSegment]
+  );
+
+  const handleResetVad = useCallback(() => {
+    setVadParams(createDefaultVadParams('standard', useEditorStore.getState().acousticEngineMode));
+    setVadExcludedKeys(new Set());
+    setVadActiveSegIdx(null);
+  }, []);
+
+  const handleApplyVad = useCallback(async () => {
+    if (vadApplying || vadExtracting) return;
+    const kept = vadPreviewSegments
+      .filter((s) => !s.excluded)
+      .map((s) => ({ start: s.start, end: s.end }));
+    if (kept.length === 0) {
+      showToast('当前没有可写入的有声段', true);
+      return;
+    }
+
+    setVadApplying(true);
+    try {
+      const stBefore = useEditorStore.getState();
+      if (stBefore.mode === 'read') {
+        stBefore.setMode('edit');
+      }
+
+      let finalSegments = kept;
+      if (vadSnapZeroCrossing && stBefore.analysis?.sessionId) {
+        const bridge = getPlatformBridge();
+        const sid = stBefore.analysis.sessionId;
+        finalSegments = await snapVadSegmentsZeroCrossing(
+          kept,
+          vadScopeSpan.start,
+          vadScopeSpan.end,
+          (t) => bridge.findZeroCrossing(sid, t, 0.008)
+        );
+      }
+
+      const st = useEditorStore.getState();
+      const targetToWrite: VadWriteTarget =
+        vadWriteTarget.mode === 'split-interval' && vadResolvedInterval
+          ? {
+              ...vadWriteTarget,
+              targetTierIndex: vadResolvedInterval.tierIndex,
+              intervalIndex: vadResolvedInterval.itemIndex
+            }
+          : vadWriteTarget;
+
+      const plan = applyVadWritePlan({
+        tg: st.tg,
+        segments: finalSegments,
+        scopeStart: vadScopeSpan.start,
+        scopeEnd: vadScopeSpan.end,
+        target: targetToWrite,
+        labelConfig: vadLabelConfig
+      });
+
+      if (!plan.ok) {
+        showToast(plan.reason || '语音切分写入失败', true);
+        return;
+      }
+
+      // Locate first speech interval in the written tier to select & sync playRange
+      const writtenTier = plan.nextTg.tiers[plan.writtenTierIndex];
+      const firstSpeechRef = finalSegments[0];
+      let firstSpeechItemIdx = -1;
+      if (writtenTier && firstSpeechRef) {
+        const mid = 0.5 * (firstSpeechRef.start + firstSpeechRef.end);
+        firstSpeechItemIdx = writtenTier.intervals.findIndex(
+          (iv) => iv.xmin <= mid + 1e-6 && iv.xmax >= mid - 1e-6
+        );
+      }
+      const firstSpeechIv =
+        writtenTier && firstSpeechItemIdx >= 0
+          ? writtenTier.intervals[firstSpeechItemIdx]
+          : undefined;
+
+      const nextSel: EditorSelection | undefined =
+        firstSpeechIv && firstSpeechItemIdx >= 0
+          ? {
+              kind: 'interval',
+              tierIndex: plan.writtenTierIndex,
+              itemIndex: firstSpeechItemIdx
+            }
+          : undefined;
+
+      const committed = st.commitTgMutation(
+        (draft, ctx) => {
+          draft.tiers = plan.nextTg.tiers;
+          if (firstSpeechIv) {
+            ctx.setNextPlayRange({ start: firstSpeechIv.xmin, end: firstSpeechIv.xmax });
+          }
+        },
+        nextSel,
+        {
+          type: 'vad-segment',
+          title: '语音切分 (VAD)',
+          detail: plan.historyDetail,
+          icon: 'vadDetect',
+          tierName: plan.writtenTierName,
+          focusTime: plan.focusTime
+        }
+      );
+
+      if (committed) {
+        closeVadPanel();
+        showToast(`已写入「${plan.writtenTierName}」：${plan.speechCount} 个有声段`);
+      }
+    } catch (err) {
+      showToast(`语音切分写入失败：${err instanceof Error ? err.message : String(err)}`, true);
+    } finally {
+      setVadApplying(false);
+    }
+  }, [
+    vadApplying,
+    vadExtracting,
+    vadPreviewSegments,
+    vadSnapZeroCrossing,
+    vadScopeSpan.start,
+    vadScopeSpan.end,
+    vadWriteTarget,
+    vadResolvedInterval,
+    vadLabelConfig,
+    closeVadPanel,
+    showToast
+  ]);
+
+  const vadOpenFnRef = useRef(openVadPanel);
+  vadOpenFnRef.current = openVadPanel;
+  const vadCloseFnRef = useRef(closeVadPanel);
+  vadCloseFnRef.current = closeVadPanel;
+  const vadApplyRef = useRef(handleApplyVad);
+  vadApplyRef.current = handleApplyVad;
+  const vadAuditionRef = useRef(handleAuditionVadSegment);
+  vadAuditionRef.current = handleAuditionVadSegment;
+
   const ribbonContextValue = useMemo<RibbonContextActions>(
     () => ({
       audioBuffer,
       onStartPlayback: handleStartPlayback,
       onStopPlayback: handlePausePlayback,
-      onOpenSplitModal: handleOpenSplitModal
+      onOpenSplitModal: handleOpenSplitModal,
+      vadOpen,
+      onOpenVad: openVadPanel
     }),
-    [audioBuffer, handleStartPlayback, handlePausePlayback, handleOpenSplitModal]
+    [audioBuffer, handleStartPlayback, handlePausePlayback, handleOpenSplitModal, vadOpen, openVadPanel]
   );
 
   const handleRateChange = useCallback(
@@ -5544,6 +6194,7 @@ export function App() {
         stageWidth: Math.max(320, window.innerWidth - 56),
         uiWrapMode: st.wrapMode,
         uiScaleMode: st.scaleMode,
+        uiTierScaleOverrides: st.tierScaleOverrides,
         uiTargetWidth: st.targetWidth,
         uiWidthAutoFit: st.widthAutoFit,
         viewDomain: st.viewDomain,
@@ -5907,6 +6558,15 @@ export function App() {
           st.closeFindBar();
           return;
         }
+        if (vadOpenRef.current) {
+          if (document.querySelector('.tg-select-menu')) {
+            return;
+          }
+          e.preventDefault();
+          e.stopPropagation();
+          vadCloseFnRef.current();
+          return;
+        }
       }
 
       const stNow = useEditorStore.getState();
@@ -6191,6 +6851,30 @@ export function App() {
         st.setSidebarOpen(!st.sidebarOpen);
         return;
       }
+
+      // Toggle VAD panel (Alt+V)
+      if (!anyModalOpen && matchGlobalShortcut('toggle-vad-panel')) {
+        e.preventDefault();
+        e.stopPropagation();
+        vadOpenFnRef.current({ toggle: true });
+        return;
+      }
+
+      // VAD preview mode quick keys: Enter to apply, Space to audition active preview segment
+      if (vadOpenRef.current && !anyModalOpen && !isEditingInput && !ctrl && !e.altKey && !e.shiftKey) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          void vadApplyRef.current();
+          return;
+        }
+        if ((e.key === ' ' || e.code === 'Space') && vadActiveSegRef.current !== null) {
+          e.preventDefault();
+          e.stopPropagation();
+          vadAuditionRef.current(vadActiveSegRef.current);
+          return;
+        }
+      }
     };
 
     const onWheelCapture = (e: WheelEvent) => {
@@ -6368,6 +7052,12 @@ export function App() {
               onStopPlayback={handleStopPlayback}
               onQuickExportSvg={() => void quickExportImage('svg')}
               onQuickExportPng={() => void quickExportImage('png')}
+              vadOverlay={vadOverlayState}
+              vadBanner={vadStageBanner}
+              onOpenVad={openVadPanel}
+              onApplyVad={() => void handleApplyVad()}
+              onCloseVad={closeVadPanel}
+              onVadSegmentClick={handleVadCanvasSegmentClick}
               topBanner={
                 activeCorpus ? (
                   <>
@@ -6571,6 +7261,54 @@ export function App() {
           onOpenAudioPicker={() => void handleOpenAudioPicker()}
           onClearAudio={() => void clearAudio()}
           onBatchConvertIpa={(dir) => void handleBatchConvertIpa(dir)}
+          vadOpen={vadOpen}
+          vadHeadBadge={vadHasAudio ? `${vadStats.keptCount} 段` : undefined}
+          onCloseVad={closeVadPanel}
+          vadPanel={
+            vadOpen ? (
+              <VadPanel
+                hasAudio={vadHasAudio}
+                tiers={vadTg.tiers}
+                scopeMode={vadScopeMode}
+                onScopeModeChange={handleVadScopeModeChange}
+                hasPlayRange={Boolean(vadResolvedRange)}
+                hasSelectedInterval={Boolean(vadResolvedInterval)}
+                scopeSpan={vadScopeSpan}
+                params={vadParams}
+                onParamsChange={(next) => {
+                  setVadParams(next);
+                  setVadExcludedKeys(new Set());
+                }}
+                writeTarget={vadWriteTarget}
+                onWriteTargetChange={setVadWriteTarget}
+                labelConfig={vadLabelConfig}
+                onLabelConfigChange={setVadLabelConfig}
+                overwriteWarning={vadOverwriteWarning}
+                snapZeroCrossing={vadSnapZeroCrossing}
+                onSnapZeroCrossingChange={setVadSnapZeroCrossing}
+                showProbabilityCurve={vadShowProbCurve}
+                onShowProbabilityCurveChange={setVadShowProbCurve}
+                segments={vadPreviewSegments}
+                activeSegmentIndex={vadActiveSegIdx}
+                onAuditionSegment={handleAuditionVadSegment}
+                onToggleExcludeSegment={handleToggleExcludeVadSegment}
+                onRestoreAllExcluded={() => setVadExcludedKeys(new Set())}
+                onHoverSegment={setVadHoveredSegIdx}
+                extracting={vadExtracting}
+                extractProgress={vadExtractProgress}
+                extractError={vadExtractError}
+                onCancelExtract={() => {
+                  vadAbortRef.current?.abort();
+                  setVadExtracting(false);
+                }}
+                onOpenAudioPicker={() => void handleOpenAudioPicker()}
+                onReset={handleResetVad}
+                onApply={() => void handleApplyVad()}
+                applying={vadApplying}
+                isReadOnly={vadMode === 'read'}
+              />
+            ) : undefined
+          }
         />
       </div>
 

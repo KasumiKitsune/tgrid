@@ -128,6 +128,11 @@ export interface OrphanedStyleOverrides {
   points: PointStyleOverride[];
 }
 
+export interface LayoutPrefs {
+  scaleMode?: 'elastic' | 'mixed' | 'linear';
+  tierScaleOverrides?: Record<string, 'linear' | 'elastic'>;
+}
+
 export interface StyleDocument {
   schemaVersion: typeof STYLE_SCHEMA_VERSION;
   paletteId: PaletteId;
@@ -143,6 +148,7 @@ export interface StyleDocument {
   boundaryOverrides: BoundaryStyleOverride[];
   pointOverrides: PointStyleOverride[];
   orphaned?: OrphanedStyleOverrides;
+  layoutPrefs?: LayoutPrefs;
 }
 
 export type StyleBrush =

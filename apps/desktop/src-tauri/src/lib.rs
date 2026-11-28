@@ -242,6 +242,32 @@ fn detect_speech_segments_nn(
 }
 
 #[tauri::command]
+fn extract_vad_posteriors_chunk(
+    session_id: u32,
+    start_sec: f64,
+    end_sec: f64,
+) -> Result<tg_core::nn::hybrid::VadPosteriorTrack, String> {
+    let win = tg_dsp::session_pcm_window(session_id, start_sec, end_sec, 0.5)
+        .map_err(|e| e.to_string())?;
+    Ok(tg_core::nn::hybrid::extract_vad_posteriors_nn_window(
+        &win.samples,
+        win.sample_rate,
+        win.pad_origin_sec,
+        win.start_sec,
+        win.end_sec,
+    ))
+}
+
+#[tauri::command]
+fn extract_vad_posteriors_pcm(
+    samples: Vec<f32>,
+    sample_rate: u32,
+    origin_sec: f64,
+) -> tg_core::nn::hybrid::VadPosteriorTrack {
+    tg_core::nn::hybrid::extract_vad_posteriors_nn(&samples, sample_rate, origin_sec)
+}
+
+#[tauri::command]
 fn extract_acoustic_snap_peaks(
     samples: Vec<f32>,
     sample_rate: u32,
@@ -1033,6 +1059,8 @@ pub fn run() {
             find_zero_crossing,
             align_split_boundaries,
             detect_speech_segments_nn,
+            extract_vad_posteriors_chunk,
+            extract_vad_posteriors_pcm,
             extract_acoustic_snap_peaks,
             snap_acoustic_boundary,
             scan_corpus_dir,

@@ -190,6 +190,15 @@ export interface VadSegmentResult {
   end: number;
 }
 
+export interface VadPosteriorTrack {
+  hopMs: number;
+  originSec: number;
+  numFrames: number;
+  pVad: Uint8Array;
+  pObstruent: Uint8Array;
+  pStopCl: Uint8Array;
+}
+
 export type AcousticSnapKind = 'phone' | 'syllable' | 'none';
 
 export interface AcousticSnapPeak {
@@ -358,6 +367,16 @@ export interface PlatformBridge {
     sampleRate: number,
     params?: VadParams
   ): Promise<VadSegmentResult[]>;
+  extractVadPosteriorsChunk(
+    sessionId: number,
+    startSec: number,
+    endSec: number
+  ): Promise<VadPosteriorTrack>;
+  extractVadPosteriorsPcm(
+    samples: Float32Array,
+    sampleRate: number,
+    originSec?: number
+  ): Promise<VadPosteriorTrack>;
   extractAcousticSnapPeaks(
     samples: Float32Array,
     sampleRate: number,

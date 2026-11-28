@@ -24,6 +24,11 @@ interface RightSidebarProps {
   onBatchConvertIpa?: (direction: 'toUnicode' | 'toPraat') => void;
   audioBuffer?: AudioBuffer | null;
   onOpenSplitModal?: (tierIndex: number, itemIndex: number) => void;
+  /** 按需唤出的语音切分 (VAD) 面板槽位（不占用右侧 Rail 常驻图标格位） */
+  vadOpen?: boolean;
+  vadPanel?: React.ReactNode;
+  vadHeadBadge?: string;
+  onCloseVad?: () => void;
 }
 
 const RAIL_ITEMS: Array<{ tab: SidebarTab; title: string; icon: IconName; tooltip: string }> = [
@@ -35,7 +40,20 @@ const RAIL_ITEMS: Array<{ tab: SidebarTab; title: string; icon: IconName; toolti
 ];
 
 export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
-  ({ onStartPlayback, onOpenAudioPicker, onClearAudio, audioBuffer, onOpenSplitModal }, ref) => {
+  (
+    {
+      onStartPlayback,
+      onOpenAudioPicker,
+      onClearAudio,
+      audioBuffer,
+      onOpenSplitModal,
+      vadOpen = false,
+      vadPanel,
+      vadHeadBadge,
+      onCloseVad
+    },
+    ref
+  ) => {
     const sidebarOpen = useEditorStore((s) => s.sidebarOpen);
     const sidebarTab = useEditorStore((s) => s.sidebarTab);
     const sidebarWidth = useEditorStore((s) => s.sidebarWidth);
@@ -93,8 +111,11 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
       [sidebarOpen, sidebarTab]
     );
 
+    const isVadActive = Boolean(vadOpen && vadPanel);
+    const effectiveOpen = sidebarOpen || isVadActive;
+
     const handleResizePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-      if (e.button !== 0 || !sidebarOpen) return;
+      if (e.button !== 0 || !effectiveOpen) return;
       e.preventDefault();
       const startX = e.clientX;
       const startWidth = sidebarWidth;
@@ -110,11 +131,15 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
         if (rawW < 175) {
           if (!collapsed) {
             collapsed = true;
-            setSidebarOpen(false);
+            if (isVadActive) {
+              onCloseVad?.();
+            } else {
+              setSidebarOpen(false);
+            }
           }
           return;
         }
-        if (collapsed) {
+        if (collapsed && !isVadActive) {
           collapsed = false;
           setSidebarOpen(true);
         }
@@ -173,16 +198,19 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
       preferencesOpen &&
       (preferencesSection === 'editing' || preferencesSection === 'general');
 
+    const displayTitle = isVadActive ? '语音切分 (VAD)' : activeItem.title;
+    const displayBadge = isVadActive ? (vadHeadBadge ?? '') : headBadge;
+
     return (
       <aside
-        className={`right-sidebar ${sidebarOpen ? 'open' : 'collapsed'} ${resizing ? 'is-resizing resizing' : ''}`}
+        className={`right-sidebar ${effectiveOpen ? 'open' : 'collapsed'} ${resizing ? 'is-resizing resizing' : ''}`}
       >
         <div
           ref={paneRef}
           className={`sidebar-pane ${resizing ? 'is-resizing' : ''}`}
           style={{ '--sidebar-w': `${sidebarWidth}px` } as React.CSSProperties}
-          aria-label={`${activeItem.title}侧边面板`}
-          aria-hidden={!sidebarOpen}
+          aria-label={`${displayTitle}侧边面板`}
+          aria-hidden={!effectiveOpen}
         >
           <div
             className="sidebar-resizer"
@@ -197,47 +225,61 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
           <div className="sidebar-pane-inner">
             <div className="sidebar-head">
               <div className="sidebar-head-left">
-                <span className="sidebar-title">{activeItem.title}</span>
-                {headBadge && <span className="sidebar-head-badge">{headBadge}</span>}
+                <span className="sidebar-title">{displayTitle}</span>
+                {displayBadge && <span className="sidebar-head-badge">{displayBadge}</span>}
               </div>
               <button
                 type="button"
                 className="icon-btn compact sidebar-close-btn"
-                title="收起面板 (Ctrl+B)"
-                aria-label="收起面板"
-                tabIndex={sidebarOpen ? 0 : -1}
-                onClick={() => setSidebarOpen(false)}
+                title={isVadActive ? '退出语音切分预览 (Esc)' : '收起面板 (Ctrl+B)'}
+                aria-label={isVadActive ? '关闭语音切分面板' : '收起面板'}
+                tabIndex={effectiveOpen ? 0 : -1}
+                onClick={() => {
+                  if (isVadActive) {
+                    onCloseVad?.();
+                  } else {
+                    setSidebarOpen(false);
+                  }
+                }}
               >
                 <CloseIcon />
               </button>
             </div>
 
-            <div className={`sidebar-body ${sidebarTab === 'history' ? 'is-full-height' : ''}`}>
-              {sidebarTab === 'inspector' && (
-                <InspectorPanel
-                  ref={inspectorRef}
-                  onStartPlayback={onStartPlayback}
-                  audioBuffer={effectiveAudioBuffer}
-                  onOpenSplitModal={onOpenSplitModal}
-                />
+            <div
+              className={`sidebar-body ${isVadActive || sidebarTab === 'history' ? 'is-full-height' : ''}`}
+            >
+              {isVadActive ? (
+                vadPanel
+              ) : (
+                <>
+                  {sidebarTab === 'inspector' && (
+                    <InspectorPanel
+                      ref={inspectorRef}
+                      onStartPlayback={onStartPlayback}
+                      audioBuffer={effectiveAudioBuffer}
+                      onOpenSplitModal={onOpenSplitModal}
+                    />
+                  )}
+                  {sidebarTab === 'style' && <StylePanel />}
+                  {sidebarTab === 'tiers' && <TiersPanel />}
+                  {sidebarTab === 'history' && <HistoryPanel />}
+                  {sidebarTab === 'settings' && (
+                    <SettingsPanel
+                      onOpenAudioPicker={onOpenAudioPicker}
+                      onClearAudio={onClearAudio}
+                    />
+                  )}
+                  {sidebarTab === 'customize' && <CustomizePanel />}
+                </>
               )}
-              {sidebarTab === 'style' && <StylePanel />}
-              {sidebarTab === 'tiers' && <TiersPanel />}
-              {sidebarTab === 'history' && <HistoryPanel />}
-              {sidebarTab === 'settings' && (
-                <SettingsPanel
-                  onOpenAudioPicker={onOpenAudioPicker}
-                  onClearAudio={onClearAudio}
-                />
-              )}
-              {sidebarTab === 'customize' && <CustomizePanel />}
             </div>
           </div>
         </div>
 
         <nav className="sidebar-rail" aria-label="右侧功能切换栏">
           {RAIL_ITEMS.map((item) => {
-            const isActive = sidebarOpen && sidebarTab === item.tab;
+            const isActive = !isVadActive && sidebarOpen && sidebarTab === item.tab;
             const showQaDot = item.tab === 'inspector' && hasQaIssues;
             return (
               <button
@@ -251,7 +293,16 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
                 }
                 aria-label={showQaDot ? `${item.title}（存在数据检查提醒）` : item.title}
                 aria-pressed={isActive}
-                onClick={() => toggleSidebarTab(item.tab)}
+                onClick={() => {
+                  if (isVadActive) {
+                    onCloseVad?.();
+                    if (!sidebarOpen || sidebarTab !== item.tab) {
+                      toggleSidebarTab(item.tab);
+                    }
+                  } else {
+                    toggleSidebarTab(item.tab);
+                  }
+                }}
               >
                 <UiIcon name={item.icon} size={16} />
                 {showQaDot && (

@@ -24,6 +24,7 @@ export type HistoryActionType =
   | 'add-point'
   | 'project-boundary'
   | 'copy-interval-span'
+  | 'vad-segment'
   // 3. 边界与时刻调整
   | 'move-boundary'
   | 'move-shared-boundary'
@@ -255,6 +256,20 @@ export function formatDocBaselineDetail(filename: string, tg: TextGrid): string 
     (Number.isFinite(tg.xmax) ? tg.xmax : 0) - (Number.isFinite(tg.xmin) ? tg.xmin : 0)
   );
   return `${filename || tg.name || '未命名.TextGrid'} · ${tg.tiers.length} 层 · ${dur.toFixed(2)}s`;
+}
+
+export function formatVadHistoryDetail(
+  tierName: string,
+  speechCount: number,
+  scopeStart?: number,
+  scopeEnd?: number,
+  isFullScope = false
+): string {
+  const label = formatTierLabel(tierName);
+  if (!isFullScope && scopeStart !== undefined && scopeEnd !== undefined) {
+    return `${label} · 检出 ${speechCount} 个有声段 (${formatTimeSpan(scopeStart, scopeEnd)})`;
+  }
+  return `${label} · 全录音检出 ${speechCount} 个有声段`;
 }
 
 // ============================================================================

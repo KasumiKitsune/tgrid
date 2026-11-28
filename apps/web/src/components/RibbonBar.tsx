@@ -72,6 +72,7 @@ import {
   SwatchVisualFill
 } from './sidebar/styleVisuals';
 import type { ExportActionKind } from './Topbar';
+import type { VadOpenOptions } from './sidebar/VadPanel';
 import '../styles/stylePanel.css';
 
 export interface RibbonContextActions {
@@ -79,6 +80,8 @@ export interface RibbonContextActions {
   onStartPlayback: (startT: number, endT: number) => void;
   onStopPlayback?: () => void;
   onOpenSplitModal: (tierIndex: number, itemIndex: number) => void;
+  vadOpen?: boolean;
+  onOpenVad?: (opts?: VadOpenOptions) => void;
 }
 
 const RibbonActionsContext = React.createContext<RibbonContextActions | null>(null);
@@ -95,6 +98,8 @@ export interface RibbonBarProps {
   audioBuffer?: AudioBuffer | null;
   onStartPlayback?: (startT: number, endT: number) => void;
   onOpenSplitModal?: (tierIndex: number, itemIndex: number) => void;
+  vadOpen?: boolean;
+  onOpenVad?: (opts?: VadOpenOptions) => void;
   corpusCanPrev?: boolean;
   corpusCanNext?: boolean;
   onCorpusPrev?: () => void;
@@ -184,6 +189,8 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
   audioBuffer: audioBufferProp,
   onStartPlayback: onStartPlaybackProp,
   onOpenSplitModal: onOpenSplitModalProp,
+  vadOpen: vadOpenProp,
+  onOpenVad: onOpenVadProp,
   corpusCanPrev,
   corpusCanNext,
   onCorpusPrev,
@@ -203,6 +210,8 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
   const onStartPlayback = onStartPlaybackProp ?? ctxActions?.onStartPlayback;
   const onStopPlayback = ctxActions?.onStopPlayback;
   const onOpenSplitModal = onOpenSplitModalProp ?? ctxActions?.onOpenSplitModal;
+  const vadOpen = vadOpenProp ?? ctxActions?.vadOpen ?? false;
+  const onOpenVad = onOpenVadProp ?? ctxActions?.onOpenVad;
 
   const tabs = useEditorStore((s) => s.tabs);
   const activeTabId = useEditorStore((s) => s.activeTabId);
@@ -287,6 +296,7 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
 
   const scaleMode = useEditorStore((s) => s.scaleMode);
   const setScaleMode = useEditorStore((s) => s.setScaleMode);
+  const applySmartMixedScale = useEditorStore((s) => s.applySmartMixedScale);
   const wrapMode = useEditorStore((s) => s.wrapMode);
   const setWrapMode = useEditorStore((s) => s.setWrapMode);
   const audioName = useEditorStore((s) => s.audioName);
@@ -1379,6 +1389,17 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
         <div className="ribbon-group-body">
           <button
             type="button"
+            className={`ribbon-big-btn ipa-ctrl-noblur ${vadOpen ? 'ribbon-soft-active' : ''}`}
+            aria-pressed={vadOpen}
+            title="语音活动检测 VAD (Alt+V)"
+            onMouseDown={preventBlur}
+            onClick={() => onOpenVad?.({ toggle: true })}
+          >
+            <UiIcon name="vadDetect" size={22} />
+            <span>语音切分</span>
+          </button>
+          <button
+            type="button"
             className="ribbon-big-btn ipa-ctrl-noblur"
             title={findOpenHint ? `查找与替换 (${findOpenHint})` : '查找与替换'}
             onMouseDown={preventBlur}
@@ -1487,7 +1508,7 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
               onClick={() => insertTierAt(tg.tiers.length, 'intervalTier')}
             >
               <UiIcon name="addIntervalTier" size={22} />
-              <span>+ 区间层</span>
+              <span>新建区间层</span>
             </button>
             <button
               type="button"
@@ -1498,7 +1519,19 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
               onClick={() => insertTierAt(tg.tiers.length, 'textTier')}
             >
               <UiIcon name="addPointTier" size={22} />
-              <span>+ 点层</span>
+              <span>新建点层</span>
+            </button>
+            <button
+              type="button"
+              className={`ribbon-big-btn ipa-ctrl-noblur ${vadOpen ? 'ribbon-soft-active' : ''}`}
+              title="检测录音中的有声段与停顿并生成区间层 (VAD · Alt+V)"
+              onMouseDown={preventBlur}
+              onClick={() =>
+                onOpenVad?.({ scopeMode: 'all', writeMode: 'new-tier' })
+              }
+            >
+              <UiIcon name="vadDetect" size={22} />
+              <span>语音切分</span>
             </button>
           </div>
           <div className="ribbon-group-label">新建层</div>
@@ -1637,11 +1670,21 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
               type="button"
               className={`ribbon-big-btn ${scaleMode === 'elastic' ? 'ribbon-soft-active' : ''}`}
               aria-pressed={scaleMode === 'elastic'}
-              title="自适应时间比例：自动放宽短音段以便阅读标注文字"
+              title="自适应双尺：全部层级自动放宽短音段以便阅读标注文字"
               onClick={() => setScaleMode('elastic')}
             >
               <UiIcon name="toggleScale" size={22} />
               <span>自适应</span>
+            </button>
+            <button
+              type="button"
+              className={`ribbon-big-btn ${scaleMode === 'mixed' ? 'ribbon-soft-active' : ''}`}
+              aria-pressed={scaleMode === 'mixed'}
+              title="分层混合比例：粗层线性 1:1 对齐语谱图，高密度层保持双尺展开"
+              onClick={() => setScaleMode('mixed')}
+            >
+              <UiIcon name="layers" size={22} />
+              <span>混合</span>
             </button>
             <button
               type="button"
@@ -1652,6 +1695,16 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
             >
               <UiIcon name="navHorizontal" size={22} />
               <span>线性</span>
+            </button>
+            <button
+              type="button"
+              className="ribbon-big-btn"
+              disabled={tg.tiers.length < 2}
+              title="根据各层文字密度自动分配线性 1:1 与自适应双尺"
+              onClick={() => applySmartMixedScale()}
+            >
+              <UiIcon name="normalize" size={22} />
+              <span>智能分配</span>
             </button>
             <div className="ribbon-stack">
               <div className="ribbon-row">
@@ -4544,13 +4597,41 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
         popoutPos &&
         selection?.kind === 'interval' &&
         activeInterval &&
-        activeIntervalTier?.kind === 'intervalTier' && (
+        activeIntervalTier?.kind === 'intervalTier' && (() => {
+          const recommendVadTop = Boolean(
+            onOpenVad &&
+              activeInterval.text.trim().length === 0 &&
+              activeInterval.xmax - activeInterval.xmin >= 0.3
+          );
+          const triggerIntervalVad = () => {
+            setOpenMenu(null);
+            onOpenVad?.({
+              scopeMode: 'interval',
+              writeMode: 'split-interval',
+              tierIndex: selection.tierIndex,
+              itemIndex: selection.itemIndex
+            });
+          };
+          return (
           <div
             className="ribbon-popout-menu ipa-ctrl-noblur"
             role="menu"
             style={{ left: popoutPos.left, top: popoutPos.top }}
             onMouseDown={preventBlur}
           >
+            {recommendVadTop && (
+              <>
+                <div className="ribbon-menu-heading">语音活动检测</div>
+                <button type="button" onClick={triggerIntervalVad}>
+                  <span className="btn-lead">
+                    <UiIcon name="vadDetect" size={13} />
+                    <span>区间内语音检测 (VAD)…</span>
+                  </span>
+                  <span className="ribbon-menu-badge is-primary">推荐</span>
+                </button>
+                <div className="menu-divider" />
+              </>
+            )}
             {intervalSmartPlan?.primary && (
               <>
                 <div className="ribbon-menu-heading">推荐拆分方案</div>
@@ -4672,8 +4753,20 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
                 <span>自定义等分…</span>
               </span>
             </button>
+            {onOpenVad && !recommendVadTop && (
+              <>
+                <div className="menu-divider" />
+                <button type="button" onClick={triggerIntervalVad}>
+                  <span className="btn-lead">
+                    <UiIcon name="vadDetect" size={13} />
+                    <span>区间内语音检测 (VAD)…</span>
+                  </span>
+                </button>
+              </>
+            )}
           </div>
-        )}
+          );
+        })()}
 
       {openMenu === 'copy-interval-tier' &&
         popoutPos &&

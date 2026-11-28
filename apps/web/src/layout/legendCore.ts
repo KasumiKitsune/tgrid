@@ -1,12 +1,12 @@
-import type { AudioAnalysisSummary, TextGrid } from '../bridge/types';
+import type { AudioAnalysisSummary, TextGrid } from '../bridge/types.ts';
 import {
   IPA_FONT_STACK,
   MONO_FONT_STACK,
   SANS_FONT_STACK,
   SYMBOL_FONT_STACK,
   measurePx
-} from './richText';
-import type { BandLayout, RichTextLayout, ScoreLayout } from './computeLayout';
+} from './richText.ts';
+import type { BandLayout, GlobalScaleMode, RichTextLayout, ScoreLayout } from './computeLayout.ts';
 
 export const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -185,6 +185,11 @@ const STRUCTURE_LINES = {
       '② 对齐连线与时间刻度 (s)：将短音段适度拉宽以便读字',
       '③ 多层级标注：竖线对齐各层的区间与标注点'
     ],
+    mixed: [
+      '① 顶部原始时间轴与 1:1 线性层：语谱图与粗粒度层严格垂直对齐',
+      '② 过渡颈与时间刻度 (s)：将细粒度层按字宽适度展开以便读字',
+      '③ 弹性标注层：竖线对齐各层音段边界与标注点'
+    ],
     linear: [
       '① 顶部原始时间轴 (1:1)：波形、语谱图或各层标注分布',
       '② 线性时间刻度 (s)：全图按 1:1 真实时长垂直对齐',
@@ -197,6 +202,11 @@ const STRUCTURE_LINES = {
       '② Alignment lines & ticks (s): short segments widened for legibility',
       '③ Annotation tiers: vertical lines align intervals and points'
     ],
+    mixed: [
+      '① True-time track & 1:1 linear tiers: spectrogram and coarse tiers strictly aligned',
+      '② Transition neck & ticks (s): fine tiers widened for label legibility',
+      '③ Elastic annotation tiers: vertical lines align intervals and points'
+    ],
     linear: [
       '① True-time track (1:1): waveform, spectrogram, or tier activity',
       '② Linear time axis (s): strict 1:1 vertical time alignment',
@@ -205,7 +215,7 @@ const STRUCTURE_LINES = {
   }
 } as const;
 
-export function getStructureLines(scaleMode: 'elastic' | 'linear', lang: 'zh' | 'en' = 'zh'): string[] {
+export function getStructureLines(scaleMode: GlobalScaleMode, lang: 'zh' | 'en' = 'zh'): string[] {
   return [...STRUCTURE_LINES[lang][scaleMode]];
 }
 
@@ -469,7 +479,7 @@ export interface EmbeddedLegendLayout {
   legendMode: 'full' | 'compact';
   layoutMode: 'compact-grid' | 'stacked' | 'dual';
   lang: 'zh' | 'en';
-  scaleMode: 'elastic' | 'linear';
+  scaleMode: GlobalScaleMode;
   topY: number;
   ruleY: number;
   boxX: number;
@@ -521,7 +531,7 @@ export function computeLegendLayout(
   opts: {
     legendMode: 'full' | 'compact' | 'off';
     lang: 'zh' | 'en';
-    scaleMode: 'elastic' | 'linear';
+    scaleMode: GlobalScaleMode;
     figureWidth: number;
     padX: number;
     topY: number;
@@ -775,7 +785,7 @@ export function renderBand0AxisLabels(
       'text',
       {
         x: labelX,
-        y: band.tiersTopY - 4,
+        y: (band.tickSpineBotY ?? band.tiersTopY) - 4,
         'text-anchor': 'end',
         'font-family': sansFont,
         'font-size': String(Number(fontSize.toFixed(2))),
@@ -790,21 +800,68 @@ export function renderStructureDiagramSVG(
   parent: Element,
   x: number,
   y: number,
-  scaleMode: 'elastic' | 'linear',
+  scaleMode: GlobalScaleMode,
   pal: ScorePalette,
   sScale = 1
 ): SVGElement {
   const sw = (v: number) => Number((v * sScale).toFixed(2));
   const isLin = scaleMode === 'linear';
+  const isMixed = scaleMode === 'mixed';
   const g = svgEl('g', {}, parent);
 
-  svgEl('rect', { x: x + 2, y: y + 2, width: 52, height: 9.5, fill: pal.waveBg, stroke: pal.rule, 'stroke-width': sw(0.85) }, g);
+  svgEl('rect', { x: x + 2, y: y + 2, width: 52, height: isMixed ? 8 : 9.5, fill: pal.waveBg, stroke: pal.rule, 'stroke-width': sw(0.85) }, g);
   const bars: Array<[number, number, number]> = [
     [5, 3, 5], [12, 2, 7], [17, 1.5, 8], [21, 2.5, 6],
     [28, 3.5, 4], [36, 2, 7], [43, 3, 5], [48, 3.5, 4]
   ];
   for (const [bx, by, bh] of bars) {
-    svgEl('rect', { x: x + bx, y: y + 2 + by * 0.65, width: 2.2, height: bh * 0.72, fill: pal.waveFill, opacity: pal.isBw ? 0.8 : 0.45 }, g);
+    svgEl('rect', { x: x + bx, y: y + 2 + by * (isMixed ? 0.55 : 0.65), width: 2.2, height: bh * (isMixed ? 0.6 : 0.72), fill: pal.waveFill, opacity: pal.isBw ? 0.8 : 0.45 }, g);
+  }
+
+  if (isMixed) {
+    // 3-stage mixed structure schematic:
+    // Stage 1: 1:1 acoustic + directly vertically aligned linear tier
+    const linTopY = y + 10;
+    const linTierY = y + 12.5;
+    const linTierH = 7.5;
+    const lx1 = x + 16;
+    const lx2 = x + 26;
+    svgEl('line', { x1: x + 2, y1: linTopY, x2: x + 2, y2: linTierY, stroke: pal.ink, 'stroke-width': sw(0.8) }, g);
+    svgEl('line', { x1: lx1, y1: linTopY, x2: lx1, y2: linTierY, stroke: pal.faint, 'stroke-width': sw(0.8) }, g);
+    svgEl('line', { x1: lx2, y1: linTopY, x2: lx2, y2: linTierY, stroke: pal.faint, 'stroke-width': sw(0.8) }, g);
+    svgEl('line', { x1: x + 54, y1: linTopY, x2: x + 54, y2: linTierY, stroke: pal.ink, 'stroke-width': sw(0.8) }, g);
+
+    svgEl('rect', { x: x + 2, y: linTierY, width: lx1 - (x + 2), height: linTierH, fill: pal.emptyCell, stroke: pal.border, 'stroke-width': sw(0.75) }, g);
+    svgEl('rect', { x: lx1, y: linTierY, width: lx2 - lx1, height: linTierH, fill: pal.cellFill, stroke: pal.border, 'stroke-width': sw(0.8) }, g);
+    svgEl('rect', { x: lx1, y: linTierY, width: lx2 - lx1, height: 1.5, fill: pal.tierAccents[1] || pal.tierAccents[0], opacity: 0.85 }, g);
+    svgEl('rect', { x: lx2, y: linTierY, width: x + 54 - lx2, height: linTierH, fill: pal.cellFill, stroke: pal.border, 'stroke-width': sw(0.75) }, g);
+
+    // Stage 2: Transition neck (linear -> elastic) + single tick spine
+    const nTopY = linTierY + linTierH;
+    const nBotY = y + 30.5;
+    const spineY = y + 32.5;
+    const ex1 = x + 11;
+    const ex2 = x + 38;
+    svgEl('polygon', {
+      points: `${lx1},${nTopY} ${lx2},${nTopY} ${ex2},${nBotY} ${ex1},${nBotY}`,
+      fill: pal.isBw ? '#E5E5E5' : pal.amber,
+      opacity: pal.isBw ? 0.9 : 0.16
+    }, g);
+    const pairs: Array<[number, number]> = [[x + 2, x + 2], [lx1, ex1], [lx2, ex2], [x + 54, x + 54]];
+    pairs.forEach(([tx, bx], i) => {
+      svgEl('line', { x1: tx, y1: nTopY, x2: bx, y2: nBotY, stroke: i === 0 || i === 3 ? pal.ink : pal.faint, 'stroke-width': sw(0.8) }, g);
+      svgEl('line', { x1: bx, y1: nBotY, x2: bx, y2: spineY, stroke: pal.ink, 'stroke-width': sw(0.9) }, g);
+    });
+
+    // Stage 3: Expanded elastic tier below
+    const elTierY = y + 33.5;
+    const elTierH = 9.5;
+    svgEl('rect', { x: x + 2, y: elTierY, width: ex1 - (x + 2), height: elTierH, fill: pal.emptyCell, stroke: pal.border, 'stroke-width': sw(0.8) }, g);
+    svgEl('rect', { x: ex1, y: elTierY, width: ex2 - ex1, height: elTierH, fill: pal.cellFill, stroke: pal.border, 'stroke-width': sw(0.85) }, g);
+    svgEl('rect', { x: ex1, y: elTierY, width: ex2 - ex1, height: 1.8, fill: pal.tierAccents[0], opacity: 0.85 }, g);
+    svgEl('line', { x1: ex1 + 4, y1: elTierY + 5.6, x2: ex2 - 4, y2: elTierY + 5.6, stroke: pal.ink, 'stroke-width': sw(0.9) }, g);
+    svgEl('rect', { x: ex2, y: elTierY, width: x + 54 - ex2, height: elTierH, fill: pal.cellFill, stroke: pal.border, 'stroke-width': sw(0.8) }, g);
+    return g;
   }
 
   const topY = y + 11.5;

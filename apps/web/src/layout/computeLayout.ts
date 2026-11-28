@@ -1,4 +1,4 @@
-import type { AudioAnalysisSummary, Interval, LinearSeg, TextGrid, TextPoint, Tier } from '../bridge/types';
+import type { AudioAnalysisSummary, Interval, LinearSeg, TextGrid, TextPoint, Tier } from '../bridge/types.ts';
 import {
   FONT_PT,
   FONT_TEXT,
@@ -13,15 +13,36 @@ import {
   measurePx,
   type RichLayoutOptions,
   type RichTextLayout
-} from './richText';
+} from './richText.ts';
 import {
   collectActiveLegendItems,
   computeLegendLayout,
   type EmbeddedLegendLayout,
   type LegendCatalogItem
-} from './legendCore';
+} from './legendCore.ts';
 
 export type { RichTextLayout };
+
+export type TierScaleMode = 'linear' | 'elastic';
+export type GlobalScaleMode = 'elastic' | 'mixed' | 'linear';
+
+export interface TransitionNeck {
+  neckIndex: number;
+  direction: 'l2e' | 'e2l';
+  topY: number;
+  botY: number;
+  isPrimary: boolean;
+}
+
+export type BandCoordSliceKind = 'linear' | 'elastic' | 'neck-l2e' | 'neck-e2l' | 'tick-spine';
+
+export interface BandCoordSlice {
+  kind: BandCoordSliceKind;
+  y0: number;
+  y1: number;
+  neckIndex?: number;
+  isPrimary?: boolean;
+}
 
 export interface PositionedInterval extends Interval {
   origIdx: number;
@@ -89,6 +110,7 @@ export interface TierLayout {
   tierIndex: number;
   tier: Tier;
   meta: TierMeta;
+  scaleMode: TierScaleMode;
   y: number;
   h: number;
   midY: number;
@@ -109,6 +131,8 @@ export interface SpineCol {
   x: number;
   label: string;
   usage: number;
+  linearUsage: number;
+  elasticUsage: number;
   labelVisible: boolean;
   isSliverEdge?: boolean;
 }
@@ -145,8 +169,16 @@ export interface BandLayout {
   anchorH: number;
   neckTopY: number;
   neckBotY: number;
+  tickSpineTopY: number;
+  tickSpineBotY: number;
   tiersTopY: number;
   tiersBottomY: number;
+  transitionNecks: TransitionNeck[];
+  coordSlices: BandCoordSlice[];
+  hasMixedScales: boolean;
+  hasAnyElasticTier: boolean;
+  hasAnyLinearTier: boolean;
+  effectiveScaleMode: GlobalScaleMode;
   spineCols: SpineCol[];
   isolatedPointTicks: IsolatedPointTick[];
   linearSegs: BandLinearSeg[];
@@ -166,7 +198,10 @@ export interface ScoreLayout {
   scaleBarExtraH: number;
   hideTicks: boolean;
   isTinyView: boolean;
-  scaleMode: 'elastic' | 'linear';
+  scaleMode: GlobalScaleMode;
+  effectiveScaleMode: GlobalScaleMode;
+  tierScales: TierScaleMode[];
+  maxTransitionNecks: number;
   legendItems: LegendCatalogItem[] | null;
   legendLayout: EmbeddedLegendLayout | null;
   spineT: number[];
@@ -183,7 +218,8 @@ export interface ComputeLayoutOptions {
   audioOffset?: number;
   showSpectrogram?: boolean;
   tierOrder?: 'raw' | 'spec';
-  scaleMode?: 'elastic' | 'linear';
+  scaleMode?: GlobalScaleMode;
+  tierScaleOverrides?: Record<string, TierScaleMode> | null;
   tickPrecision?: '2' | '3' | '4' | 'full' | 'none';
   tickFixedDecimals?: boolean;
   viewDomain?: { min: number; max: number } | null;
@@ -213,6 +249,45 @@ export interface ComputeLayoutOptions {
     hideMetaSymbols: boolean;
     hideStretchCues: boolean;
   } | null;
+}
+
+/**
+ * Resolve a stable key for per-tier scale overrides, matching `StyleDocument.tierStyles` rules:
+ * prefer unique non-empty tier name; fall back to `#<index>` when empty or duplicated.
+ */
+export function resolveTierScaleKey(tg: TextGrid, tierIndex: number): string {
+  const tier = tg.tiers[tierIndex];
+  if (!tier) return `#${tierIndex}`;
+  const trimmed = tier.name.trim();
+  if (!trimmed) return `#${tierIndex}`;
+  let dupCount = 0;
+  for (let i = 0; i < tg.tiers.length; i++) {
+    if (tg.tiers[i].name === tier.name) dupCount++;
+  }
+  return dupCount === 1 ? tier.name : `#${tierIndex}`;
+}
+
+export function resolveTierScaleMode(
+  tg: TextGrid,
+  tierIndex: number,
+  globalScaleMode: GlobalScaleMode,
+  tierScaleOverrides?: Record<string, TierScaleMode> | null
+): TierScaleMode {
+  if (globalScaleMode === 'linear') return 'linear';
+  if (globalScaleMode === 'elastic') return 'elastic';
+  if (tierScaleOverrides) {
+    const key = resolveTierScaleKey(tg, tierIndex);
+    const direct = tierScaleOverrides[key];
+    if (direct === 'linear' || direct === 'elastic') return direct;
+    const byIdx = tierScaleOverrides[`#${tierIndex}`];
+    if (byIdx === 'linear' || byIdx === 'elastic') return byIdx;
+    const tier = tg.tiers[tierIndex];
+    if (tier && tier.name) {
+      const byName = tierScaleOverrides[tier.name];
+      if (byName === 'linear' || byName === 'elastic') return byName;
+    }
+  }
+  return 'elastic';
 }
 
 const audioGlobalPeakCache = new WeakMap<AudioBuffer, number>();
@@ -288,6 +363,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     showSpectrogram = true,
     tierOrder = 'raw',
     scaleMode = 'elastic',
+    tierScaleOverrides = null,
     tickPrecision = '3',
     tickFixedDecimals = false,
     viewDomain = null,
@@ -315,7 +391,25 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
   const hiddenSet = visibleIndices.length > 0 ? rawHiddenSet : new Set<number>();
   const isTierVisible = (ti: number) => !hiddenSet.has(ti);
 
-  const isLinear = scaleMode === 'linear';
+  const tierScales: TierScaleMode[] = tg.tiers.map((_, ti) =>
+    resolveTierScaleMode(tg, ti, scaleMode, tierScaleOverrides)
+  );
+  let visibleLinearCount = 0;
+  let visibleElasticCount = 0;
+  for (let ti = 0; ti < tg.tiers.length; ti++) {
+    if (!isTierVisible(ti)) continue;
+    if (tierScales[ti] === 'linear') visibleLinearCount++;
+    else visibleElasticCount++;
+  }
+  const hasMixedTiers = visibleLinearCount > 0 && visibleElasticCount > 0;
+  const effectiveScaleMode: GlobalScaleMode = hasMixedTiers
+    ? 'mixed'
+    : visibleLinearCount > 0 && visibleElasticCount === 0
+      ? 'linear'
+      : visibleElasticCount > 0 && visibleLinearCount === 0
+        ? 'elastic'
+        : scaleMode;
+  const isLinear = effectiveScaleMode === 'linear';
   const showSpec = hasAudio && showSpectrogram;
   const isCompactView = targetWidth < 680;
   const isTinyView = targetWidth < 460;
@@ -414,9 +508,12 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
   spineT.forEach((t, i) => tToIdx.set(t, i));
 
   const spineUsage = new Array<number>(spineT.length).fill(0);
+  const spineLinearUsage = new Array<number>(spineT.length).fill(0);
+  const spineElasticUsage = new Array<number>(spineT.length).fill(0);
   for (let ti = 0; ti < tg.tiers.length; ti++) {
     if (!isTierVisible(ti)) continue;
     const tier = tg.tiers[ti];
+    const isTierLin = tierScales[ti] === 'linear';
     const used = new Set<number>();
     if (Number.isFinite(tier.xmin) && tier.xmin !== tg.xmin && tToIdx.has(tier.xmin)) {
       used.add(tToIdx.get(tier.xmin)!);
@@ -436,6 +533,8 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     }
     used.forEach((idx) => {
       spineUsage[idx]++;
+      if (isTierLin) spineLinearUsage[idx]++;
+      else spineElasticUsage[idx]++;
     });
   }
 
@@ -446,11 +545,12 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     const w = t.name === '' ? 14 : measurePx(t.name, tierFontMeasure);
     if (w > maxTierNameW) maxTierNameW = w;
   }
+  const mixedBadgeExtraW = hasMixedTiers && !isTinyView ? 22 : 0;
   const gutterMin = isTinyView ? 68 : isCompactView ? 84 : 102;
-  const gutterMax = isTinyView ? 92 : isCompactView ? 124 : 192;
+  const gutterMax = isTinyView ? 92 : isCompactView ? 124 + mixedBadgeExtraW : 192 + mixedBadgeExtraW;
   const GUTTER_FULL = Math.min(
     gutterMax,
-    Math.max(gutterMin, Math.ceil((isTinyView ? 40 : 54) + maxTierNameW + 12))
+    Math.max(gutterMin, Math.ceil((isTinyView ? 40 : 54) + maxTierNameW + 12 + mixedBadgeExtraW))
   );
   const GUTTER_SUBSEQUENT = isTinyView ? 44 : GUTTER_FULL;
 
@@ -463,11 +563,13 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
 
   // Pre-compute disambiguated labels for all isolated TextTier point ticks so SPINE_H & RIGHT_OVERHANG
   // reserve full vertical/horizontal clearance before band layout runs (P1-3).
+  // In mixed mode, linear TextTiers stay 1:1 aligned to the spectrogram and do not crowd the main elastic spine.
   const globalIsoTimeSet = new Set<number>();
   const globalMinT = spineT[0];
   const globalMaxT = spineT[spineT.length - 1];
   for (let ti = 0; ti < tg.tiers.length; ti++) {
     if (!isTierVisible(ti)) continue;
+    if (hasMixedTiers && tierScales[ti] === 'linear') continue;
     const tier = tg.tiers[ti];
     if (tier.kind !== 'textTier') continue;
     for (const pt of tier.points) {
@@ -601,6 +703,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
   const colCollapsed = new Array<boolean>(numCols).fill(false);
   const colIsCrossSliver = new Array<boolean>(numCols).fill(false);
   const dx = new Array<number>(numCols).fill(MIN_COL_W);
+  const dxWrap = new Array<number>(numCols).fill(MIN_COL_W);
   const colFloor = new Array<number>(numCols).fill(MIN_COL_W);
   const maxBandContentW = Math.max(120, targetWidth - PAD_X * 2 - GUTTER_FULL - RIGHT_OVERHANG);
 
@@ -613,29 +716,35 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
         : Math.max(basePxPerSec, Math.min(480, Math.max(220, (numCols * 22) / totalSpanT)));
     for (let i = 0; i < numCols; i++) {
       dx[i] = Math.max(0, spineT[i + 1] - spineT[i]) * linearPxPerSec;
+      dxWrap[i] = dx[i];
       colFloor[i] = dx[i];
     }
   } else {
     const minSliverW = isTinyView ? 3 : 4;
+    // Activity across ALL visible tiers determines synchronous long-silence folding;
+    // elastic-only flags isolate elastic stretching weights so linear tiers never distort elastic columns.
+    const colHasAnyVisibleText = new Array<boolean>(numCols).fill(false);
     const colHasActiveText = new Array<boolean>(numCols).fill(false);
     const colHasAnomaly = new Array<boolean>(numCols).fill(false);
     const colExactAtom = new Array<boolean>(numCols).fill(false);
     const colInteriorPt = new Array<boolean>(numCols).fill(false);
-    let hasAnyActiveText = false;
+    let hasAnyActiveTextAll = false;
 
     for (let i = 0; i < numCols; i++) {
       const a = spineT[i];
       const b = spineT[i + 1];
       for (let ti = 0; ti < tg.tiers.length; ti++) {
         if (!isTierVisible(ti)) continue;
+        const isElasticTier = tierScales[ti] === 'elastic';
         const tm = tierMeta[ti];
         if (tm.kind === 'intervalTier') {
           for (const iv of tm.normalIvs) {
-            if (Math.abs(iv.xmin - a) <= 1e-12 && Math.abs(iv.xmax - b) <= 1e-12) {
+            if (isElasticTier && Math.abs(iv.xmin - a) <= 1e-12 && Math.abs(iv.xmax - b) <= 1e-12) {
               colExactAtom[i] = true;
             }
-            if (!colHasActiveText[i] && iv.xmin <= a && iv.xmax >= b && iv.text !== '') {
-              colHasActiveText[i] = true;
+            if (iv.xmin <= a && iv.xmax >= b && iv.text !== '') {
+              colHasAnyVisibleText[i] = true;
+              if (isElasticTier) colHasActiveText[i] = true;
             }
           }
           if (!colHasAnomaly[i]) {
@@ -666,35 +775,39 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
           for (const pt of tm.finitePts) {
             if (pt.number >= b) break;
             if (pt.number > a) {
-              colHasActiveText[i] = true;
-              if (pt.mark !== '') colInteriorPt[i] = true;
+              colHasAnyVisibleText[i] = true;
+              if (isElasticTier) {
+                colHasActiveText[i] = true;
+                if (pt.mark !== '') colInteriorPt[i] = true;
+              }
               break;
             }
           }
         }
       }
-      if (colHasActiveText[i]) hasAnyActiveText = true;
+      if (colHasAnyVisibleText[i]) hasAnyActiveTextAll = true;
     }
 
     for (let i = 0; i < numCols; i++) {
       const a = spineT[i];
       const b = spineT[i + 1];
       const dt = b - a;
+      const hasAnyText = colHasAnyVisibleText[i];
       const hasActiveText = colHasActiveText[i];
       const hasAnomaly = colHasAnomaly[i];
       const isExactSingleTierAtom = colExactAtom[i];
       const hasInteriorPoint = colInteriorPt[i];
       const hasAudible =
         Boolean(hasAudio && audioBuffer) &&
-        (!hasActiveText || dt >= 0.25) &&
+        (!hasAnyText || dt >= 0.25) &&
         hasAudibleEnergy(audioBuffer, audioOffset, a, b);
 
-      // Only fold a pause when the document has actual annotations, the column contains no structural
-      // anomaly (gap / overlap / zero-duration interval), AND (if audio is loaded) has no audible energy.
+      // Only fold a pause when the document has actual annotations, ALL visible tiers (linear + elastic)
+      // are silent, the column contains no structural anomaly, AND (if audio is loaded) has no audible energy.
       const shouldCollapse =
         !(shortAudioMode && totalDur <= 2.5) &&
-        hasAnyActiveText &&
-        !hasActiveText &&
+        hasAnyActiveTextAll &&
+        !hasAnyText &&
         !hasAnomaly &&
         dt >= SILENCE_THRESHOLD &&
         !hasAudible;
@@ -710,7 +823,8 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
           ? Math.round(8 + 150 * Math.max(dt, 0.001))
           : Math.round(12 + 78 * Math.pow(Math.max(dt, 0.001), 0.72));
         if (!isExactSingleTierAtom && !hasInteriorPoint) {
-          // Pure cross-tier overlap sliver: exempt from MIN_COL_W=19px inflation; scale by true duration
+          // Pure cross-tier overlap sliver (or linear-only subdivision inside an elastic interval):
+          // exempt from MIN_COL_W=19px inflation; scale cleanly by true duration.
           colIsCrossSliver[i] = true;
           const sliverW = Math.min(naturalW, Math.max(minSliverW, Math.round(dt * 110)));
           dx[i] = sliverW;
@@ -739,6 +853,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
 
     tg.tiers.forEach((_tier, ti) => {
       if (!isTierVisible(ti)) return;
+      if (tierScales[ti] !== 'elastic') return;
       const tm = tierMeta[ti];
       if (tm.kind === 'intervalTier') {
         for (const iv of tm.normalIvs) {
@@ -840,6 +955,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       };
       for (let ti = 0; ti < tg.tiers.length; ti++) {
         if (!isTierVisible(ti)) continue;
+        if (tierScales[ti] !== 'elastic') continue;
         const tm = tierMeta[ti];
         if (tm.kind !== 'textTier') continue;
         const marked = tm.finitePts.filter(
@@ -891,6 +1007,33 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
         if (colFloor[c] > dx[c]) colFloor[c] = dx[c];
       }
     }
+
+    // Dual-constraint wrapping envelope for mixed mode: dxWrap[i] = max(dxElastic[i], dxLinear[i])
+    // using a moderate physical density (160-280 px/s) so linear tiers stay legible without over-wrapping.
+    if (hasMixedTiers) {
+      let activeDur = 0;
+      let activeCnt = 0;
+      for (let i = 0; i < numCols; i++) {
+        if (!colCollapsed[i]) {
+          activeDur += Math.max(0, spineT[i + 1] - spineT[i]);
+          activeCnt++;
+        }
+      }
+      const mixedLinearPxPerSec =
+        activeDur > 1e-6
+          ? Math.max(160, Math.min(280, (activeCnt * 18) / activeDur))
+          : 200;
+      for (let i = 0; i < numCols; i++) {
+        if (colCollapsed[i]) {
+          dxWrap[i] = dx[i];
+        } else {
+          const dxLin = Math.max(0, spineT[i + 1] - spineT[i]) * mixedLinearPxPerSec;
+          dxWrap[i] = Math.max(dx[i], dxLin);
+        }
+      }
+    } else {
+      for (let i = 0; i < numCols; i++) dxWrap[i] = dx[i];
+    }
   }
 
   let finestIntervalTierIdx = -1;
@@ -919,7 +1062,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
   } else {
     const prefW = new Float64Array(numCols + 1);
     for (let i = 0; i < numCols; i++) {
-      prefW[i + 1] = prefW[i] + dx[i];
+      prefW[i + 1] = prefW[i] + dxWrap[i];
     }
 
     const availW0 = maxBandContentW;
@@ -1069,10 +1212,10 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     let activeSum = 0;
     let activeColCount = 0;
     for (let i = b.startIdx; i < b.endIdx; i++) {
-      rawBandW += dx[i];
-      if (colCollapsed[i]) collapsedSum += dx[i];
+      rawBandW += dxWrap[i];
+      if (colCollapsed[i]) collapsedSum += dxWrap[i];
       else {
-        activeSum += dx[i];
+        activeSum += dxWrap[i];
         activeColCount++;
       }
     }
@@ -1364,6 +1507,8 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
         x: cx,
         label: tickStrings[i],
         usage: spineUsage[i],
+        linearUsage: spineLinearUsage[i],
+        elasticUsage: spineElasticUsage[i],
         labelVisible: false,
         ...(isSliverEdge ? { isSliverEdge: true } : {})
       });
@@ -1420,6 +1565,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     const isoTimeSet = new Set<number>();
     for (let ti = 0; ti < tg.tiers.length; ti++) {
       if (!isTierVisible(ti)) continue;
+      if (hasMixedTiers && tierScales[ti] === 'linear') continue;
       const tm = tierMeta[ti];
       if (tm.kind !== 'textTier') continue;
       for (const pt of tm.finitePts) {
@@ -1439,7 +1585,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     const isoTickGap = Math.ceil(19 * fontScale);
     for (let i = 0; i < isoTimes.length; i++) {
       const t = isoTimes[i];
-      const x = elasticXLocal(t);
+      const x = isLinear ? linearXForTime(t) : elasticXLocal(t);
       const label = isoLabels[i];
       let collides = false;
       if (!hideTicks) {
@@ -1467,20 +1613,29 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     const bandNeckH = isLinear
       ? LINEAR_NECK_H
       : Math.round(Math.max(16, Math.min(42, 16 + Math.max(0, maxShear - 24) * 0.16)));
+    const secondaryNeckH = Math.round(
+      Math.max(12, Math.min(22, 12 + Math.max(0, maxShear - 20) * 0.08))
+    );
 
     const linearY = curY;
     const waveY = linearY;
     const specY = linearY + WAVE_H;
     const anchorY = specY + SPEC_H;
-    const neckTopY = linearY + LINEAR_H;
-    const neckBotY = neckTopY + bandNeckH;
-    const tiersTopY = neckBotY + SPINE_H;
+    const acousticBotY = linearY + LINEAR_H;
 
-    let ty = tiersTopY;
     const tiersLayout = new Array<TierLayout>(tg.tiers.length);
-    for (const ti of displayOrder) {
+
+    const layoutSingleTier = (ti: number, tierScale: TierScaleMode, tierY: number): number => {
       const tier = tg.tiers[ti];
       const tm = tierMeta[ti];
+      const isTierLinear = tierScale === 'linear';
+      const xForT = (t: number) => {
+        if (isTierLinear) return linearXForTime(t);
+        const gi = tToIdx.get(t);
+        if (gi !== undefined && gi >= b.startIdx && gi <= b.endIdx) return xForGlobalIdx(gi);
+        return elasticXLocal(t);
+      };
+
       if (tm.kind === 'intervalTier') {
         const visibleIvs: VisibleInterval[] = [];
         const baseLaneH = Math.round(32 * fontScale);
@@ -1489,11 +1644,11 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
           if (iv.xmax <= startT || iv.xmin >= endT) continue;
           const clippedLeft = iv.xmin < startT;
           const clippedRight = iv.xmax > endT;
-          const x0 = clippedLeft ? originX : xForGlobalIdx(tToIdx.get(iv.xmin)!);
-          const x1 = clippedRight ? originX + bandContentW : xForGlobalIdx(tToIdx.get(iv.xmax)!);
+          const x0 = clippedLeft ? originX : xForT(iv.xmin);
+          const x1 = clippedRight ? originX + bandContentW : xForT(iv.xmax);
           const w = Math.max(1.5, x1 - x0);
           const showText = !clippedLeft && iv.text !== '';
-          const horizMargin = isLinear
+          const horizMargin = isTierLinear
             ? Math.min(12, Math.max(6, Math.round(w * 0.22)))
             : Math.min(18, Math.max(12, Math.round(w * 0.28)));
           const richMaxW = Math.max(14, w - horizMargin);
@@ -1515,9 +1670,9 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
               break;
             }
           }
-          const stretchRatio = !isLinear && !hasCollapsedCol && linW > 0.5 ? w / linW : 1;
+          const stretchRatio = !isTierLinear && !hasCollapsedCol && linW > 0.5 ? w / linW : 1;
           const isStretched =
-            !isLinear && !hasCollapsedCol && stretchRatio > 1.6 && w - linW >= 8;
+            !isTierLinear && !hasCollapsedCol && stretchRatio > 1.6 && w - linW >= 8;
 
           visibleIvs.push({
             iv,
@@ -1537,7 +1692,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
           .filter((iv) => (bandIndex === 0 ? iv.xmin >= startT : iv.xmin > startT) && iv.xmin <= endT)
           .map((iv) => ({
             iv,
-            x: xForGlobalIdx(tToIdx.get(iv.xmin)!),
+            x: xForT(iv.xmin),
             rich:
               iv.text !== ''
                 ? layoutRichText(iv.text, 120, ptFontMeasure, mode, effectiveRichOpts)
@@ -1552,15 +1707,16 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
         }
         if (visibleZeros.length > 0 && totalH < 36) totalH = 36;
 
-        const headerBox = { x: PAD_X, y: ty, w: gutterW - 8, h: totalH };
-        const midY = ty + totalH / 2;
+        const headerBox = { x: PAD_X, y: tierY, w: gutterW - 8, h: totalH };
+        const midY = tierY + totalH / 2;
         const nameEditBox = { x: PAD_X + 44, y: midY - 12, w: Math.max(66, gutterW - 52), h: 24 };
 
         tiersLayout[ti] = {
           tierIndex: ti,
           tier,
           meta: tm,
-          y: ty,
+          scaleMode: tierScale,
+          y: tierY,
           h: totalH,
           midY,
           headerBox,
@@ -1570,87 +1726,232 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
           visibleIvs,
           visibleZeros
         };
-        ty += totalH + TIER_GAP;
-      } else {
-        const bandLeft = originX;
-        const bandRight = originX + bandContentW;
-
-        const includeStartBoundary = bandIndex === 0 || hasNonEmptyOnsetAt(startT);
-        const hasNextBand = bandIndex < bands.length - 1;
-        const deferEndBoundary = hasNextBand && endT < tg.xmax && hasNonEmptyOnsetAt(endT);
-
-        const maxFlagW = Math.min(184, Math.max(88, bandContentW));
-        const visiblePts: VisiblePoint[] = tm.finitePts
-          .filter(
-            (pt) =>
-              (includeStartBoundary ? pt.number >= startT : pt.number > startT) &&
-              (deferEndBoundary ? pt.number < endT : pt.number <= endT)
-          )
-          .map((pt) => {
-            const x = elasticXLocal(pt.number);
-            const rich =
-              pt.mark !== ''
-                ? layoutRichText(pt.mark, Math.max(48, maxFlagW - 10), ptFontMeasure, mode, effectiveRichOpts)
-                : null;
-            const boxW = rich ? Math.max(18, Math.ceil(rich.width) + 10) : 0;
-            const boxH = rich ? Math.max(20, rich.height + 6) : 0;
-            let bx = x - boxW / 2;
-            if (bx + boxW > bandRight) bx = bandRight - boxW;
-            if (bx < bandLeft) bx = bandLeft;
-            return { pt, x, bx, rich, boxW, boxH, level: 0 };
-          });
-
-        const levelRightEdge: number[] = [];
-        const levelMaxH: number[] = [];
-        for (const vp of visiblePts) {
-          if (!vp.rich) {
-            vp.level = -1;
-            continue;
-          }
-          const left = vp.bx;
-          const right = vp.bx + vp.boxW;
-          let lvl = 0;
-          while (lvl < levelRightEdge.length && levelRightEdge[lvl] + 3 > left) lvl++;
-          vp.level = lvl;
-          levelRightEdge[lvl] = right;
-          levelMaxH[lvl] = Math.max(levelMaxH[lvl] || 0, vp.boxH);
-        }
-
-        const wireOffsetY = 12;
-        let extraStemH = 14;
-        const levelY: number[] = [];
-        for (let l = 0; l < levelMaxH.length; l++) {
-          const top =
-            wireOffsetY +
-            11 +
-            (l === 0 ? 0 : levelY[l - 1] - wireOffsetY - 11 + levelMaxH[l - 1] + 5);
-          levelY.push(top);
-          extraStemH = top + levelMaxH[l] + 4;
-        }
-        const totalH = Math.max(28, extraStemH);
-        const wireY = ty + wireOffsetY;
-        const headerBox = { x: PAD_X, y: wireY - 12, w: gutterW - 8, h: 24 };
-        const nameEditBox = { x: PAD_X + 44, y: wireY - 12, w: Math.max(66, gutterW - 52), h: 24 };
-
-        tiersLayout[ti] = {
-          tierIndex: ti,
-          tier,
-          meta: tm,
-          y: ty,
-          h: totalH,
-          wireY,
-          midY: wireY,
-          headerBox,
-          nameEditBox,
-          visiblePts,
-          levelY
-        };
-        ty += totalH + TIER_GAP;
+        return totalH;
       }
-    }
 
-    if (displayOrder.length === 0) ty += 28;
-    else ty -= TIER_GAP;
+      const bandLeft = originX;
+      const bandRight = originX + bandContentW;
+
+      const includeStartBoundary = bandIndex === 0 || hasNonEmptyOnsetAt(startT);
+      const hasNextBand = bandIndex < bands.length - 1;
+      const deferEndBoundary = hasNextBand && endT < tg.xmax && hasNonEmptyOnsetAt(endT);
+
+      const maxFlagW = Math.min(184, Math.max(88, bandContentW));
+      const visiblePts: VisiblePoint[] = tm.finitePts
+        .filter(
+          (pt) =>
+            (includeStartBoundary ? pt.number >= startT : pt.number > startT) &&
+            (deferEndBoundary ? pt.number < endT : pt.number <= endT)
+        )
+        .map((pt) => {
+          const x = isTierLinear ? linearXForTime(pt.number) : elasticXLocal(pt.number);
+          const rich =
+            pt.mark !== ''
+              ? layoutRichText(pt.mark, Math.max(48, maxFlagW - 10), ptFontMeasure, mode, effectiveRichOpts)
+              : null;
+          const boxW = rich ? Math.max(18, Math.ceil(rich.width) + 10) : 0;
+          const boxH = rich ? Math.max(20, rich.height + 6) : 0;
+          let bx = x - boxW / 2;
+          if (bx + boxW > bandRight) bx = bandRight - boxW;
+          if (bx < bandLeft) bx = bandLeft;
+          return { pt, x, bx, rich, boxW, boxH, level: 0 };
+        });
+
+      const levelRightEdge: number[] = [];
+      const levelMaxH: number[] = [];
+      for (const vp of visiblePts) {
+        if (!vp.rich) {
+          vp.level = -1;
+          continue;
+        }
+        const left = vp.bx;
+        const right = vp.bx + vp.boxW;
+        let lvl = 0;
+        while (lvl < levelRightEdge.length && levelRightEdge[lvl] + 3 > left) lvl++;
+        vp.level = lvl;
+        levelRightEdge[lvl] = right;
+        levelMaxH[lvl] = Math.max(levelMaxH[lvl] || 0, vp.boxH);
+      }
+
+      const wireOffsetY = 12;
+      let extraStemH = 14;
+      const levelY: number[] = [];
+      for (let l = 0; l < levelMaxH.length; l++) {
+        const top =
+          wireOffsetY +
+          11 +
+          (l === 0 ? 0 : levelY[l - 1] - wireOffsetY - 11 + levelMaxH[l - 1] + 5);
+        levelY.push(top);
+        extraStemH = top + levelMaxH[l] + 4;
+      }
+      const totalH = Math.max(28, extraStemH);
+      const wireY = tierY + wireOffsetY;
+      const headerBox = { x: PAD_X, y: wireY - 12, w: gutterW - 8, h: 24 };
+      const nameEditBox = { x: PAD_X + 44, y: wireY - 12, w: Math.max(66, gutterW - 52), h: 24 };
+
+      tiersLayout[ti] = {
+        tierIndex: ti,
+        tier,
+        meta: tm,
+        scaleMode: tierScale,
+        y: tierY,
+        h: totalH,
+        wireY,
+        midY: wireY,
+        headerBox,
+        nameEditBox,
+        visiblePts,
+        levelY
+      };
+      return totalH;
+    };
+
+    const transitionNecks: TransitionNeck[] = [];
+    const coordSlices: BandCoordSlice[] = [];
+    let neckTopY = acousticBotY;
+    let neckBotY = acousticBotY + bandNeckH;
+    let tickSpineTopY = neckBotY;
+    let tickSpineBotY = neckBotY + SPINE_H;
+    let tiersTopY = tickSpineBotY;
+    let tiersBottomY = tiersTopY;
+
+    if (!hasMixedTiers || displayOrder.length === 0) {
+      // Pure all-linear or pure all-elastic layout (100% pixel-identical to legacy geometry)
+      neckTopY = acousticBotY;
+      neckBotY = neckTopY + bandNeckH;
+      tickSpineTopY = neckBotY;
+      tickSpineBotY = tickSpineTopY + SPINE_H;
+      tiersTopY = tickSpineBotY;
+
+      let ty = tiersTopY;
+      for (const ti of displayOrder) {
+        const h = layoutSingleTier(ti, isLinear ? 'linear' : 'elastic', ty);
+        ty += h + TIER_GAP;
+      }
+      if (displayOrder.length === 0) ty += 28;
+      else ty -= TIER_GAP;
+      tiersBottomY = ty;
+
+      if (isLinear) {
+        coordSlices.push({ kind: 'linear', y0: linearY, y1: neckBotY });
+        coordSlices.push({ kind: 'tick-spine', y0: tickSpineTopY, y1: tickSpineBotY });
+        coordSlices.push({ kind: 'linear', y0: tiersTopY, y1: tiersBottomY });
+      } else {
+        transitionNecks.push({
+          neckIndex: 0,
+          direction: 'l2e',
+          topY: neckTopY,
+          botY: neckBotY,
+          isPrimary: true
+        });
+        coordSlices.push({ kind: 'linear', y0: linearY, y1: neckTopY });
+        coordSlices.push({
+          kind: 'neck-l2e',
+          y0: neckTopY,
+          y1: neckBotY,
+          neckIndex: 0,
+          isPrimary: true
+        });
+        coordSlices.push({ kind: 'tick-spine', y0: tickSpineTopY, y1: tickSpineBotY });
+        coordSlices.push({ kind: 'elastic', y0: tiersTopY, y1: tiersBottomY });
+      }
+    } else {
+      // Genuine mixed-scale layout: group contiguous same-coordinate tiers into Coordinate Runs
+      // and insert automatic transition necks only where coordinate spaces switch.
+      const runs: Array<{ mode: TierScaleMode; tierIndices: number[] }> = [];
+      for (const ti of displayOrder) {
+        const m = tierScales[ti];
+        const prev = runs[runs.length - 1];
+        if (prev && prev.mode === m) prev.tierIndices.push(ti);
+        else runs.push({ mode: m, tierIndices: [ti] });
+      }
+
+      const NECK_STUB = 3;
+      let curBandY = acousticBotY;
+      let prevSpace: TierScaleMode = 'linear';
+      let hasPlacedPrimary = false;
+      let firstTierY = -1;
+
+      // Start with the top acoustic linear slice
+      coordSlices.push({ kind: 'linear', y0: linearY, y1: curBandY });
+
+      for (let ri = 0; ri < runs.length; ri++) {
+        const run = runs[ri];
+        if (run.mode !== prevSpace) {
+          const dir: 'l2e' | 'e2l' = prevSpace === 'linear' ? 'l2e' : 'e2l';
+          const isPrimary = !hasPlacedPrimary && dir === 'l2e';
+          const nH = isPrimary ? bandNeckH : secondaryNeckH;
+
+          // Leave a crisp 3px vertical stub below the previous tier run before slanting
+          if (ri > 0) {
+            curBandY += NECK_STUB;
+            const prevSlice = coordSlices[coordSlices.length - 1];
+            if (prevSlice && prevSlice.kind === prevSpace) {
+              prevSlice.y1 = curBandY;
+            }
+          }
+
+          const nTop = curBandY;
+          const nBot = nTop + nH;
+          const neckIndex = transitionNecks.length;
+          transitionNecks.push({
+            neckIndex,
+            direction: dir,
+            topY: nTop,
+            botY: nBot,
+            isPrimary
+          });
+          coordSlices.push({
+            kind: dir === 'l2e' ? 'neck-l2e' : 'neck-e2l',
+            y0: nTop,
+            y1: nBot,
+            neckIndex,
+            isPrimary
+          });
+          curBandY = nBot;
+
+          if (isPrimary) {
+            neckTopY = nTop;
+            neckBotY = nBot;
+            tickSpineTopY = curBandY;
+            tickSpineBotY = curBandY + SPINE_H;
+            coordSlices.push({ kind: 'tick-spine', y0: tickSpineTopY, y1: tickSpineBotY });
+            curBandY = tickSpineBotY;
+            hasPlacedPrimary = true;
+          } else {
+            // Leave a crisp 3px vertical landing stub above the next tier run after slanting
+            const runSliceStart = curBandY;
+            curBandY += NECK_STUB;
+            coordSlices.push({ kind: run.mode, y0: runSliceStart, y1: curBandY });
+          }
+          prevSpace = run.mode;
+        } else if (ri === 0 && run.mode === 'linear') {
+          // Linear tiers directly below acoustic track: 8px crisp vertical connector
+          curBandY += LINEAR_NECK_H;
+        }
+
+        const runSliceStartY = curBandY;
+        let ty = curBandY;
+        if (firstTierY < 0) firstTierY = ty;
+        for (let k = 0; k < run.tierIndices.length; k++) {
+          const ti = run.tierIndices[k];
+          const h = layoutSingleTier(ti, run.mode, ty);
+          ty += h;
+          if (k < run.tierIndices.length - 1) ty += TIER_GAP;
+        }
+        curBandY = ty;
+
+        const lastSlice = coordSlices[coordSlices.length - 1];
+        if (lastSlice && lastSlice.kind === run.mode) {
+          lastSlice.y1 = curBandY;
+        } else {
+          coordSlices.push({ kind: run.mode, y0: runSliceStartY, y1: curBandY });
+        }
+      }
+
+      tiersTopY = firstTierY >= 0 ? firstTierY : tickSpineBotY;
+      tiersBottomY = curBandY;
+    }
 
     const bandObj: BandLayout = {
       bandIndex,
@@ -1671,8 +1972,16 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       anchorH: ANCHOR_H,
       neckTopY,
       neckBotY,
+      tickSpineTopY,
+      tickSpineBotY,
       tiersTopY,
-      tiersBottomY: ty,
+      tiersBottomY,
+      transitionNecks,
+      coordSlices,
+      hasMixedScales: hasMixedTiers,
+      hasAnyElasticTier: visibleElasticCount > 0,
+      hasAnyLinearTier: visibleLinearCount > 0,
+      effectiveScaleMode,
       spineCols,
       isolatedPointTicks,
       linearSegs,
@@ -1681,9 +1990,14 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
       displayOrder,
       finestIntervalTierIdx
     };
-    curY = ty + BAND_GAP;
+    curY = tiersBottomY + BAND_GAP;
     return bandObj;
   });
+
+  const maxTransitionNecks = bandLayouts.reduce(
+    (acc, band) => Math.max(acc, band.transitionNecks.length),
+    0
+  );
 
   const baseWidth = Math.max(260, Math.ceil(totalSvgW));
   const baseBottomY = Math.ceil(curY - BAND_GAP + scaleBarExtraH);
@@ -1693,7 +2007,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
   if (legendConfig && legendConfig.mode !== 'off') {
     legendItems = collectActiveLegendItems(
       tg,
-      { bands: bandLayouts, scaleMode },
+      { bands: bandLayouts, scaleMode: effectiveScaleMode },
       {
         isExport: true,
         lang: legendConfig.lang,
@@ -1712,7 +2026,7 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     legendLayout = computeLegendLayout(legendItems, {
       legendMode: legendConfig.mode,
       lang: legendConfig.lang,
-      scaleMode,
+      scaleMode: effectiveScaleMode,
       figureWidth: baseWidth,
       padX: PAD_X,
       topY: baseBottomY,
@@ -1733,6 +2047,9 @@ export function computeLayout(tg: TextGrid, options: ComputeLayoutOptions): Scor
     hideTicks,
     isTinyView,
     scaleMode,
+    effectiveScaleMode,
+    tierScales,
+    maxTransitionNecks,
     legendItems,
     legendLayout,
     spineT,
@@ -1785,4 +2102,182 @@ export function timeFromLinearX(band: BandLayout, x: number): number {
     }
   }
   return last.t1;
+}
+
+export function getTierScaleInBand(band: BandLayout, tierIndex: number): TierScaleMode {
+  const tl = band.tiersLayout[tierIndex];
+  if (tl) return tl.scaleMode;
+  return band.effectiveScaleMode === 'linear' ? 'linear' : 'elastic';
+}
+
+export function xForTierTime(band: BandLayout, tierIndex: number, t: number): number {
+  return getTierScaleInBand(band, tierIndex) === 'linear'
+    ? band.linearXForTime(t)
+    : elasticXInBand(band, t);
+}
+
+export function timeFromTierX(band: BandLayout, tierIndex: number, x: number): number {
+  return getTierScaleInBand(band, tierIndex) === 'linear'
+    ? timeFromLinearX(band, x)
+    : timeFromElasticX(band, x);
+}
+
+export function coordSpaceAtY(band: BandLayout, y: number): TierScaleMode {
+  for (const slice of band.coordSlices) {
+    if (y >= slice.y0 && y <= slice.y1) {
+      if (slice.kind === 'linear') return 'linear';
+      if (slice.kind === 'elastic') return 'elastic';
+      if (slice.kind === 'tick-spine') {
+        return band.effectiveScaleMode === 'linear' ? 'linear' : 'elastic';
+      }
+      const mid = (slice.y0 + slice.y1) * 0.5;
+      if (slice.kind === 'neck-l2e') return y <= mid ? 'linear' : 'elastic';
+      return y <= mid ? 'elastic' : 'linear';
+    }
+  }
+  return band.effectiveScaleMode === 'linear' ? 'linear' : 'elastic';
+}
+
+export interface SmartMixedScaleOptions {
+  targetWidth?: number;
+  fontScale?: number;
+  hiddenTierIndices?: number[];
+}
+
+const ACOUSTIC_EVENT_TIER_RE =
+  /event|burst|vot|onset|offset|acoustic|peak|f0|pitch|burst|release|爆破|事件|声学|极值/i;
+
+/**
+ * Automatically classifies tiers into 'linear' (1:1) vs 'elastic' (dual-scale) based on
+ * linear-scale text crowding / overflow rate and tier granularity:
+ * - Coarse tiers (utterances, sentences, words) and sparse acoustic-event point tiers -> 'linear'
+ * - High-density phone / IPA / syllable tiers with text overflow at 1:1 scale -> 'elastic'
+ */
+export function computeSmartMixedTierScales(
+  tg: TextGrid,
+  opts: SmartMixedScaleOptions = {}
+): Record<string, TierScaleMode> {
+  const result: Record<string, TierScaleMode> = {};
+  if (!tg.tiers.length) return result;
+
+  const targetWidth = opts.targetWidth ?? 1080;
+  const fontScale = opts.fontScale ?? 1;
+  const hiddenSet = new Set(opts.hiddenTierIndices ?? []);
+  const totalDur = Math.max(0.05, (Number.isFinite(tg.xmax) ? tg.xmax : 1) - (Number.isFinite(tg.xmin) ? tg.xmin : 0));
+  const contentW = Math.max(240, targetWidth - 180);
+  const estPxPerSec = Math.max(180, Math.min(360, contentW / Math.min(totalDur, 4.5)));
+
+  const textFont = fontScale !== 1 ? `${(12.5 * fontScale).toFixed(2)}px ${IPA_FONT_STACK}` : FONT_TEXT;
+  const ptFont = fontScale !== 1 ? `${(11.5 * fontScale).toFixed(2)}px ${IPA_FONT_STACK}` : FONT_PT;
+
+  interface TierMetrics {
+    ti: number;
+    key: string;
+    kind: Tier['kind'];
+    count: number;
+    overflowRate: number;
+    avgDur: number;
+    assigned: TierScaleMode;
+  }
+
+  const metrics: TierMetrics[] = [];
+
+  for (let ti = 0; ti < tg.tiers.length; ti++) {
+    const tier = tg.tiers[ti];
+    const key = resolveTierScaleKey(tg, ti);
+
+    if (tier.kind === 'intervalTier') {
+      const nonEmpty = tier.intervals.filter(
+        (iv) => Number.isFinite(iv.xmin) && Number.isFinite(iv.xmax) && iv.xmax > iv.xmin && iv.text.trim() !== ''
+      );
+      if (nonEmpty.length === 0) {
+        metrics.push({ ti, key, kind: tier.kind, count: 0, overflowRate: 0, avgDur: totalDur, assigned: 'linear' });
+        continue;
+      }
+      let overflowCount = 0;
+      let durSum = 0;
+      for (const iv of nonEmpty) {
+        const dt = iv.xmax - iv.xmin;
+        durSum += dt;
+        const linW = dt * estPxPerSec;
+        const needW = measurePx(iv.text.trim(), textFont) + 12;
+        if (needW > linW * 1.05 || linW < 18) {
+          overflowCount++;
+        }
+      }
+      const overflowRate = overflowCount / nonEmpty.length;
+      const avgDur = durSum / nonEmpty.length;
+      const isElastic =
+        overflowRate >= 0.22 || (nonEmpty.length >= 4 && avgDur < 0.14 && overflowRate >= 0.12);
+      metrics.push({
+        ti,
+        key,
+        kind: tier.kind,
+        count: nonEmpty.length,
+        overflowRate,
+        avgDur,
+        assigned: isElastic ? 'elastic' : 'linear'
+      });
+    } else {
+      const pts = tier.points
+        .filter((p) => Number.isFinite(p.number))
+        .slice()
+        .sort((a, b) => a.number - b.number);
+      const marked = pts.filter((p) => p.mark.trim() !== '');
+      if (marked.length < 2) {
+        metrics.push({ ti, key, kind: tier.kind, count: pts.length, overflowRate: 0, avgDur: totalDur, assigned: 'linear' });
+        continue;
+      }
+      const widths = marked.map((p) => Math.max(18, Math.ceil(measurePx(p.mark.trim(), ptFont)) + 10));
+      let crowdPairs = 0;
+      for (let i = 0; i < marked.length - 1; i++) {
+        const dxLin = (marked[i + 1].number - marked[i].number) * estPxPerSec;
+        const needDist = (widths[i] + widths[i + 1]) / 2 + 3;
+        if (dxLin < needDist) crowdPairs++;
+      }
+      const crowdRate = crowdPairs / (marked.length - 1);
+      const acousticHint = ACOUSTIC_EVENT_TIER_RE.test(tier.name);
+      const isElastic = !acousticHint && crowdRate >= 0.35;
+      metrics.push({
+        ti,
+        key,
+        kind: tier.kind,
+        count: pts.length,
+        overflowRate: crowdRate,
+        avgDur: totalDur / Math.max(1, pts.length),
+        assigned: isElastic ? 'elastic' : 'linear'
+      });
+    }
+  }
+
+  // Fallback contrast guard: if >= 2 visible tiers all ended up in the same bucket despite clear
+  // granularity differences, keep the coarsest tier linear and the finest interval tier elastic.
+  const visibleMetrics = metrics.filter((m) => !hiddenSet.has(m.ti));
+  if (visibleMetrics.length >= 2) {
+    const allSame = visibleMetrics.every((m) => m.assigned === visibleMetrics[0].assigned);
+    if (allSame) {
+      const ivMetrics = visibleMetrics.filter((m) => m.kind === 'intervalTier' && m.count > 0);
+      if (ivMetrics.length >= 2) {
+        const sortedByDensity = ivMetrics
+          .slice()
+          .sort((a, b) => a.count - b.count || b.avgDur - a.avgDur || a.ti - b.ti);
+        const coarsest = sortedByDensity[0];
+        const finest = sortedByDensity[sortedByDensity.length - 1];
+        if (finest.count >= coarsest.count * 1.5 || finest.overflowRate > coarsest.overflowRate + 0.08) {
+          coarsest.assigned = 'linear';
+          finest.assigned = 'elastic';
+        }
+      } else if (visibleMetrics.some((m) => m.kind === 'textTier') && ivMetrics.length >= 1) {
+        const ptMetric = visibleMetrics.find((m) => m.kind === 'textTier')!;
+        const ivMetric = ivMetrics[0];
+        ptMetric.assigned = 'linear';
+        ivMetric.assigned = 'elastic';
+      }
+    }
+  }
+
+  for (const m of metrics) {
+    result[m.key] = m.assigned;
+  }
+  return result;
 }

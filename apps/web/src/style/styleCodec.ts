@@ -6,6 +6,7 @@ import {
   type BoundaryStylePatch,
   type IntervalStyleOverride,
   type IntervalStylePatch,
+  type LayoutPrefs,
   type LineDash,
   type PatternKind,
   type PointShape,
@@ -239,6 +240,26 @@ function sanitizePointOverride(raw: unknown): PointStyleOverride | null {
   };
 }
 
+function sanitizeLayoutPrefs(raw: unknown): LayoutPrefs | undefined {
+  if (!isRecord(raw)) return undefined;
+  const out: LayoutPrefs = {};
+  if (raw.scaleMode === 'elastic' || raw.scaleMode === 'mixed' || raw.scaleMode === 'linear') {
+    out.scaleMode = raw.scaleMode;
+  }
+  if (isRecord(raw.tierScaleOverrides)) {
+    const cleanOverrides: Record<string, 'linear' | 'elastic'> = {};
+    for (const [k, v] of Object.entries(raw.tierScaleOverrides)) {
+      if (k && (v === 'linear' || v === 'elastic')) {
+        cleanOverrides[k] = v;
+      }
+    }
+    if (Object.keys(cleanOverrides).length > 0) {
+      out.tierScaleOverrides = cleanOverrides;
+    }
+  }
+  return out.scaleMode !== undefined || out.tierScaleOverrides !== undefined ? out : undefined;
+}
+
 export function getStyleSidecarPath(tgPath: string): string {
   const trimmed = tgPath.trim();
   if (!trimmed) return `untitled${STYLE_SIDECAR_EXT}`;
@@ -281,6 +302,10 @@ export function serializeStyleSidecar(doc: StyleDocument): string {
       doc.orphaned.points.length > 0)
   ) {
     normalized.orphaned = doc.orphaned;
+  }
+  const cleanLayoutPrefs = sanitizeLayoutPrefs(doc.layoutPrefs);
+  if (cleanLayoutPrefs) {
+    normalized.layoutPrefs = cleanLayoutPrefs;
   }
   return JSON.stringify(normalized, null, 2);
 }
@@ -389,6 +414,11 @@ export function parseStyleSidecar(raw: string | unknown): StyleDocument | null {
     if (orphIv.length > 0 || orphBd.length > 0 || orphPt.length > 0) {
       doc.orphaned = { intervals: orphIv, boundaries: orphBd, points: orphPt };
     }
+  }
+
+  const layoutPrefs = sanitizeLayoutPrefs(obj.layoutPrefs);
+  if (layoutPrefs) {
+    doc.layoutPrefs = layoutPrefs;
   }
 
   return doc;

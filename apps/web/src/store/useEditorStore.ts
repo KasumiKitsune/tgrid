@@ -2,7 +2,14 @@ import { create } from 'zustand';
 import type { AudioAnalysisSummary, TextGrid, TextGridFormat, TierKind } from '../bridge/types';
 import { createSample } from '../data/samples';
 import type { EditorSelection } from '../render/renderScoreSvg';
-import type { ScoreLayout } from '../layout/computeLayout';
+import {
+  computeSmartMixedTierScales,
+  resolveTierScaleKey,
+  resolveTierScaleMode,
+  type GlobalScaleMode,
+  type ScoreLayout,
+  type TierScaleMode
+} from '../layout/computeLayout';
 import { getShortcutEntry, normalizeKeyCombo } from '../shortcuts/registry';
 import {
   DEFAULT_COALESCE_WINDOW_MS,
@@ -194,6 +201,7 @@ export const FLOATING_BAR_CATALOG: Record<FloatingBarTarget, FloatingBarItemMeta
   ],
   tier: [
     { id: 'tier-name', label: '层名快编', previewLabel: '层名快编', compactLabel: '改名', defaultVisible: true },
+    { id: 'tier-scale', label: '时间比例 (1:1 / 弹性)', previewLabel: '1:1 / 弹性', compactLabel: '1:1', defaultVisible: true },
     { id: 'tier-visibility', label: '隐藏 / 显示此层', previewLabel: '隐藏', compactLabel: '隐藏', defaultVisible: true },
     { id: 'tier-solo', label: '仅看此层 / 显示全部', previewLabel: '仅看此层', compactLabel: '仅看', defaultVisible: true },
     { id: 'tier-duplicate', label: '复制层（整层 / 仅边界）', previewLabel: '复制层', compactLabel: '复制', defaultVisible: true },
@@ -662,6 +670,7 @@ export interface TabRecord {
   audioSampleRate: number;
   analysis: AudioAnalysisSummary | null;
   styleDoc: StyleDocument;
+  tierScaleOverrides: Record<string, TierScaleMode>;
   isBlankPlaceholder: boolean;
 }
 
@@ -719,7 +728,8 @@ export interface EditorState {
   lastHistoryNav: HistoryNavSignal | null;
   mode: 'read' | 'edit';
   wrapMode: 'auto' | 'single';
-  scaleMode: 'elastic' | 'linear';
+  scaleMode: GlobalScaleMode;
+  tierScaleOverrides: Record<string, TierScaleMode>;
   tickPrecision: '2' | '3' | '4' | 'full';
   tickFixedDecimals: boolean;
   viewDomain: { min: number; max: number } | null;
@@ -909,7 +919,10 @@ export interface EditorState {
   redo: () => boolean;
   setMode: (mode: 'read' | 'edit') => void;
   setWrapMode: (wrapMode: 'auto' | 'single') => void;
-  setScaleMode: (scaleMode: 'elastic' | 'linear') => void;
+  setScaleMode: (scaleMode: GlobalScaleMode) => void;
+  setTierScaleMode: (tierIndex: number, mode: TierScaleMode) => void;
+  applySmartMixedScale: () => void;
+  groupLinearTiersOnTop: () => void;
   setTickPrecision: (prec: '2' | '3' | '4' | 'full') => void;
   setTickFixedDecimals: (v: boolean) => void;
   setViewDomain: (domain: { min: number; max: number } | null) => void;
@@ -1352,12 +1365,127 @@ function resolveTierStyleKey(tg: TextGrid, tierIndex: number): string {
   return dupCount === 1 ? tier.name : `#${tierIndex}`;
 }
 
+function syncStyleDocLayoutPrefs(
+  styleDoc: StyleDocument,
+  scaleMode: GlobalScaleMode,
+  tierScaleOverrides: Record<string, TierScaleMode>
+): StyleDocument {
+  const hasOverrides = Object.keys(tierScaleOverrides).length > 0;
+  const shouldStore = scaleMode !== 'elastic' || hasOverrides;
+  if (!shouldStore) {
+    if (!styleDoc.layoutPrefs) return styleDoc;
+    const next = cloneStyleDocument(styleDoc);
+    delete next.layoutPrefs;
+    return next;
+  }
+  const next = cloneStyleDocument(styleDoc);
+  next.layoutPrefs = {
+    scaleMode,
+    ...(hasOverrides ? { tierScaleOverrides: { ...tierScaleOverrides } } : {})
+  };
+  return next;
+}
+
+function tierStructuralFingerprint(tier: TextGrid['tiers'][number]): string {
+  if (tier.kind === 'intervalTier') {
+    const first = tier.intervals[0];
+    const last = tier.intervals[tier.intervals.length - 1];
+    return `iv:${tier.intervals.length}:${first?.xmin ?? ''}:${first?.text ?? ''}:${last?.xmax ?? ''}:${last?.text ?? ''}`;
+  }
+  const first = tier.points[0];
+  const last = tier.points[tier.points.length - 1];
+  return `pt:${tier.points.length}:${first?.number ?? ''}:${first?.mark ?? ''}:${last?.number ?? ''}:${last?.mark ?? ''}`;
+}
+
+function remapTierScaleOverrides(
+  overrides: Record<string, TierScaleMode>,
+  prevTg: TextGrid,
+  nextTg: TextGrid
+): Record<string, TierScaleMode> {
+  if (Object.keys(overrides).length === 0) return overrides;
+  const sameShape =
+    prevTg.tiers.length === nextTg.tiers.length &&
+    prevTg.tiers.every(
+      (t, i) => t.name === nextTg.tiers[i].name && t.kind === nextTg.tiers[i].kind
+    );
+  if (sameShape) return overrides;
+
+  // Resolve each previous tier's override explicitly before remapping
+  const prevResolved: Array<{
+    idx: number;
+    name: string;
+    kind: TierKind;
+    key: string;
+    fp: string;
+    override: TierScaleMode | undefined;
+  }> = prevTg.tiers.map((t, i) => {
+    const key = resolveTierScaleKey(prevTg, i);
+    const val = overrides[key] ?? overrides[`#${i}`] ?? (t.name ? overrides[t.name] : undefined);
+    return { idx: i, name: t.name, kind: t.kind, key, fp: tierStructuralFingerprint(t), override: val };
+  });
+
+  // Case 1: Pure rename (same tier count, same kinds, only name(s) changed in place)
+  if (
+    prevTg.tiers.length === nextTg.tiers.length &&
+    prevTg.tiers.every((t, i) => t.kind === nextTg.tiers[i].kind)
+  ) {
+    let diffCount = 0;
+    for (let i = 0; i < prevTg.tiers.length; i++) {
+      if (prevTg.tiers[i].name !== nextTg.tiers[i].name) diffCount++;
+    }
+    if (diffCount === 1) {
+      const out: Record<string, TierScaleMode> = {};
+      for (let i = 0; i < nextTg.tiers.length; i++) {
+        const val = prevResolved[i].override;
+        if (val) out[resolveTierScaleKey(nextTg, i)] = val;
+      }
+      return out;
+    }
+  }
+
+  // Case 2: General reorder / insert / delete / duplicate
+  const usedPrev = new Set<number>();
+  const out: Record<string, TierScaleMode> = {};
+
+  for (let newIdx = 0; newIdx < nextTg.tiers.length; newIdx++) {
+    const nt = nextTg.tiers[newIdx];
+    const nfp = tierStructuralFingerprint(nt);
+    // 1. Exact name + kind + fingerprint match
+    let matched = prevResolved.find(
+      (p) => !usedPrev.has(p.idx) && p.name === nt.name && p.kind === nt.kind && p.fp === nfp
+    );
+    // 2. Exact name + kind match
+    if (!matched) {
+      matched = prevResolved.find(
+        (p) => !usedPrev.has(p.idx) && p.name === nt.name && p.kind === nt.kind
+      );
+    }
+    // 3. Exact fingerprint + kind match (e.g., duplicated tier or renamed+reordered)
+    if (!matched) {
+      matched = prevResolved.find(
+        (p) => !usedPrev.has(p.idx) && p.kind === nt.kind && p.fp === nfp
+      );
+    }
+    if (matched) {
+      usedPrev.add(matched.idx);
+      if (matched.override) {
+        out[resolveTierScaleKey(nextTg, newIdx)] = matched.override;
+      }
+    }
+  }
+
+  return out;
+}
+
 function createTabRecord(opts?: CreateTabOptions, historyLimit = loadSavedHistoryLimit()): TabRecord {
   const isDefaultBlank = !opts?.tg;
   const tg = opts?.tg ?? createSample('blank').tg;
   const styleDoc = opts?.styleDoc
     ? cloneStyleDocument(opts.styleDoc)
     : createDefaultStyleDocument();
+  const tierScaleOverrides: Record<string, TierScaleMode> = styleDoc.layoutPrefs?.tierScaleOverrides
+    ? { ...styleDoc.layoutPrefs.tierScaleOverrides }
+    : {};
   const filename = opts?.filename ?? tg.name ?? '未命名.TextGrid';
   const collectionTgs = opts?.collectionTgs ?? [];
   const activeIdx = opts?.activeIdx ?? 0;
@@ -1406,6 +1534,7 @@ function createTabRecord(opts?: CreateTabOptions, historyLimit = loadSavedHistor
     audioSampleRate: 0,
     analysis: null,
     styleDoc,
+    tierScaleOverrides,
     isBlankPlaceholder: isBlank
   };
 }
@@ -1416,6 +1545,7 @@ function fieldsFromTab(tab: TabRecord) {
     corpusActiveEntryId: tab.corpus?.activeItemId ?? null,
     tg: tab.tg,
     styleDoc: tab.styleDoc,
+    tierScaleOverrides: tab.tierScaleOverrides,
     collectionTgs: tab.collectionTgs,
     collectionActiveIdx: tab.collectionActiveIdx,
     filename: tab.filename,
@@ -1948,6 +2078,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return {
         tabs: nextTabs,
         ...fieldsFromTab(newTab),
+        ...(newTab.styleDoc.layoutPrefs?.scaleMode
+          ? { scaleMode: newTab.styleDoc.layoutPrefs.scaleMode }
+          : {}),
         ...(newTab.kind !== 'corpus' && s.ribbonTab === 'corpus'
           ? { ribbonTab: 'annotate' as RibbonTabId }
           : {}),
@@ -2353,6 +2486,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ...target,
         tg: payload.tg,
         styleDoc: nextStyleDoc,
+        tierScaleOverrides: nextStyleDoc.layoutPrefs?.tierScaleOverrides
+          ? { ...nextStyleDoc.layoutPrefs.tierScaleOverrides }
+          : target.tierScaleOverrides,
         filename: payload.filename,
         currentFilePath: payload.currentFilePath,
         currentFileFormat: payload.currentFileFormat ?? target.corpus.defaultSaveFormat ?? 'longText',
@@ -2389,6 +2525,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return {
         tabs: nextTabs,
         ...fieldsFromTab(nextTab),
+        ...(nextStyleDoc.layoutPrefs?.scaleMode
+          ? { scaleMode: nextStyleDoc.layoutPrefs.scaleMode }
+          : {}),
         maxFreq: smartMaxFreq,
         pendingAutoEditTarget:
           payload.pendingAutoEditTarget !== undefined ? payload.pendingAutoEditTarget : null,
@@ -2657,9 +2796,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       );
       const collectionHistories: Record<number, HistoryTimeline> =
         collectionTgs.length > 0 ? { [activeIdx]: history } : {};
+      const nextTierScaleOverrides: Record<string, TierScaleMode> = styleDoc.layoutPrefs
+        ?.tierScaleOverrides
+        ? { ...styleDoc.layoutPrefs.tierScaleOverrides }
+        : {};
       const patch: Partial<TabRecord> = {
         tg,
         styleDoc,
+        tierScaleOverrides: nextTierScaleOverrides,
         filename,
         currentFilePath: meta?.filePath ?? null,
         currentFileFormat: meta?.fileFormat ?? 'longText',
@@ -2680,6 +2824,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
       return {
         ...syncActivePatch(s, patch),
+        ...(styleDoc.layoutPrefs?.scaleMode ? { scaleMode: styleDoc.layoutPrefs.scaleMode } : {}),
         showPlayhead: false,
         lastHistoryNav: null,
         docVersion: s.docVersion + 1
@@ -2729,6 +2874,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       nextCollection[idx] = nextTg;
       const nextSelection = validateSelectionForTg(nextTg, targetSnap.selection);
       const nextHidden = sanitizeHiddenTiers(targetSnap.hiddenTierIndices, nextTg.tiers.length);
+      const nextTierScaleOverrides = remapTierScaleOverrides(
+        s.tierScaleOverrides,
+        s.tg,
+        nextTg
+      );
       const temporal = clampTabTemporalToTg(nextTg, s.currentTime, targetSnap.playRange, null);
       const selTierIdx = extractTierIndex(nextSelection);
       const nextLastActive =
@@ -2766,6 +2916,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       committed = true;
 
       const nextTg = produced.nextTg;
+      const nextTierScaleOverrides = remapTierScaleOverrides(
+        s.tierScaleOverrides,
+        s.tg,
+        nextTg
+      );
       let nextStyleDoc = s.styleDoc;
       if (hasTrackableStyleState(s.styleDoc)) {
         if (styleUpdater) {
@@ -2775,6 +2930,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         } else {
           nextStyleDoc = propagateStylesOnTierChange(s.styleDoc, s.tg, nextTg);
         }
+      }
+      if (nextTierScaleOverrides !== s.tierScaleOverrides) {
+        nextStyleDoc = syncStyleDocLayoutPrefs(nextStyleDoc, s.scaleMode, nextTierScaleOverrides);
       }
 
       const rawSelection = produced.hasNextSelection
@@ -2820,6 +2978,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const patch: Partial<TabRecord> = {
         tg: nextTg,
         styleDoc: nextStyleDoc,
+        tierScaleOverrides: nextTierScaleOverrides,
         collectionTgs: nextCollection,
         collectionHistories: nextCollectionHistories,
         history: nextHistory,
@@ -2870,6 +3029,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         : s.styleDoc;
       const nextSelection = validateSelectionForTg(nextTg, targetSnap.selection);
       const nextHidden = sanitizeHiddenTiers(targetSnap.hiddenTierIndices, nextTg.tiers.length);
+      const nextTierScaleOverrides = remapTierScaleOverrides(
+        s.tierScaleOverrides,
+        s.tg,
+        nextTg
+      );
       const temporal = clampTabTemporalToTg(
         nextTg,
         s.currentTime,
@@ -2916,6 +3080,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const patch: Partial<TabRecord> = {
         tg: nextTg,
         styleDoc: nextStyleDoc,
+        tierScaleOverrides: nextTierScaleOverrides,
         collectionTgs: nextCollection,
         collectionHistories: nextCollectionHistories,
         history: nextHistory,
@@ -3089,7 +3254,145 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ...(wrapMode === 'auto' && s.targetWidth > 2400 ? { targetWidth: 2400 } : {})
       };
     }),
-  setScaleMode: (scaleMode) => set({ scaleMode }),
+  setScaleMode: (scaleMode) =>
+    set((s) => {
+      let nextOverrides = s.tierScaleOverrides;
+      // When entering 'mixed' for the first time with no overrides yet, seed via smart mixed allocation
+      if (scaleMode === 'mixed' && Object.keys(nextOverrides).length === 0 && s.tg.tiers.length > 0) {
+        nextOverrides = computeSmartMixedTierScales(s.tg, {
+          targetWidth: s.stageAvailableWidth,
+          hiddenTierIndices: s.hiddenTierIndices
+        });
+      }
+      const nextStyleDoc = syncStyleDocLayoutPrefs(s.styleDoc, scaleMode, nextOverrides);
+      return {
+        ...syncActivePatch(s, {
+          tierScaleOverrides: nextOverrides,
+          styleDoc: nextStyleDoc
+        }),
+        scaleMode
+      };
+    }),
+
+  setTierScaleMode: (tierIndex, mode) =>
+    set((s) => {
+      if (tierIndex < 0 || tierIndex >= s.tg.tiers.length) return s;
+      const nextOverrides: Record<string, TierScaleMode> = { ...s.tierScaleOverrides };
+      // If currently in pure global 'linear' or 'elastic', materialize current modes for all tiers
+      // before flipping the target tier so other tiers don't unexpectedly jump.
+      if (s.scaleMode !== 'mixed') {
+        const baseMode: TierScaleMode = s.scaleMode === 'linear' ? 'linear' : 'elastic';
+        for (let i = 0; i < s.tg.tiers.length; i++) {
+          nextOverrides[resolveTierScaleKey(s.tg, i)] = baseMode;
+        }
+      }
+      const key = resolveTierScaleKey(s.tg, tierIndex);
+      nextOverrides[key] = mode;
+      const nextScaleMode: GlobalScaleMode = 'mixed';
+      const nextStyleDoc = syncStyleDocLayoutPrefs(s.styleDoc, nextScaleMode, nextOverrides);
+      return {
+        ...syncActivePatch(s, {
+          tierScaleOverrides: nextOverrides,
+          styleDoc: nextStyleDoc
+        }),
+        scaleMode: nextScaleMode
+      };
+    }),
+
+  applySmartMixedScale: () => {
+    const st = get();
+    if (st.tg.tiers.length === 0) return;
+    const computed = computeSmartMixedTierScales(st.tg, {
+      targetWidth: st.stageAvailableWidth,
+      hiddenTierIndices: st.hiddenTierIndices
+    });
+    let linCount = 0;
+    let elCount = 0;
+    const hiddenSet = new Set(st.hiddenTierIndices);
+    for (let i = 0; i < st.tg.tiers.length; i++) {
+      if (hiddenSet.has(i)) continue;
+      if (resolveTierScaleMode(st.tg, i, 'mixed', computed) === 'linear') linCount++;
+      else elCount++;
+    }
+    set((s) => {
+      const nextStyleDoc = syncStyleDocLayoutPrefs(s.styleDoc, 'mixed', computed);
+      return {
+        ...syncActivePatch(s, {
+          tierScaleOverrides: computed,
+          styleDoc: nextStyleDoc
+        }),
+        scaleMode: 'mixed' as GlobalScaleMode
+      };
+    });
+    get().showToast(`已智能分配：${linCount} 层线性 (1:1)，${elCount} 层自适应双尺`);
+  },
+
+  groupLinearTiersOnTop: () => {
+    const st = get();
+    if (st.tg.tiers.length < 2) return;
+    if (st.mode === 'read') {
+      get().showToast('当前为只读模式，切至编辑模式后可重排层级顺序', false, {
+        label: '切至编辑',
+        onClick: () => {
+          useEditorStore.getState().setMode('edit');
+          useEditorStore.getState().groupLinearTiersOnTop();
+        }
+      });
+      return;
+    }
+    const linearIndices: number[] = [];
+    const elasticIndices: number[] = [];
+    for (let i = 0; i < st.tg.tiers.length; i++) {
+      const m = resolveTierScaleMode(st.tg, i, st.scaleMode, st.tierScaleOverrides);
+      if (m === 'linear') linearIndices.push(i);
+      else elasticIndices.push(i);
+    }
+    const newOrder = [...linearIndices, ...elasticIndices];
+    const alreadyGrouped = newOrder.every((origIdx, pos) => origIdx === pos);
+    if (alreadyGrouped) {
+      get().showToast('线性层已在上方');
+      return;
+    }
+    const oldToNew = new Map<number, number>();
+    newOrder.forEach((origIdx, newPos) => oldToNew.set(origIdx, newPos));
+    const nextHidden = sanitizeHiddenTiers(
+      st.hiddenTierIndices.map((idx) => oldToNew.get(idx) ?? idx),
+      st.tg.tiers.length
+    );
+    const prevSel = st.selection;
+    let nextSelection: EditorSelection = prevSel;
+    if (prevSel && extractTierIndex(prevSel) !== null) {
+      const oldTi = extractTierIndex(prevSel)!;
+      nextSelection = {
+        ...prevSel,
+        tierIndex: oldToNew.get(oldTi) ?? oldTi
+      } as EditorSelection;
+    }
+
+    const switchedFromSpec = st.tierOrder === 'spec';
+    if (switchedFromSpec) {
+      set({ tierOrder: 'raw' });
+    }
+
+    const ok = st.commitTgMutation(
+      (draft, ctx) => {
+        const snapshot = draft.tiers.slice();
+        draft.tiers = newOrder.map((origIdx) => snapshot[origIdx]);
+        ctx.setNextHiddenTiers(nextHidden);
+        ctx.setNextSelection(nextSelection);
+      },
+      nextSelection,
+      {
+        type: 'reorder-tier',
+        title: '线性层归拢至上方',
+        detail: `${linearIndices.length} 层线性移至顶部`,
+        icon: 'navVertical'
+      }
+    );
+    if (ok) {
+      get().showToast(`已将 ${linearIndices.length} 个线性层归拢至上方`);
+    }
+  },
   setTickPrecision: (tickPrecision) => set({ tickPrecision }),
   setTickFixedDecimals: (tickFixedDecimals) => {
     try {
@@ -4615,6 +4918,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const newName = `${src.name || '层'}${copyText ? ' (副本)' : ' (同界)'}`;
     const nextHidden = remapHiddenOnInsert(st.hiddenTierIndices, insertAt, st.tg.tiers.length + 1);
 
+    const srcScaleMode =
+      st.scaleMode === 'mixed'
+        ? resolveTierScaleMode(st.tg, tierIndex, 'mixed', st.tierScaleOverrides)
+        : null;
+
     const ok = st.commitTgMutation(
       (draft, ctx) => {
         const dSrc = draft.tiers[tierIndex];
@@ -4656,6 +4964,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         tierName: newName
       }
     );
+    if (ok && srcScaleMode) {
+      set((s) => {
+        const key = resolveTierScaleKey(s.tg, insertAt);
+        const nextOverrides = { ...s.tierScaleOverrides, [key]: srcScaleMode };
+        const nextStyleDoc = syncStyleDocLayoutPrefs(s.styleDoc, s.scaleMode, nextOverrides);
+        return syncActivePatch(s, {
+          tierScaleOverrides: nextOverrides,
+          styleDoc: nextStyleDoc
+        });
+      });
+    }
     return ok ? insertAt : -1;
   },
 
@@ -7126,8 +7445,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           ? computeCollectionDirty(nextHistory, nextColHistories, target.collectionActiveIdx)
           : isTimelineDirty(nextHistory);
 
+      const nextTierScaleOverrides = nextStyleDoc.layoutPrefs?.tierScaleOverrides
+        ? { ...nextStyleDoc.layoutPrefs.tierScaleOverrides }
+        : target.tierScaleOverrides;
+
       const patch: Partial<TabRecord> = {
         styleDoc: nextStyleDoc,
+        tierScaleOverrides: nextTierScaleOverrides,
         history: nextHistory,
         collectionHistories: nextColHistories,
         isDirty: nextDirty
@@ -7137,6 +7461,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         return {
           tabs: nextTabs,
           styleDoc: nextStyleDoc,
+          tierScaleOverrides: nextTierScaleOverrides,
+          ...(nextStyleDoc.layoutPrefs?.scaleMode
+            ? { scaleMode: nextStyleDoc.layoutPrefs.scaleMode }
+            : {}),
           history: nextHistory,
           collectionHistories: nextColHistories,
           isDirty: nextDirty,

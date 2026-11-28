@@ -300,6 +300,33 @@ pub fn detect_speech_segments_nn_json(
 }
 
 #[wasm_bindgen]
+pub fn extract_vad_posteriors_chunk_json(
+    session_id: u32,
+    start_sec: f64,
+    end_sec: f64,
+) -> Result<String, JsValue> {
+    let win = tg_dsp::session_pcm_window(session_id, start_sec, end_sec, 0.5).map_err(to_js_err)?;
+    let track = tg_core::nn::hybrid::extract_vad_posteriors_nn_window(
+        &win.samples,
+        win.sample_rate,
+        win.pad_origin_sec,
+        win.start_sec,
+        win.end_sec,
+    );
+    serde_json::to_string(&track).map_err(to_js_err)
+}
+
+#[wasm_bindgen]
+pub fn extract_vad_posteriors_pcm_json(
+    samples: &[f32],
+    sample_rate: u32,
+    origin_sec: f64,
+) -> Result<String, JsValue> {
+    let track = tg_core::nn::hybrid::extract_vad_posteriors_nn(samples, sample_rate, origin_sec);
+    serde_json::to_string(&track).map_err(to_js_err)
+}
+
+#[wasm_bindgen]
 pub fn extract_acoustic_snap_peaks_json(
     samples: &[f32],
     sample_rate: u32,

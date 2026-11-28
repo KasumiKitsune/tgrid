@@ -17,8 +17,11 @@ import {
 import {
   computeLayout,
   elasticXInBand,
+  getTierScaleInBand,
   timeFromElasticX,
   timeFromLinearX,
+  timeFromTierX,
+  xForTierTime,
   type BandLayout,
   type BoxRect,
   type ScoreLayout
@@ -35,6 +38,8 @@ import { svgEl } from '../layout/legendCore';
 import {
   renderInteractiveOverlay,
   renderScoreSvg,
+  renderTimePolyline,
+  renderTimeSpanFocus,
   type BlockTierPreviewSlice,
   type DragPreviewState,
   type EdgeSnapVisual,
@@ -42,7 +47,14 @@ import {
   type IntervalDragPreviewState,
   type MultiUnitPreviewBox
 } from '../render/renderScoreSvg';
-import { resolveDualEdgeSnap, resolveSnap, type SnapResult } from '../interaction/snapEngine';
+import type { VadOverlayState } from '../render/renderVadOverlay';
+import type { VadOpenOptions } from './sidebar/VadPanel';
+import {
+  getSnapCoordX,
+  resolveDualEdgeSnap,
+  resolveSnap,
+  type SnapResult
+} from '../interaction/snapEngine';
 import {
   IS_MAC,
   formatKeyCombo,
@@ -117,6 +129,15 @@ export interface ScoreStageHandle {
   flushInlineEdit: () => void;
 }
 
+export interface VadStageBannerInfo {
+  keptCount: number;
+  excludedCount: number;
+  speechDurSec: number;
+  ratioPct: number;
+  extracting: boolean;
+  isReadOnly: boolean;
+}
+
 interface ScoreStageProps {
   audioBuffer: AudioBuffer | null;
   onStartPlayback: (startT: number, endT: number) => void;
@@ -125,6 +146,12 @@ interface ScoreStageProps {
   onQuickExportSvg: () => void;
   onQuickExportPng: () => void;
   topBanner?: React.ReactNode;
+  vadOverlay?: VadOverlayState | null;
+  vadBanner?: VadStageBannerInfo | null;
+  onOpenVad?: (opts?: VadOpenOptions) => void;
+  onApplyVad?: () => void;
+  onCloseVad?: () => void;
+  onVadSegmentClick?: (index: number, altKey: boolean) => void;
 }
 
 type InlineTarget =
@@ -247,7 +274,7 @@ const CtxSubmenuPanel: React.FC<{
 const PLAYBACK_RATES = [0.5, 0.75, 1.0, 1.25, 1.5] as const;
 
 function snapToEdgeVisual(snap: SnapResult | null): EdgeSnapVisual | null {
-  return snap ? { x: snap.x, linX: snap.linX, label: snap.label } : null;
+  return snap ? { x: snap.x, linX: snap.linX, t: snap.t, label: snap.label } : null;
 }
 
 function resolveBandAtY(curLayout: ScoreLayout, y: number, fallbackBand: BandLayout): BandLayout {
@@ -369,10 +396,9 @@ function getSelectionAnchor(
       } else if (sel.kind === 'boundary') {
         const tl = band.tiersLayout[sel.tierIndex];
         if (!tl || sel.time < band.startT || sel.time > band.endT) continue;
-        const idx = layout.tToIdx.get(sel.time);
-        if (idx === undefined || idx < band.startIdx || idx > band.endIdx) continue;
+        const bx = xForTierTime(band, sel.tierIndex, sel.time);
         return {
-          rect: { x: band.spineCols[idx - band.startIdx].x - 4, y: tl.y, w: 8, h: tl.h },
+          rect: { x: bx - 4, y: tl.y, w: 8, h: tl.h },
           band
         };
       } else if (sel.kind === 'spine') {
@@ -382,7 +408,8 @@ function getSelectionAnchor(
           idx !== undefined && idx >= band.startIdx && idx <= band.endIdx
             ? band.spineCols[idx - band.startIdx].x
             : elasticXInBand(band, sel.time);
-        return { rect: { x: x - 6, y: band.tiersTopY - 24, w: 12, h: 24 }, band };
+        const spineAnchorY = band.tickSpineBotY ?? band.tiersTopY;
+        return { rect: { x: x - 6, y: spineAnchorY - 24, w: 12, h: 24 }, band };
       } else if (sel.kind === 'tier') {
         const tl = band.tiersLayout[sel.tierIndex];
         if (tl) return { rect: tl.headerBox, band };
@@ -495,7 +522,22 @@ function findNearbySpecBoundary(
 }
 
 export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
-  ({ audioBuffer, onStartPlayback, onTogglePlay, onStopPlayback, topBanner }, ref) => {
+  (
+    {
+      audioBuffer,
+      onStartPlayback,
+      onTogglePlay,
+      onStopPlayback,
+      topBanner,
+      vadOverlay,
+      vadBanner,
+      onOpenVad,
+      onApplyVad,
+      onCloseVad,
+      onVadSegmentClick
+    },
+    ref
+  ) => {
     const tabs = useEditorStore((s) => s.tabs);
     const tg = useEditorStore((s) => s.tg);
     const activeTabId = useEditorStore((s) => s.activeTabId);
@@ -511,6 +553,10 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const setWrapMode = useEditorStore((s) => s.setWrapMode);
     const scaleMode = useEditorStore((s) => s.scaleMode);
     const setScaleMode = useEditorStore((s) => s.setScaleMode);
+    const tierScaleOverrides = useEditorStore((s) => s.tierScaleOverrides);
+    const setTierScaleMode = useEditorStore((s) => s.setTierScaleMode);
+    const applySmartMixedScale = useEditorStore((s) => s.applySmartMixedScale);
+    const groupLinearTiersOnTop = useEditorStore((s) => s.groupLinearTiersOnTop);
     const tickPrecision = useEditorStore((s) => s.tickPrecision);
     const tickFixedDecimals = useEditorStore((s) => s.tickFixedDecimals);
     const viewDomain = useEditorStore((s) => s.viewDomain);
@@ -658,6 +704,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const pendingDragAnchorRef = useRef<{
       time: number;
       bandIndex: number;
+      tierIndex?: number;
       clientX: number;
       clientY: number;
     } | null>(null);
@@ -706,6 +753,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const [intervalDragPreview, setIntervalDragPreview] = useState<IntervalDragPreviewState | null>(null);
     const [loupeAnchor, setLoupeAnchor] = useState<MicroLoupeAnchor | null>(null);
     const [dismissedBlankTabIds, setDismissedBlankTabIds] = useState<Set<string>>(() => new Set());
+    const [dismissedNeckBannerSig, setDismissedNeckBannerSig] = useState<string | null>(null);
     const [openSubmenuIdx, setOpenSubmenuIdx] = useState<number | null>(null);
     const submenuCloseTimerRef = useRef<number | null>(null);
 
@@ -738,7 +786,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           curLayout.bands[0];
         if (!band) return;
         const clampedT = Math.max(band.startT, Math.min(band.endT, previewT));
-        const x = elasticXInBand(band, clampedT);
+        const coordSpace = fullBand ? undefined : getTierScaleInBand(band, tierIndex);
+        const x = fullBand ? elasticXInBand(band, clampedT) : xForTierTime(band, tierIndex, clampedT);
         const linearX = band.linearXForTime(clampedT);
         const tl = !fullBand ? band.tiersLayout[tierIndex] : undefined;
         const y0 = fullBand || !tl ? band.tiersTopY : tl.y;
@@ -751,10 +800,12 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           y0,
           y1,
           snapX: null,
+          snapTime: null,
           snapMode: false,
           snapLabel: null,
           showCompactTag: true,
-          time: previewT
+          time: previewT,
+          coordSpace
         });
       },
       [selection?.bandIndex]
@@ -1326,6 +1377,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         showSpectrogram,
         tierOrder,
         scaleMode,
+        tierScaleOverrides,
         tickPrecision,
         tickFixedDecimals,
         viewDomain,
@@ -1351,6 +1403,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       showSpectrogram,
       tierOrder,
       scaleMode,
+      tierScaleOverrides,
       tickPrecision,
       tickFixedDecimals,
       viewDomain,
@@ -1466,7 +1519,10 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       if (rect.width <= 0 || rect.height <= 0) return;
       const scaleX = rect.width / layout.width;
       const scaleY = rect.height / layout.height;
-      const newSvgX = elasticXInBand(updatedBand, anchor.time);
+      const newSvgX =
+        anchor.tierIndex !== undefined
+          ? xForTierTime(updatedBand, anchor.tierIndex, anchor.time)
+          : elasticXInBand(updatedBand, anchor.time);
       const newSvgY = (updatedBand.tiersTopY + updatedBand.tiersBottomY) / 2;
       const newClientX = rect.left + newSvgX * scaleX;
       const newClientY = rect.top + newSvgY * scaleY;
@@ -1563,7 +1619,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         intervalDragPreview,
         screenSpecUrls: specUrls,
         styleDoc,
-        showStyleLegendPreview: styleDoc.showLegendInExport
+        showStyleLegendPreview: styleDoc.showLegendInExport,
+        vadOverlay
       });
     }, [
       tg,
@@ -1594,7 +1651,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         showPlayhead,
         dragPreview,
         intervalDragPreview,
-        hasAudio: Boolean(audioName && audioBuffer)
+        hasAudio: Boolean(audioName && audioBuffer),
+        vadOverlay
       });
     }, [
       layout,
@@ -1608,7 +1666,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       dragPreview,
       intervalDragPreview,
       audioName,
-      audioBuffer
+      audioBuffer,
+      vadOverlay
     ]);
 
     // Cloak underlying SVG text while inline-editing so text never bleeds/doubles behind <textarea>
@@ -2674,29 +2733,36 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       }
     }, []);
 
-    const captureDragAnchor = useCallback((band: BandLayout, bandIdx: number, time: number) => {
-      const svg = svgRef.current;
-      const curLayout = layoutRef.current;
-      if (!svg || curLayout.width <= 0 || curLayout.height <= 0) {
-        pendingDragAnchorRef.current = null;
-        return;
-      }
-      const rect = svg.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) {
-        pendingDragAnchorRef.current = null;
-        return;
-      }
-      const scaleX = rect.width / curLayout.width;
-      const scaleY = rect.height / curLayout.height;
-      const svgX = elasticXInBand(band, time);
-      const svgY = (band.tiersTopY + band.tiersBottomY) / 2;
-      pendingDragAnchorRef.current = {
-        time,
-        bandIndex: bandIdx,
-        clientX: rect.left + svgX * scaleX,
-        clientY: rect.top + svgY * scaleY
-      };
-    }, []);
+    const captureDragAnchor = useCallback(
+      (band: BandLayout, bandIdx: number, time: number, tierIndex?: number) => {
+        const svg = svgRef.current;
+        const curLayout = layoutRef.current;
+        if (!svg || curLayout.width <= 0 || curLayout.height <= 0) {
+          pendingDragAnchorRef.current = null;
+          return;
+        }
+        const rect = svg.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) {
+          pendingDragAnchorRef.current = null;
+          return;
+        }
+        const scaleX = rect.width / curLayout.width;
+        const scaleY = rect.height / curLayout.height;
+        const svgX =
+          tierIndex !== undefined
+            ? xForTierTime(band, tierIndex, time)
+            : elasticXInBand(band, time);
+        const svgY = (band.tiersTopY + band.tiersBottomY) / 2;
+        pendingDragAnchorRef.current = {
+          time,
+          bandIndex: bandIdx,
+          tierIndex,
+          clientX: rect.left + svgX * scaleX,
+          clientY: rect.top + svgY * scaleY
+        };
+      },
+      []
+    );
 
     const createIntervalInEmptySlot = useCallback(
       (ti: number, ii: number, rawT0: number, rawT1: number, bandIdx?: number, label = '划选新建区间') => {
@@ -2952,6 +3018,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         blockerTierIndex: number | null
       ): BlockTierPreviewSlice[] => {
         const slices: BlockTierPreviewSlice[] = [];
+        const clampedMin = Math.max(activeBand.startT, Math.min(activeBand.endT, newXmin));
+        const clampedMax = Math.max(activeBand.startT, Math.min(activeBand.endT, newXmax));
         for (const islice of block.intervalSlices) {
           const tl = activeBand.tiersLayout[islice.tierIndex];
           if (!tl) continue;
@@ -2966,12 +3034,14 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           const interiorLinXs: number[] = [];
           for (const it of mappedInterior) {
             if (it >= activeBand.startT - 1e-9 && it <= activeBand.endT + 1e-9) {
-              interiorXs.push(elasticXInBand(activeBand, it));
+              interiorXs.push(xForTierTime(activeBand, islice.tierIndex, it));
               interiorLinXs.push(activeBand.linearXForTime(it));
             }
           }
           slices.push({
             tierIndex: islice.tierIndex,
+            x0: xForTierTime(activeBand, islice.tierIndex, clampedMin),
+            x1: xForTierTime(activeBand, islice.tierIndex, clampedMax),
             y0: tl.y,
             y1: tl.y + tl.h,
             interiorXs,
@@ -2996,11 +3066,13 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               newXmax
             );
             if (mappedT >= activeBand.startT - 1e-9 && mappedT <= activeBand.endT + 1e-9) {
-              pointXs.push(elasticXInBand(activeBand, mappedT));
+              pointXs.push(xForTierTime(activeBand, pslice.tierIndex, mappedT));
             }
           }
           slices.push({
             tierIndex: pslice.tierIndex,
+            x0: xForTierTime(activeBand, pslice.tierIndex, clampedMin),
+            x1: xForTierTime(activeBand, pslice.tierIndex, clampedMax),
             y0: tl.y,
             y1: tl.y + tl.h,
             interiorXs: [],
@@ -3564,9 +3636,23 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         // Scale & wrap toggles (default: V / W)
         if (matchesShortcut('scale-toggle', e, customShortcuts)) {
           e.preventDefault();
-          const next = scaleMode === 'elastic' ? 'linear' : 'elastic';
+          const hasMixedOverrides = Object.keys(tierScaleOverrides).length > 0;
+          const next =
+            scaleMode === 'elastic'
+              ? hasMixedOverrides
+                ? 'mixed'
+                : 'linear'
+              : scaleMode === 'mixed'
+                ? 'linear'
+                : 'elastic';
           setScaleMode(next);
-          showToast(next === 'linear' ? '时间比例：线性等比' : '时间比例：自适应弹性');
+          showToast(
+            next === 'linear'
+              ? '时间比例：线性等比 (1:1)'
+              : next === 'mixed'
+                ? '时间比例：分层混合比例'
+                : '时间比例：自适应双尺'
+          );
           return;
         }
         if (matchesShortcut('wrap-toggle', e, customShortcuts)) {
@@ -4412,6 +4498,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       loop,
       rate,
       scaleMode,
+      tierScaleOverrides,
       wrapMode,
       ipaDockOpen,
       ctxMenu,
@@ -4507,94 +4594,15 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         if (!band) return;
         const pt = svgPointFromEvent({ clientX, clientY });
 
-        const drawHoverSpineSafeVertical = (
-          x: number,
-          yBottom: number,
-          stroke: string,
-          strokeWidth: number,
-          opacity?: number,
-          dashArray?: string
-        ) => {
-          const splitForTicks = !curLayout.hideTicks && band.tiersTopY - band.neckBotY > 8;
-          if (splitForTicks) {
-            svgEl(
-              'line',
-              {
-                x1: x,
-                y1: band.neckBotY,
-                x2: x,
-                y2: band.neckBotY + 3,
-                stroke,
-                'stroke-width': strokeWidth,
-                ...(opacity !== undefined ? { opacity } : {})
-              },
-              hg
-            );
-            svgEl(
-              'line',
-              {
-                x1: x,
-                y1: band.tiersTopY - 3,
-                x2: x,
-                y2: band.tiersTopY,
-                stroke,
-                'stroke-width': strokeWidth,
-                ...(opacity !== undefined ? { opacity } : {})
-              },
-              hg
-            );
-            svgEl(
-              'line',
-              {
-                x1: x,
-                y1: band.tiersTopY,
-                x2: x,
-                y2: yBottom,
-                stroke,
-                'stroke-width': strokeWidth,
-                ...(opacity !== undefined ? { opacity } : {}),
-                ...(dashArray ? { 'stroke-dasharray': dashArray } : {})
-              },
-              hg
-            );
-          } else {
-            svgEl(
-              'line',
-              {
-                x1: x,
-                y1: band.neckBotY,
-                x2: x,
-                y2: yBottom,
-                stroke,
-                'stroke-width': strokeWidth,
-                ...(opacity !== undefined ? { opacity } : {}),
-                ...(dashArray ? { 'stroke-dasharray': dashArray } : {})
-              },
-              hg
-            );
-          }
-        };
-
         const drawHoverNecks = (times: number[]) => {
           const anchorTopY = band.anchorH > 0 ? band.anchorY : band.linearY;
           if (times.length === 2 && Number.isFinite(times[0]) && Number.isFinite(times[1])) {
-            const t0 = Math.max(band.startT, Math.min(times[0], times[1]));
-            const t1 = Math.min(band.endT, Math.max(times[0], times[1]));
-            if (t1 > t0) {
-              const lx0 = band.linearXForTime(t0);
-              const lx1 = band.linearXForTime(t1);
-              const ex0 = elasticXInBand(band, t0);
-              const ex1 = elasticXInBand(band, t1);
-              svgEl(
-                'polygon',
-                {
-                  points: `${lx0},${band.neckTopY} ${lx1},${band.neckTopY} ${ex1},${band.neckBotY} ${ex0},${band.neckBotY}`,
-                  fill: '#1D4ED8',
-                  'fill-opacity': 0.065
-                },
-                hg
-              );
-            }
+            renderTimeSpanFocus(hg, band, times[0], times[1], {
+              fill: '#1D4ED8',
+              fillOpacity: 0.065,
+              yFrom: anchorTopY,
+              yTo: band.tiersBottomY
+            });
           }
           const drawn: number[] = [];
           for (const t of times) {
@@ -4602,7 +4610,6 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             if (drawn.some((prev) => Math.abs(prev - t) <= 1e-12)) continue;
             drawn.push(t);
             const lx = band.linearXForTime(t);
-            const ex = elasticXInBand(band, t);
             if (band.specH > 0) {
               svgEl(
                 'line',
@@ -4619,19 +4626,18 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                 hg
               );
             }
-            svgEl(
-              'path',
-              {
-                d: `M${lx},${anchorTopY} L${lx},${band.neckTopY} L${ex},${band.neckBotY}`,
-                fill: 'none',
+            const firstNeckBotY =
+              band.transitionNecks.length > 0
+                ? band.transitionNecks[band.transitionNecks.length - 1].botY
+                : band.neckBotY;
+            if (firstNeckBotY > anchorTopY) {
+              renderTimePolyline(hg, band, t, anchorTopY, firstNeckBotY, {
                 stroke: '#1D4ED8',
-                'stroke-width': 1.35,
-                'stroke-linecap': 'round',
-                'stroke-linejoin': 'round',
-                opacity: 0.72
-              },
-              hg
-            );
+                strokeWidth: 1.35,
+                opacity: 0.72,
+                hideTicks: curLayout.hideTicks
+              });
+            }
           }
         };
 
@@ -4642,28 +4648,21 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           isShiftSplit: boolean
         ) => {
           const anchorTopY = band.anchorH > 0 ? band.anchorY : band.linearY;
-          // Straight sloped amber neck line
-          svgEl(
-            'path',
-            {
-              d: `M${snap.linX},${anchorTopY} L${snap.linX},${band.neckTopY} L${snap.x},${band.neckBotY}`,
-              fill: 'none',
-              stroke: '#B45309',
-              'stroke-width': 1.35,
-              'stroke-linecap': 'round',
-              'stroke-linejoin': 'round',
-              opacity: 0.72
-            },
-            hg
-          );
-          // Spine-safe full-column amber solid guide across all visible tiers
-          drawHoverSpineSafeVertical(snap.x, band.tiersBottomY, '#B45309', 1.5);
+          const snapCoordX = getSnapCoordX(snap, tl.scaleMode);
+          renderTimePolyline(hg, band, snap.t, anchorTopY, band.tiersBottomY, {
+            stroke: '#B45309',
+            strokeWidth: 1.5,
+            neckStrokeWidth: 1.35,
+            neckOpacity: 0.72,
+            opacity: 0.92,
+            hideTicks: curLayout.hideTicks
+          });
           // Tier-local anchor glyph
           if (isPointWire && tl.wireY !== undefined) {
             svgEl(
               'polygon',
               {
-                points: `${snap.x},${tl.wireY - 4.5} ${snap.x + 4.5},${tl.wireY} ${snap.x},${tl.wireY + 4.5} ${snap.x - 4.5},${tl.wireY}`,
+                points: `${snapCoordX},${tl.wireY - 4.5} ${snapCoordX + 4.5},${tl.wireY} ${snapCoordX},${tl.wireY + 4.5} ${snapCoordX - 4.5},${tl.wireY}`,
                 fill: '#FEF3C7',
                 stroke: '#B45309',
                 'stroke-width': 1.5
@@ -4673,15 +4672,15 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           } else {
             svgEl(
               'line',
-              { x1: snap.x - 4, y1: tl.y, x2: snap.x + 4, y2: tl.y, stroke: '#B45309', 'stroke-width': 1.5 },
+              { x1: snapCoordX - 4, y1: tl.y, x2: snapCoordX + 4, y2: tl.y, stroke: '#B45309', 'stroke-width': 1.5 },
               hg
             );
             svgEl(
               'line',
               {
-                x1: snap.x - 4,
+                x1: snapCoordX - 4,
                 y1: tl.y + tl.h,
-                x2: snap.x + 4,
+                x2: snapCoordX + 4,
                 y2: tl.y + tl.h,
                 stroke: '#B45309',
                 'stroke-width': 1.5
@@ -4691,7 +4690,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             svgEl(
               'circle',
               {
-                cx: snap.x,
+                cx: snapCoordX,
                 cy: tl.midY,
                 r: 3.5,
                 fill: '#B45309',
@@ -4704,7 +4703,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           // Compact amber pill above tier
           const pillTxt = `${formatPraatDouble(snap.t)} s · ${isShiftSplit ? 'Shift 切分 · ' : ''}${snap.label}`;
           const pw = Math.ceil(measurePx(pillTxt, `9.5px ${MONO_FONT_STACK}`)) + 12;
-          const px = Math.max(4, Math.min(curLayout.width - pw - 4, snap.x - pw / 2));
+          const px = Math.max(4, Math.min(curLayout.width - pw - 4, snapCoordX - pw / 2));
           const py = Math.max(2, tl.y - 19);
           svgEl(
             'rect',
@@ -4814,34 +4813,29 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           target.style.cursor = nearBnd ? 'ew-resize' : '';
           const aimX = nearBnd ? nearBnd.x : clampedX;
           const t = nearBnd ? nearBnd.time : timeFromLinearX(band, clampedX);
-          const ex = elasticXInBand(band, t);
           const gapY = Math.max(band.specY + 14, Math.min(band.specY + band.specH - 14, pt.y));
           const strokeC = nearBnd ? '#1D4ED8' : '#141413';
           const op = nearBnd ? 0.85 : 0.48;
 
-          // Hollow-gap crosshair inside spectrogram (never obscures inspected acoustic pixel)
-          svgEl('line', { x1: aimX, y1: band.waveY, x2: aimX, y2: Math.max(band.specY, gapY - 14), stroke: strokeC, 'stroke-width': nearBnd ? 1.4 : 0.9, opacity: op }, hg);
-          svgEl('line', { x1: aimX, y1: Math.min(band.specY + band.specH, gapY + 14), x2: aimX, y2: band.neckTopY, stroke: strokeC, 'stroke-width': nearBnd ? 1.4 : 0.9, opacity: op }, hg);
+          // Hollow-gap crosshair inside spectrogram + full multi-neck polyline below
+          renderTimePolyline(hg, band, t, band.waveY, band.tiersBottomY, {
+            stroke: strokeC,
+            strokeWidth: nearBnd ? 1.4 : 0.9,
+            neckStrokeWidth: nearBnd ? 1.3 : 0.85,
+            tierStrokeWidth: nearBnd ? 1.3 : 0.85,
+            opacity: op,
+            neckOpacity: op * 0.85,
+            tierOpacity: op * 0.85,
+            neckDashArray: nearBnd ? undefined : '2 2',
+            tierDashArray: nearBnd ? undefined : '2 2',
+            hideTicks: curLayout.hideTicks,
+            gapWindow: {
+              y0: Math.max(band.specY, gapY - 14),
+              y1: Math.min(band.specY + band.specH, gapY + 14)
+            }
+          });
           svgEl('line', { x1: aimX - 7, y1: gapY, x2: aimX - 3, y2: gapY, stroke: strokeC, 'stroke-width': 1, opacity: op }, hg);
           svgEl('line', { x1: aimX + 3, y1: gapY, x2: aimX + 7, y2: gapY, stroke: strokeC, 'stroke-width': 1, opacity: op }, hg);
-          svgEl('line', {
-            x1: aimX,
-            y1: band.neckTopY,
-            x2: ex,
-            y2: band.neckBotY,
-            stroke: strokeC,
-            'stroke-width': nearBnd ? 1.3 : 0.85,
-            opacity: op * 0.85,
-            'stroke-dasharray': nearBnd ? 'none' : '2 2'
-          }, hg);
-          drawHoverSpineSafeVertical(
-            ex,
-            band.tiersBottomY,
-            strokeC,
-            nearBnd ? 1.3 : 0.85,
-            op * 0.85,
-            nearBnd ? undefined : '2 2'
-          );
 
           // Live t (s) · f (Hz) readout badge inside top of spectrogram
           const freqHz = Math.round(
@@ -4875,16 +4869,13 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         } else if (role === 'linear-bar') {
           const clampedX = Math.max(band.originX, Math.min(band.originX + band.bandContentW, pt.x));
           const t = timeFromLinearX(band, clampedX);
-          const ex = elasticXInBand(band, t);
-          svgEl('path', {
-            d: `M${clampedX},${band.linearY} L${clampedX},${band.neckTopY} L${ex},${band.neckBotY}`,
-            fill: 'none',
+          renderTimePolyline(hg, band, t, band.linearY, band.tiersBottomY, {
             stroke: '#141413',
-            'stroke-width': 0.9,
+            strokeWidth: 0.9,
             opacity: 0.35,
-            'stroke-dasharray': '2 2'
-          }, hg);
-          drawHoverSpineSafeVertical(ex, band.tiersBottomY, '#141413', 0.9, 0.35, '2 2');
+            dashArray: '2 2',
+            hideTicks: curLayout.hideTicks
+          });
 
           const readoutTxt = `${t.toFixed(3)} s`;
           const rw = Math.ceil(measurePx(readoutTxt, `9.5px ${MONO_FONT_STACK}`)) + 8;
@@ -4914,6 +4905,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           const tl = band.tiersLayout[ti];
           const tier = st.tg.tiers[ti];
           if (!tl || tl.wireY === undefined || !tier) return;
+          const tierScale = getTierScaleInBand(band, ti);
           const clampedX = Math.max(band.originX, Math.min(band.originX + band.bandContentW, pt.x));
           const minAllowed = Math.max(tier.xmin, band.startT);
           const maxAllowed = Math.min(tier.xmax, band.endT);
@@ -4921,7 +4913,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             tg: st.tg,
             band,
             pointerX: clampedX,
-            fromSpec: false,
+            coordSpace: tierScale,
+            isAcousticTrack: false,
             minAllowed,
             maxAllowed,
             allowEndpoints: true,
@@ -4937,14 +4930,14 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               bandIdx,
               ti,
               time: snap.t,
-              x: snap.x,
+              x: getSnapCoordX(snap, tierScale),
               linX: snap.linX,
               label: snap.label
             };
             drawAmberPreSnap(snap, tl, true, false);
           } else {
             hoverSnapRef.current = null;
-            const rawT = Math.max(minAllowed, Math.min(maxAllowed, timeFromElasticX(band, clampedX)));
+            const rawT = Math.max(minAllowed, Math.min(maxAllowed, timeFromTierX(band, ti, clampedX)));
             drawMutedHairline(clampedX, rawT, tl, true, false);
           }
         } else if (
@@ -4957,12 +4950,14 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           const tl = band.tiersLayout[ti];
           const iv = st.tg.tiers[ti]?.intervals[ii];
           if (!tl || !iv || iv.xmax <= iv.xmin) return;
+          const tierScale = getTierScaleInBand(band, ti);
           const isShiftSplit = shiftKey;
           const snap = resolveSnap({
             tg: st.tg,
             band,
             pointerX: pt.x,
-            fromSpec: false,
+            coordSpace: tierScale,
+            isAcousticTrack: false,
             minAllowed: iv.xmin,
             maxAllowed: iv.xmax,
             allowEndpoints: !isShiftSplit,
@@ -4979,17 +4974,17 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               bandIdx,
               ti,
               time: snap.t,
-              x: snap.x,
+              x: getSnapCoordX(snap, tierScale),
               linX: snap.linX,
               label: snap.label
             };
             drawAmberPreSnap(snap, tl, false, isShiftSplit);
           } else {
             hoverSnapRef.current = null;
-            const xMin = elasticXInBand(band, Math.max(band.startT, iv.xmin));
-            const xMax = elasticXInBand(band, Math.min(band.endT, iv.xmax));
+            const xMin = xForTierTime(band, ti, Math.max(band.startT, iv.xmin));
+            const xMax = xForTierTime(band, ti, Math.min(band.endT, iv.xmax));
             const clampedX = Math.max(Math.min(xMin, xMax), Math.min(Math.max(xMin, xMax), pt.x));
-            const rawT = Math.max(iv.xmin, Math.min(iv.xmax, timeFromElasticX(band, clampedX)));
+            const rawT = Math.max(iv.xmin, Math.min(iv.xmax, timeFromTierX(band, ti, clampedX)));
             drawMutedHairline(clampedX, rawT, tl, false, isShiftSplit);
           }
         } else if (role === 'interval') {
@@ -5118,7 +5113,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         const y0 = shared ? activeBand.tiersTopY : activeTl.y;
         const y1 = shared ? activeBand.tiersBottomY : activeTl.y + activeTl.h;
 
-        const rawT = fromSpec ? timeFromLinearX(activeBand, curPt.x) : timeFromElasticX(activeBand, curPt.x);
+        const tierScale = fromSpec ? 'linear' : getTierScaleInBand(activeBand, ti);
+        const rawT = fromSpec ? timeFromLinearX(activeBand, curPt.x) : timeFromTierX(activeBand, ti, curPt.x);
         if (shared && !subBoundaryHintShown) {
           const hitRightSub =
             rawT > maxAllowed + 0.004 && maxAllowed < singleTierBounds.maxAllowed - 1e-6;
@@ -5137,6 +5133,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         }
         let t = Math.max(minAllowed, Math.min(maxAllowed, rawT));
         let snapX: number | null = null;
+        let snapTime: number | null = null;
         let snapMode = false;
         let snapLabel: string | null = null;
         let exactSnapped = false;
@@ -5147,6 +5144,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           if (!dragActive || seq !== moveSeq) return;
           t = Math.max(minAllowed, Math.min(maxAllowed, zt));
           snapMode = true;
+          snapTime = t;
           snapLabel = '已吸附过零';
         } else {
           const hit = resolveSnap({
@@ -5154,6 +5152,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             band: activeBand,
             pointerX: curPt.x,
             fromSpec,
+            coordSpace: tierScale,
+            isAcousticTrack: fromSpec,
             minAllowed,
             maxAllowed,
             allowEndpoints: false,
@@ -5169,7 +5169,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           });
           if (hit) {
             t = hit.t;
-            snapX = hit.x;
+            snapX = getSnapCoordX(hit, tierScale);
+            snapTime = hit.t;
             snapMode = true;
             snapLabel = hit.label;
             exactSnapped = true;
@@ -5185,11 +5186,11 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           : Math.max(minAllowed, Math.min(maxAllowed, Number(t.toFixed(6))));
         latestBand = activeBand;
         latestBandIdx = activeBand.bandIndex;
-        const x = snapX !== null ? snapX : elasticXInBand(activeBand, latestTime);
+        const x = snapX !== null ? snapX : xForTierTime(activeBand, ti, latestTime);
         const linX = activeBand.linearXForTime(latestTime);
         const origInActiveBand =
           origTime >= activeBand.startT - 1e-9 && origTime <= activeBand.endT + 1e-9;
-        const origX = origInActiveBand ? elasticXInBand(activeBand, origTime) : undefined;
+        const origX = origInActiveBand ? xForTierTime(activeBand, ti, origTime) : undefined;
         const origLinearX = origInActiveBand ? activeBand.linearXForTime(origTime) : undefined;
         const loupeVisible = Boolean(audioBuffer && showMicroLoupe);
 
@@ -5204,10 +5205,12 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           y1,
           cursorY: fromSpec ? curPt.y : undefined,
           snapX,
+          snapTime,
           snapMode,
           snapLabel,
           showCompactTag: !loupeVisible,
-          time: latestTime
+          time: latestTime,
+          coordSpace: tierScale
         });
         if (loupeVisible) {
           setLoupeAnchor({
@@ -5221,7 +5224,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       };
 
       if (audioBuffer && showMicroLoupe) {
-        const initX = fromSpec ? band.linearXForTime(origTime) : elasticXInBand(band, origTime);
+        const initX = fromSpec ? band.linearXForTime(origTime) : xForTierTime(band, ti, origTime);
         setLoupeAnchor({
           centerT: origTime,
           anchorX: initX,
@@ -5267,7 +5270,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         setDragPreview(null);
         setLoupeAnchor(null);
         if (commit && Math.abs(latestTime - origTime) > 1e-9) {
-          captureDragAnchor(latestBand, latestBandIdx, latestTime);
+          captureDragAnchor(latestBand, latestBandIdx, latestTime, ti);
           if (
             !moveTierBoundary(ti, origTime, latestTime, shared, {
               coalesce: false,
@@ -5342,9 +5345,10 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         const activeTl = activeBand.tiersLayout[anchorTi];
         if (!activeTl) return;
 
+        const tierScale = fromSpec ? 'linear' : getTierScaleInBand(activeBand, anchorTi);
         const rawT = fromSpec
           ? timeFromLinearX(activeBand, curPt.x)
-          : timeFromElasticX(activeBand, curPt.x);
+          : timeFromTierX(activeBand, anchorTi, curPt.x);
 
         let blockedSide: 'left' | 'right' | null = null;
         let blockerTierIndex: number | null = null;
@@ -5387,6 +5391,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           edgeSnapVisual = {
             x: elasticXInBand(activeBand, t),
             linX: activeBand.linearXForTime(t),
+            t,
             label: '已吸附过零'
           };
         } else if (!blockedSide) {
@@ -5395,6 +5400,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             band: activeBand,
             pointerX: curPt.x,
             fromSpec,
+            coordSpace: tierScale,
+            isAcousticTrack: fromSpec,
             minAllowed: dragMin,
             maxAllowed: dragMax,
             allowEndpoints: true,
@@ -5431,10 +5438,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         const newXmax = side === 'right' ? latestEdgeT : block.xmax;
         const clampedXmin = Math.max(activeBand.startT, Math.min(activeBand.endT, newXmin));
         const clampedXmax = Math.max(activeBand.startT, Math.min(activeBand.endT, newXmax));
-        const x0 =
-          side === 'left' && edgeSnapVisual ? edgeSnapVisual.x : elasticXInBand(activeBand, clampedXmin);
-        const x1 =
-          side === 'right' && edgeSnapVisual ? edgeSnapVisual.x : elasticXInBand(activeBand, clampedXmax);
+        const x0 = xForTierTime(activeBand, anchorTi, clampedXmin);
+        const x1 = xForTierTime(activeBand, anchorTi, clampedXmax);
         const linX0 =
           side === 'left' && edgeSnapVisual
             ? edgeSnapVisual.linX
@@ -5532,7 +5537,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         if (commit && Math.abs(latestEdgeT - origEdgeT) > 1e-9) {
           const newXmin = side === 'left' ? latestEdgeT : block.xmin;
           const newXmax = side === 'right' ? latestEdgeT : block.xmax;
-          captureDragAnchor(latestBand, latestBandIdx, latestEdgeT);
+          captureDragAnchor(latestBand, latestBandIdx, latestEdgeT, anchorTi);
           const res = transformAlignedBlock(anchorTi, anchorIi, newXmin, newXmax, {
             mode: 'resize',
             bandIndex: latestBandIdx
@@ -5587,7 +5592,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       const startPt = svgPointFromEvent({ clientX: startClientX, clientY: startClientY });
       const startT = fromSpec
         ? timeFromLinearX(band, startPt.x)
-        : timeFromElasticX(band, startPt.x);
+        : timeFromTierX(band, leadUnit.tierIndex, startPt.x);
       const leadOrigEdgeT =
         action === 'left-edge'
           ? leadUnit.xmin
@@ -5625,7 +5630,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
         const curT = fromSpec
           ? timeFromLinearX(activeBand, curPt.x)
-          : timeFromElasticX(activeBand, curPt.x);
+          : timeFromTierX(activeBand, leadUnit.tierIndex, curPt.x);
         const rawDelta = curT - startT;
 
         let blockedSide: 'left' | 'right' | null = null;
@@ -5691,13 +5696,13 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           const interiorXs: number[] = [];
           for (const it of mappedInt) {
             if (it >= activeBand.startT - 1e-9 && it <= activeBand.endT + 1e-9) {
-              interiorXs.push(elasticXInBand(activeBand, it));
+              interiorXs.push(xForTierTime(activeBand, u.tierIndex, it));
             }
           }
           multiUnitPreviews.push({
             tierIndex: u.tierIndex,
-            x0: elasticXInBand(activeBand, cA),
-            x1: elasticXInBand(activeBand, cB),
+            x0: xForTierTime(activeBand, u.tierIndex, cA),
+            x1: xForTierTime(activeBand, u.tierIndex, cB),
             y0: utl.y,
             y1: utl.y + utl.h,
             interiorXs,
@@ -5707,8 +5712,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
         const cLeadA = Math.max(activeBand.startT, Math.min(activeBand.endT, leadNewA));
         const cLeadB = Math.max(activeBand.startT, Math.min(activeBand.endT, leadNewB));
-        const x0 = elasticXInBand(activeBand, cLeadA);
-        const x1 = elasticXInBand(activeBand, cLeadB);
+        const x0 = xForTierTime(activeBand, leadUnit.tierIndex, cLeadA);
+        const x1 = xForTierTime(activeBand, leadUnit.tierIndex, cLeadB);
         const linX0 = activeBand.linearXForTime(cLeadA);
         const linX1 = activeBand.linearXForTime(cLeadB);
 
@@ -5796,7 +5801,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         setIntervalDragPreview(null);
         setLoupeAnchor(null);
         if (commit && Math.abs(latestDelta) > 1e-9) {
-          captureDragAnchor(latestBand, latestBandIdx, leadUnit.xmin + latestDelta);
+          captureDragAnchor(latestBand, latestBandIdx, leadUnit.xmin + latestDelta, leadUnit.tierIndex);
           const ok = syncTransformMultiSelection(action, latestDelta, {
             bandIndex: latestBandIdx,
             silentToast: true
@@ -5848,7 +5853,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       if (safe.maxXmax > block.xmax + 1e-9) blockSlotEdges.push(safe.maxXmax);
 
       const startPt = svgPointFromEvent({ clientX: startClientX, clientY: startClientY });
-      const startDragT = timeFromElasticX(band, startPt.x);
+      const startDragT = timeFromTierX(band, ti, startPt.x);
       let latestXmin = block.xmin;
       let latestXmax = block.xmax;
       let latestBand = band;
@@ -5873,7 +5878,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         const activeTl = activeBand.tiersLayout[ti];
         if (!activeTl) return;
 
-        const dt = timeFromElasticX(activeBand, curPt.x) - startDragT;
+        const tierScale = getTierScaleInBand(activeBand, ti);
+        const dt = timeFromTierX(activeBand, ti, curPt.x) - startDragT;
         const uncXmin = block.xmin + dt;
         const uncXmax = block.xmax + dt;
 
@@ -5933,6 +5939,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               endSnapVisual = {
                 x: elasticXInBand(activeBand, newXmax),
                 linX: activeBand.linearXForTime(newXmax),
+                t: newXmax,
                 label: '已吸附过零'
               };
             } else {
@@ -5940,6 +5947,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               startSnapVisual = {
                 x: elasticXInBand(activeBand, newXmin),
                 linX: activeBand.linearXForTime(newXmin),
+                t: newXmin,
                 label: '已吸附过零'
               };
             }
@@ -5949,7 +5957,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               band: activeBand,
               rawXmin: rawNewXmin,
               duration: dur,
-              fromSpec: false,
+              coordSpace: tierScale,
+              isAcousticTrack: false,
               minXmin,
               maxXmax,
               activeTierIndex: ti,
@@ -6004,8 +6013,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
         const clampedXmin = Math.max(activeBand.startT, Math.min(activeBand.endT, latestXmin));
         const clampedXmax = Math.max(activeBand.startT, Math.min(activeBand.endT, latestXmax));
-        const x0 = startSnapVisual ? startSnapVisual.x : elasticXInBand(activeBand, clampedXmin);
-        const x1 = endSnapVisual ? endSnapVisual.x : elasticXInBand(activeBand, clampedXmax);
+        const x0 = xForTierTime(activeBand, ti, clampedXmin);
+        const x1 = xForTierTime(activeBand, ti, clampedXmax);
         const linX0 = startSnapVisual
           ? startSnapVisual.linX
           : activeBand.linearXForTime(clampedXmin);
@@ -6172,6 +6181,20 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       if (inlineTarget) closeInline(true);
       altKeyDownRef.current = e.altKey;
 
+      // VAD preview segment direct click (audition) or Alt+click (exclude/restore false positive)
+      if (vadOverlay?.active && onVadSegmentClick) {
+        const vadHit = (e.target as Element).closest('[data-vad-seg-index]');
+        if (vadHit) {
+          const segIdx = parseInt(vadHit.getAttribute('data-vad-seg-index') || '', 10);
+          if (Number.isFinite(segIdx) && segIdx >= 0) {
+            e.preventDefault();
+            e.stopPropagation();
+            onVadSegmentClick(segIdx, e.altKey);
+            return;
+          }
+        }
+      }
+
       const el = (e.target as Element).closest('[data-role]');
 
       // Format brush (styleBrush) click-to-apply interception
@@ -6273,6 +6296,24 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       const band = layoutRef.current.bands[bandIdx];
       const pt = svgPointFromEvent(e);
 
+      if (role === 'tier-scale-toggle') {
+        e.preventDefault();
+        e.stopPropagation();
+        const ti = parseInt(el.getAttribute('data-tier') || '0', 10);
+        const curScale = band
+          ? getTierScaleInBand(band, ti)
+          : layoutRef.current.tierScales[ti] ?? (scaleMode === 'linear' ? 'linear' : 'elastic');
+        const nextScale = curScale === 'linear' ? 'elastic' : 'linear';
+        setTierScaleMode(ti, nextScale);
+        const tierLabel = formatTierLabel(tg.tiers[ti]?.name, ti);
+        showToast(
+          nextScale === 'linear'
+            ? `${tierLabel}：已设为线性等比 (1:1)`
+            : `${tierLabel}：已设为自适应双尺`
+        );
+        return;
+      }
+
       if (role === 'boundary' && mode === 'edit' && band) {
         e.preventDefault();
         const ti = parseInt(el.getAttribute('data-tier') || '0', 10);
@@ -6361,8 +6402,10 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           const activeTl = activeBand.tiersLayout[ti];
           if (!activeTl) return;
 
-          let t = Math.max(tierMin, Math.min(tierMax, timeFromElasticX(activeBand, curPt.x)));
+          const tierScale = getTierScaleInBand(activeBand, ti);
+          let t = Math.max(tierMin, Math.min(tierMax, timeFromTierX(activeBand, ti, curPt.x)));
           let snapX: number | null = null;
+          let snapTime: number | null = null;
           let snapMode = false;
           let snapLabel: string | null = null;
           let exactSnapped = false;
@@ -6373,13 +6416,15 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             if (!dragActive || seq !== moveSeq) return;
             t = Math.max(tierMin, Math.min(tierMax, zt));
             snapMode = true;
+            snapTime = t;
             snapLabel = '已吸附过零';
           } else {
             const hit = resolveSnap({
               tg,
               band: activeBand,
               pointerX: curPt.x,
-              fromSpec: false,
+              coordSpace: tierScale,
+              isAcousticTrack: false,
               minAllowed: tierMin,
               maxAllowed: tierMax,
               allowEndpoints: true,
@@ -6395,7 +6440,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             });
             if (hit) {
               t = hit.t;
-              snapX = hit.x;
+              snapX = getSnapCoordX(hit, tierScale);
+              snapTime = hit.t;
               snapMode = true;
               snapLabel = hit.label;
               exactSnapped = true;
@@ -6411,10 +6457,10 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             : Math.max(tierMin, Math.min(tierMax, Number(t.toFixed(6))));
           latestBand = activeBand;
           latestBandIdx = activeBand.bandIndex;
-          const x = snapX !== null ? snapX : elasticXInBand(activeBand, latestTime);
+          const x = snapX !== null ? snapX : xForTierTime(activeBand, ti, latestTime);
           const origInActiveBand =
             origPt.number >= activeBand.startT - 1e-9 && origPt.number <= activeBand.endT + 1e-9;
-          const origX = origInActiveBand ? elasticXInBand(activeBand, origPt.number) : undefined;
+          const origX = origInActiveBand ? xForTierTime(activeBand, ti, origPt.number) : undefined;
           const origLinearX = origInActiveBand
             ? activeBand.linearXForTime(origPt.number)
             : undefined;
@@ -6431,10 +6477,12 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             y1: activeTl.y + activeTl.h,
             cursorY: curPt.y,
             snapX,
+            snapTime,
             snapMode,
             snapLabel,
             showCompactTag: !loupeVisible,
-            time: latestTime
+            time: latestTime,
+            coordSpace: tierScale
           });
           if (loupeVisible) {
             setLoupeAnchor({
@@ -6500,7 +6548,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               showToast('目标时刻已存在标点', true);
               return;
             }
-            captureDragAnchor(latestBand, latestBandIdx, latestTime);
+            captureDragAnchor(latestBand, latestBandIdx, latestTime, ti);
             const tierName = formatTierLabel(tier.name, ti);
             const oldT = origPt.number;
             commitTgMutation(
@@ -6569,7 +6617,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               tg,
               band,
               pointerX: pt.x,
-              fromSpec: false,
+              coordSpace: getTierScaleInBand(band, ti),
+              isAcousticTrack: false,
               minAllowed: iv.xmin,
               maxAllowed: iv.xmax,
               allowEndpoints: false,
@@ -6582,7 +6631,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             });
             if (hit) splitSnapT = hit.t;
           }
-          const targetT = splitSnapT !== null ? splitSnapT : timeFromElasticX(band, pt.x);
+          const targetT = splitSnapT !== null ? splitSnapT : timeFromTierX(band, ti, pt.x);
           splitInterval(ti, ii, targetT, { exact: splitSnapT !== null });
           return;
         }
@@ -6729,7 +6778,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               tg,
               band,
               pointerX: pt.x,
-              fromSpec: false,
+              coordSpace: getTierScaleInBand(band, ti),
+              isAcousticTrack: false,
               minAllowed: iv.xmin,
               maxAllowed: iv.xmax,
               allowEndpoints: true,
@@ -6746,7 +6796,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               startSnapped = true;
               startSnapLabel = startHit.label;
             } else {
-              const rawStartT = Math.max(iv.xmin, Math.min(iv.xmax, timeFromElasticX(band, pt.x)));
+              const rawStartT = Math.max(iv.xmin, Math.min(iv.xmax, timeFromTierX(band, ti, pt.x)));
               startT = Math.max(iv.xmin, Math.min(iv.xmax, Number(rawStartT.toFixed(6))));
             }
           }
@@ -6778,7 +6828,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               ? laneY0 + (activeTl.laneHeights?.[activeVi.iv.lane] || activeTl.h)
               : activeTl.y + activeTl.h;
 
-            let endT = Math.max(iv.xmin, Math.min(iv.xmax, timeFromElasticX(activeBand, curPt.x)));
+            const tierScale = getTierScaleInBand(activeBand, ti);
+            let endT = Math.max(iv.xmin, Math.min(iv.xmax, timeFromTierX(activeBand, ti, curPt.x)));
             let endSnapVisual: EdgeSnapVisual | null = null;
             let exactEnd = false;
             let curEndSnapped = false;
@@ -6792,6 +6843,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               endSnapVisual = {
                 x: elasticXInBand(activeBand, endT),
                 linX: activeBand.linearXForTime(endT),
+                t: endT,
                 label: '已吸附过零'
               };
             } else {
@@ -6799,7 +6851,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                 tg,
                 band: activeBand,
                 pointerX: curPt.x,
-                fromSpec: false,
+                coordSpace: tierScale,
+                isAcousticTrack: false,
                 minAllowed: iv.xmin,
                 maxAllowed: iv.xmax,
                 allowEndpoints: true,
@@ -6843,6 +6896,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                 ? {
                     x: elasticXInBand(activeBand, startT),
                     linX: activeBand.linearXForTime(startT),
+                    t: startT,
                     label: startSnapLabel
                   }
                 : null;
@@ -6852,8 +6906,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
             const clampedTStart = Math.max(activeBand.startT, Math.min(activeBand.endT, tStart));
             const clampedTEnd = Math.max(activeBand.startT, Math.min(activeBand.endT, tEnd));
-            const x0 = leftSnap ? leftSnap.x : elasticXInBand(activeBand, clampedTStart);
-            const x1 = rightSnap ? rightSnap.x : elasticXInBand(activeBand, clampedTEnd);
+            const x0 = xForTierTime(activeBand, ti, clampedTStart);
+            const x1 = xForTierTime(activeBand, ti, clampedTEnd);
             const linX0 = leftSnap ? leftSnap.linX : activeBand.linearXForTime(clampedTStart);
             const linX1 = rightSnap ? rightSnap.linX : activeBand.linearXForTime(clampedTEnd);
 
@@ -6943,10 +6997,10 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               // Only flush tiny near-edge residuals when neither side intentionally snapped and Alt is not held
               if (!startSnapped && !endSnapped && !altKeyDownRef.current) {
                 const curBand = layoutRef.current.bands[latestBandIdx] ?? band;
-                const xIvMin = elasticXInBand(curBand, iv.xmin);
-                const xIvMax = elasticXInBand(curBand, iv.xmax);
-                const xT0 = elasticXInBand(curBand, t0);
-                const xT1 = elasticXInBand(curBand, t1);
+                const xIvMin = xForTierTime(curBand, ti, iv.xmin);
+                const xIvMax = xForTierTime(curBand, ti, iv.xmax);
+                const xT0 = xForTierTime(curBand, ti, t0);
+                const xT1 = xForTierTime(curBand, ti, t1);
                 if (
                   t0 - iv.xmin < 0.002 ||
                   (iv.xmin >= curBand.startT - 1e-9 && Math.abs(xT0 - xIvMin) < 3)
@@ -6995,7 +7049,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             if (safe.minXmin < block.xmin - 1e-9) blockSlotEdges.push(safe.minXmin);
             if (safe.maxXmax > block.xmax + 1e-9) blockSlotEdges.push(safe.maxXmax);
 
-            const startDragT = timeFromElasticX(band, pt.x);
+            const startDragT = timeFromTierX(band, ti, pt.x);
             let moved = false;
             let prevBodyCursor = '';
             let latestXmin = block.xmin;
@@ -7017,7 +7071,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               const activeTl = activeBand.tiersLayout[ti];
               if (!activeTl) return;
 
-              const dt = timeFromElasticX(activeBand, curPt.x) - startDragT;
+              const tierScale = getTierScaleInBand(activeBand, ti);
+        const dt = timeFromTierX(activeBand, ti, curPt.x) - startDragT;
               const uncXmin = block.xmin + dt;
               const uncXmax = block.xmax + dt;
 
@@ -7079,6 +7134,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                     endSnapVisual = {
                       x: elasticXInBand(activeBand, newXmax),
                       linX: activeBand.linearXForTime(newXmax),
+                      t: newXmax,
                       label: '已吸附过零'
                     };
                   } else {
@@ -7086,6 +7142,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                     startSnapVisual = {
                       x: elasticXInBand(activeBand, newXmin),
                       linX: activeBand.linearXForTime(newXmin),
+                      t: newXmin,
                       label: '已吸附过零'
                     };
                   }
@@ -7095,7 +7152,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                     band: activeBand,
                     rawXmin: rawNewXmin,
                     duration: dur,
-                    fromSpec: false,
+                    coordSpace: tierScale,
+                    isAcousticTrack: false,
                     minXmin,
                     maxXmax,
                     activeTierIndex: ti,
@@ -7150,8 +7208,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
               const clampedXmin = Math.max(activeBand.startT, Math.min(activeBand.endT, latestXmin));
               const clampedXmax = Math.max(activeBand.startT, Math.min(activeBand.endT, latestXmax));
-              const x0 = startSnapVisual ? startSnapVisual.x : elasticXInBand(activeBand, clampedXmin);
-              const x1 = endSnapVisual ? endSnapVisual.x : elasticXInBand(activeBand, clampedXmax);
+              const x0 = xForTierTime(activeBand, ti, clampedXmin);
+              const x1 = xForTierTime(activeBand, ti, clampedXmax);
               const linX0 = startSnapVisual
                 ? startSnapVisual.linX
                 : activeBand.linearXForTime(clampedXmin);
@@ -7269,7 +7327,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                 if (maxXmin <= minXmin + 1e-9) {
                   showToast('两侧相邻区间均为非空，无法跨层平移', true);
                 } else if (Math.abs(latestXmin - block.xmin) > 1e-9) {
-                  captureDragAnchor(latestBand, latestBandIdx, (latestXmin + latestXmax) / 2);
+                  captureDragAnchor(latestBand, latestBandIdx, (latestXmin + latestXmax) / 2, ti);
                   const res = transformAlignedBlock(ti, ii, latestXmin, latestXmax, {
                     mode: 'move',
                     bandIndex: latestBandIdx,
@@ -7344,7 +7402,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         if (prevIsEmpty && prevIv) slotEdges.push(prevIv.xmin);
         if (nextIsEmpty && nextIv) slotEdges.push(nextIv.xmax);
 
-        const startDragT = timeFromElasticX(band, pt.x);
+        const startDragT = timeFromTierX(band, ti, pt.x);
         let moved = false;
         let prevBodyCursor = '';
         let latestXmin = iv.xmin;
@@ -7373,7 +7431,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             ? laneY0 + (activeTl.laneHeights?.[activeVi.iv.lane] || activeTl.h)
             : activeTl.y + activeTl.h;
 
-          const dt = timeFromElasticX(activeBand, curPt.x) - startDragT;
+          const tierScale = getTierScaleInBand(activeBand, ti);
+        const dt = timeFromTierX(activeBand, ti, curPt.x) - startDragT;
           const rawNewXmin = Math.max(minXmin, Math.min(maxXmin, iv.xmin + dt));
           const rawNewXmax = rawNewXmin + dur;
 
@@ -7403,6 +7462,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               endSnapVisual = {
                 x: elasticXInBand(activeBand, newXmax),
                 linX: activeBand.linearXForTime(newXmax),
+                t: newXmax,
                 label: '已吸附过零'
               };
             } else {
@@ -7410,6 +7470,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               startSnapVisual = {
                 x: elasticXInBand(activeBand, newXmin),
                 linX: activeBand.linearXForTime(newXmin),
+                t: newXmin,
                 label: '已吸附过零'
               };
             }
@@ -7419,7 +7480,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               band: activeBand,
               rawXmin: rawNewXmin,
               duration: dur,
-              fromSpec: false,
+              coordSpace: tierScale,
+              isAcousticTrack: false,
               minXmin,
               maxXmax,
               activeTierIndex: ti,
@@ -7467,8 +7529,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
           const clampedXmin = Math.max(activeBand.startT, Math.min(activeBand.endT, latestXmin));
           const clampedXmax = Math.max(activeBand.startT, Math.min(activeBand.endT, latestXmax));
-          const x0 = startSnapVisual ? startSnapVisual.x : elasticXInBand(activeBand, clampedXmin);
-          const x1 = endSnapVisual ? endSnapVisual.x : elasticXInBand(activeBand, clampedXmax);
+          const x0 = xForTierTime(activeBand, ti, clampedXmin);
+          const x1 = xForTierTime(activeBand, ti, clampedXmax);
           const linX0 = startSnapVisual ? startSnapVisual.linX : activeBand.linearXForTime(clampedXmin);
           const linX1 = endSnapVisual ? endSnapVisual.linX : activeBand.linearXForTime(clampedXmax);
 
@@ -7575,7 +7637,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             const finalXmin = dropPrev && prevIv ? prevIv.xmin : latestXmin;
             const finalXmax = dropNext && nextIv ? nextIv.xmax : latestXmax;
 
-            captureDragAnchor(latestBand, latestBandIdx, (finalXmin + finalXmax) / 2);
+            captureDragAnchor(latestBand, latestBandIdx, (finalXmin + finalXmax) / 2, ti);
             const nextSel: EditorSelection = {
               kind: 'interval',
               tierIndex: ti,
@@ -7676,7 +7738,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             tg,
             band,
             pointerX: pt.x,
-            fromSpec: false,
+            coordSpace: getTierScaleInBand(band, ti),
+            isAcousticTrack: false,
             minAllowed: Math.max(tier.xmin, band.startT),
             maxAllowed: Math.min(tier.xmax, band.endT),
             allowEndpoints: true,
@@ -7689,7 +7752,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           });
           if (hit) snapT = hit.t;
         }
-        const targetT = snapT !== null ? snapT : timeFromElasticX(band, pt.x);
+        const targetT = snapT !== null ? snapT : timeFromTierX(band, ti, pt.x);
         const idx = addPointAt(ti, targetT, { exact: snapT !== null });
         if (idx !== null) {
           maybeAutoOpenInspector();
@@ -8021,6 +8084,22 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               action: () => setViewDomain(null)
             },
             { divider: true },
+            ...(onOpenVad
+              ? [
+                  {
+                    label: hasRange && playRange
+                      ? '在选区内检测语音 (VAD)…'
+                      : '全录音语音检测 (VAD)…',
+                    icon: 'vadDetect' as IconName,
+                    shortcut: hint('toggle-vad-panel'),
+                    action: () =>
+                      hasRange && playRange
+                        ? onOpenVad({ scopeMode: 'range', range: playRange })
+                        : onOpenVad({ scopeMode: 'all' })
+                  },
+                  { divider: true } as ContextMenuItem
+                ]
+              : []),
             {
               label: '导出此段插图…',
               icon: 'export',
@@ -8088,7 +8167,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                       tg,
                       band,
                       pointerX: pt.x,
-                      fromSpec: false,
+                      coordSpace: getTierScaleInBand(band, ti),
+                      isAcousticTrack: false,
                       minAllowed: iv.xmin,
                       maxAllowed: iv.xmax,
                       allowEndpoints: false,
@@ -8103,7 +8183,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               const splitTargetT = splitSnap
                 ? splitSnap.t
                 : band
-                  ? Number(timeFromElasticX(band, pt.x).toFixed(6))
+                  ? Number(timeFromTierX(band, ti, pt.x).toFixed(6))
                   : NaN;
               const canCreateFromRange = Boolean(
                 iv.text === '' &&
@@ -8182,6 +8262,21 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                   action: () => splitInterval(ti, ii, splitTargetT, { exact: Boolean(splitSnap) })
                 },
                 { label: '从正中切分', icon: 'split', shortcut: hint('split-mid'), disabled: iv.xmax <= iv.xmin, action: () => splitInterval(ti, ii) },
+                ...(onOpenVad && iv.xmax > iv.xmin && (iv.text.trim() === '' || iv.xmax - iv.xmin >= 0.4)
+                  ? [
+                      {
+                        label: '区间内语音检测 (VAD)…',
+                        icon: 'vadDetect' as IconName,
+                        action: () =>
+                          onOpenVad({
+                            scopeMode: 'interval',
+                            writeMode: 'split-interval',
+                            tierIndex: ti,
+                            itemIndex: ii
+                          })
+                      }
+                    ]
+                  : []),
                 ...(smartPlan.primary
                   ? [
                       {
@@ -8473,7 +8568,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                   tg,
                   band,
                   pointerX: pt.x,
-                  fromSpec: false,
+                  coordSpace: getTierScaleInBand(band, ti),
+                  isAcousticTrack: false,
                   minAllowed: Math.max(tier.xmin, band.startT),
                   maxAllowed: Math.min(tier.xmax, band.endT),
                   allowEndpoints: true,
@@ -8488,7 +8584,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           const clickT = wireSnap
             ? wireSnap.t
             : band
-              ? Number(timeFromElasticX(band, pt.x).toFixed(6))
+              ? Number(timeFromTierX(band, ti, pt.x).toFixed(6))
               : 0;
           if (isEdit) {
             items.push({
@@ -8556,10 +8652,39 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         } else if (role === 'tier-header') {
           const ti = parseInt(target.getAttribute('data-tier') || '0', 10);
           const tier = tg.tiers[ti];
+          const curTierScale = band
+            ? getTierScaleInBand(band, ti)
+            : layout.tierScales[ti] ?? (scaleMode === 'linear' ? 'linear' : 'elastic');
+          const tierScaleSubmenu: ContextMenuItem = {
+            label: '时间比例',
+            icon: 'toggleScale',
+            children: [
+              {
+                label: '线性等比 (1:1)',
+                badge: curTierScale === 'linear' ? '当前' : undefined,
+                action: () => setTierScaleMode(ti, 'linear')
+              },
+              {
+                label: '自适应双尺',
+                badge: curTierScale === 'elastic' ? '当前' : undefined,
+                action: () => setTierScaleMode(ti, 'elastic')
+              },
+              ...(tg.tiers.length >= 2
+                ? [
+                    { divider: true } as ContextMenuItem,
+                    {
+                      label: '智能分配全部层级',
+                      action: () => applySmartMixedScale()
+                    }
+                  ]
+                : [])
+            ]
+          };
           if (isEdit && tier) {
             setSelection({ kind: 'tier', tierIndex: ti, bandIndex: bandIdx });
             items.push(
               { label: '重命名层', icon: 'edit', shortcut: '双击', action: () => openInline({ kind: 'tier-name', tierIndex: ti }) },
+              tierScaleSubmenu,
               { label: '上移一层', icon: 'up', disabled: ti === 0, action: () => moveTier(ti, -1) },
               { label: '下移一层', icon: 'down', disabled: ti >= tg.tiers.length - 1, action: () => moveTier(ti, 1) },
               { divider: true },
@@ -8596,6 +8721,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             );
           } else if (tier) {
             items.push(
+              tierScaleSubmenu,
               { label: '复制层名', icon: 'copy', disabled: !tier.name, action: () => copyText(tier.name, '层名') },
               { label: '隐藏此层', icon: 'hideTier', action: () => toggleTierVisibility(ti) },
               { divider: true },
@@ -9145,6 +9271,28 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         }}
       >
         {topBanner}
+        {vadBanner && (
+          <div className="vad-stage-banner" role="status" aria-live="polite">
+            <div className="vad-stage-banner-left">
+              <span className="vad-stage-banner-dot" aria-hidden="true" />
+              <span className="vad-stage-banner-text">
+                {vadBanner.extracting
+                  ? `VAD 预览 · 正在分析声学特征（已检出 ${vadBanner.keptCount} 段）`
+                  : `VAD 预览 · 检出 ${vadBanner.keptCount} 个有声段（总 ${vadBanner.speechDurSec.toFixed(1)}s / 占比 ${vadBanner.ratioPct}%）`}
+              </span>
+              <span className="vad-stage-banner-hint">单击预览段试听 · Alt+单击剔除</span>
+            </div>
+            <div className="vad-stage-banner-actions">
+              <button
+                type="button"
+                className="vad-stage-banner-btn"
+                onClick={() => onCloseVad?.()}
+              >
+                退出 Esc
+              </button>
+            </div>
+          </div>
+        )}
         {styleBrush && (
           <div className="fb-brush-banner" role="status" aria-live="polite">
             <span className="fb-brush-banner-dot" aria-hidden="true" />
@@ -9190,7 +9338,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             </button>
           </div>
         )}
-        {showBlankQuickStart && activeTab && (
+        {showBlankQuickStart && activeTab && !vadBanner && (
           <div className="blank-quickstart-strip" role="status">
             <div className="blank-quickstart-content">
               <span>
@@ -9198,21 +9346,65 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                 <kbd>{getEffectiveShortcutHint('shortcuts-modal', customShortcuts) || '?'}</kbd> 查看快捷键
               </span>
             </div>
-            <button
-              type="button"
-              className="blank-quickstart-dismiss"
-              onClick={() =>
-                setDismissedBlankTabIds((prev) => {
-                  const next = new Set(prev);
-                  next.add(activeTab.id);
-                  return next;
-                })
-              }
-            >
-              知道了
-            </button>
+            <div className="blank-quickstart-actions">
+              {Boolean(audioName && audioBuffer) &&
+                onOpenVad &&
+                tg.tiers.length === 1 &&
+                tg.tiers[0].kind === 'intervalTier' &&
+                tg.tiers[0].intervals.length === 1 &&
+                tg.tiers[0].intervals[0].text.trim() === '' && (
+                  <button
+                    type="button"
+                    className="blank-quickstart-vad-btn"
+                    onClick={() => onOpenVad({ scopeMode: 'all' })}
+                  >
+                    <UiIcon name="vadDetect" size={13} />
+                    <span>自动检测语音段 (VAD)</span>
+                  </button>
+                )}
+              <button
+                type="button"
+                className="blank-quickstart-dismiss"
+                onClick={() =>
+                  setDismissedBlankTabIds((prev) => {
+                    const next = new Set(prev);
+                    next.add(activeTab.id);
+                    return next;
+                  })
+                }
+              >
+                知道了
+              </button>
+            </div>
           </div>
         )}
+
+        {layout.maxTransitionNecks >= 2 &&
+          dismissedNeckBannerSig !== `${activeTabId}:${layout.tierScales.join(',')}` && (
+            <div className="mixed-neck-banner" role="status" aria-live="polite">
+              <span className="mixed-neck-banner-text">
+                当前谱面有 {layout.maxTransitionNecks} 条线性与双尺交替过渡带，将线性层归拢至上方可减少斜向折返。
+              </span>
+              <button
+                type="button"
+                className="mixed-neck-banner-btn"
+                onClick={() => groupLinearTiersOnTop()}
+              >
+                线性层归拢至上方
+              </button>
+              <button
+                type="button"
+                className="mixed-neck-banner-dismiss"
+                title="收起提示"
+                aria-label="收起多过渡带提示"
+                onClick={() =>
+                  setDismissedNeckBannerSig(`${activeTabId}:${layout.tierScales.join(',')}`)
+                }
+              >
+                ×
+              </button>
+            </div>
+          )}
 
         <main
           ref={stageRef}
@@ -9480,6 +9672,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             onClearScrubPreview={clearScrubPreview}
             onRunSmartSplit={runSmartSplit}
             onOpenSplitModal={handleOpenSplitModalFromFloating}
+            onOpenVad={onOpenVad}
           />
         )}
 

@@ -1273,7 +1273,17 @@ export function clearAllStyles(
   options?: { keepPalette?: boolean }
 ): StyleDocument {
   const paletteId = options?.keepPalette ? doc.paletteId : DEFAULT_PALETTE_ID;
-  return createDefaultStyleDocument(paletteId);
+  const fresh = createDefaultStyleDocument(paletteId);
+  // Preserve independent layoutPrefs (scaleMode & per-tier linear/elastic overrides) when clearing visual styles
+  if (doc.layoutPrefs) {
+    fresh.layoutPrefs = {
+      ...(doc.layoutPrefs.scaleMode ? { scaleMode: doc.layoutPrefs.scaleMode } : {}),
+      ...(doc.layoutPrefs.tierScaleOverrides
+        ? { tierScaleOverrides: { ...doc.layoutPrefs.tierScaleOverrides } }
+        : {})
+    };
+  }
+  return fresh;
 }
 
 export function applyStyleToSameTextIntervals(

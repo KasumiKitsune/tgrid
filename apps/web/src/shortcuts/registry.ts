@@ -229,6 +229,14 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         scope: 'edit'
       },
       {
+        id: 'toggle-vad-panel',
+        keys: ['Alt+V'],
+        label: '打开 / 关闭语音切分 (VAD) 面板',
+        description: '实时预览并调节静音切分边界，预览态下按 Enter 写入、Esc 退出',
+        icon: 'vadDetect',
+        scope: 'edit'
+      },
+      {
         id: 'add-point-playhead',
         keys: ['P'],
         label: '在播放头时刻向活跃点层添加标点',

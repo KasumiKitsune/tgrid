@@ -378,3 +378,74 @@ pub fn session_zero_crossing(
         analysis.find_nearest_zero_crossing(t, max_window_sec)
     })
 }
+
+/// Clamped padded mono PCM window sliced directly from an active session's `AudioAnalysis.raw`.
+#[derive(Debug, Clone)]
+pub struct SessionPcmWindow {
+    pub samples: Vec<f32>,
+    pub sample_rate: u32,
+    pub pad_origin_sec: f64,
+    pub start_sec: f64,
+    pub end_sec: f64,
+    pub duration_sec: f64,
+}
+
+/// Extract a padded mono PCM slice for audio-relative `[start_sec, end_sec]` from an active session.
+/// Copies only the requested chunk window and immediately releases the session mutex so concurrent
+/// spectrogram/waveform requests are never blocked during neural inference.
+pub fn session_pcm_window(
+    session_id: u32,
+    start_sec: f64,
+    end_sec: f64,
+    pad_sec: f64,
+) -> Result<SessionPcmWindow, DspError> {
+    with_session(session_id, |analysis| {
+        let sr = analysis.sample_rate;
+        let len = analysis.raw.len();
+        if sr == 0 || len == 0 {
+            return SessionPcmWindow {
+                samples: Vec::new(),
+                sample_rate: sr,
+                pad_origin_sec: 0.0,
+                start_sec: 0.0,
+                end_sec: 0.0,
+                duration_sec: 0.0,
+            };
+        }
+        let fs = sr as f64;
+        let duration_sec = (len as f64) / fs;
+        let s0 = if start_sec.is_finite() {
+            start_sec.clamp(0.0, duration_sec)
+        } else {
+            0.0
+        };
+        let s1 = if end_sec.is_finite() {
+            end_sec.clamp(s0, duration_sec)
+        } else {
+            duration_sec
+        };
+        let pad = if pad_sec.is_finite() && pad_sec > 0.0 {
+            pad_sec
+        } else {
+            0.0
+        };
+        let pad_l = (s0 - pad).max(0.0);
+        let pad_r = (s1 + pad).min(duration_sec);
+        let lo = ((pad_l * fs).floor() as usize).min(len);
+        let hi = ((pad_r * fs).ceil() as usize).min(len);
+        let pad_origin_sec = (lo as f64) / fs;
+        let samples = if hi > lo {
+            analysis.raw[lo..hi].to_vec()
+        } else {
+            Vec::new()
+        };
+        SessionPcmWindow {
+            samples,
+            sample_rate: sr,
+            pad_origin_sec,
+            start_sec: s0,
+            end_sec: s1,
+            duration_sec,
+        }
+    })
+}

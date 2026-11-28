@@ -227,8 +227,8 @@ export const TransportBar: React.FC<TransportBarProps> = ({
           aria-label="时间比例模式"
           title={
             scaleToggleHint
-              ? `切换时间比例模式：自适应 / 线性 (${scaleToggleHint})`
-              : '切换时间比例模式：自适应 / 线性'
+              ? `切换时间比例模式：自适应 / 混合 / 线性 (${scaleToggleHint})`
+              : '切换时间比例模式：自适应 / 混合 / 线性'
           }
         >
           <button
@@ -237,13 +237,22 @@ export const TransportBar: React.FC<TransportBarProps> = ({
             aria-pressed={scaleMode === 'elastic'}
             title={
               scaleToggleHint
-                ? `自适应宽度：短音段按字宽展开，≥0.5s 静音同步折叠 (${scaleToggleHint} 快速切换)`
-                : '自适应宽度：短音段按字宽展开，≥0.5s 静音同步折叠'
+                ? `自适应双尺：全部层级按文字宽度展开，≥0.5s 静音同步折叠 (${scaleToggleHint} 快速切换)`
+                : '自适应双尺：全部层级按文字宽度展开，≥0.5s 静音同步折叠'
             }
             onClick={() => setScaleMode('elastic')}
           >
             <UiIcon name="toggleScale" size={13} />
             <span>自适应</span>
+          </button>
+          <button
+            type="button"
+            className={`compact ${scaleMode === 'mixed' ? 'active' : ''}`}
+            aria-pressed={scaleMode === 'mixed'}
+            title="混合比例：按层独立选择线性 (1:1) 或自适应双尺，长静音同步折叠"
+            onClick={() => setScaleMode('mixed')}
+          >
+            <span>混合</span>
           </button>
           <button
             type="button"

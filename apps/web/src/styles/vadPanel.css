@@ -1,0 +1,719 @@
+/* ============================================================================
+   T·Grid Voice Activity Detection (VAD) Right Sidebar Panel
+   Paper / Ink Precision Aesthetic · Zero border-radius · 240-460px safe
+   ============================================================================ */
+
+.vad-panel {
+  --vad-teal: var(--accent-blue, #2563EB);
+  --vad-teal-dark: #1D4ED8;
+  --vad-teal-soft: #EEF4FF;
+  --vad-teal-border: #BFDBFE;
+
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-bar);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.vad-panel *,
+.vad-panel *::before,
+.vad-panel *::after {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.vad-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Cards */
+.vad-card {
+  background: var(--bg-sheet);
+  border: 1px solid var(--rule);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.vad-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.vad-card-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: 0.01em;
+}
+
+.vad-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 5px;
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-muted);
+  background: var(--bg-subtle);
+  border: 1px solid var(--rule);
+  white-space: nowrap;
+}
+
+.vad-badge.is-teal {
+  color: var(--vad-teal-dark);
+  background: var(--vad-teal-soft);
+  border-color: var(--vad-teal-border);
+}
+
+/* Segmented controls */
+.vad-seg-group {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  border: 1px solid var(--rule);
+  background: var(--bg-subtle);
+}
+
+.vad-panel button.vad-seg-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 6px;
+  border: none;
+  border-right: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink-muted);
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms var(--ease), color 120ms var(--ease);
+}
+
+.vad-panel button.vad-seg-btn:last-child {
+  border-right: none;
+}
+
+.vad-panel button.vad-seg-btn:hover:not(:disabled):not(.is-active) {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+
+.vad-panel button.vad-seg-btn.is-active {
+  background: var(--bg-sheet);
+  color: var(--vad-teal-dark);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 0 var(--vad-teal);
+}
+
+.vad-panel button.vad-seg-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.vad-scope-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10.5px;
+  color: var(--ink-muted);
+}
+
+/* Progress banner */
+.vad-progress-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--vad-teal-soft);
+  border: 1px solid var(--vad-teal-border);
+}
+
+.vad-progress-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.vad-progress-text {
+  font-size: 11.5px;
+  color: var(--vad-teal-dark);
+  font-weight: 500;
+}
+
+.vad-progress-track {
+  height: 4px;
+  width: 100%;
+  background: rgba(13, 148, 136, 0.16);
+  overflow: hidden;
+}
+
+.vad-progress-fill {
+  height: 100%;
+  background: var(--vad-teal);
+  transition: width 160ms var(--ease);
+}
+
+.vad-panel button.vad-inline-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--rule);
+  background: var(--bg-sheet);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 120ms var(--ease), border-color 120ms var(--ease);
+}
+
+.vad-panel button.vad-inline-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--rule-hover);
+}
+
+.vad-panel button.vad-inline-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Sliders */
+.vad-slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vad-slider-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.vad-slider-label {
+  font-size: 11.5px;
+  color: var(--ink);
+}
+
+.vad-slider-val {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.vad-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--bg-active);
+  outline: none;
+  cursor: pointer;
+  margin: 4px 0;
+}
+
+.vad-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 11px;
+  height: 14px;
+  background: var(--bg-sheet);
+  border: 1.5px solid var(--vad-teal-dark);
+  cursor: pointer;
+  transition: background-color 120ms var(--ease), transform 100ms var(--ease);
+}
+
+.vad-range::-webkit-slider-thumb:hover {
+  background: var(--vad-teal);
+  border-color: var(--vad-teal-dark);
+}
+
+.vad-range::-moz-range-thumb {
+  width: 11px;
+  height: 14px;
+  background: var(--bg-sheet);
+  border: 1.5px solid var(--vad-teal-dark);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.vad-range:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Form rows */
+.vad-field-row {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.vad-field-label {
+  font-size: 11.5px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.vad-text-input {
+  width: 100%;
+  height: 26px;
+  padding: 0 7px;
+  background: var(--bg-sheet);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 120ms var(--ease);
+}
+
+.vad-text-input:hover {
+  border-color: var(--rule-hover);
+}
+
+.vad-text-input:focus {
+  border-color: var(--vad-teal-dark);
+}
+
+.vad-dual-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.vad-mini-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.vad-mini-label {
+  font-size: 10.5px;
+  color: var(--ink-muted);
+}
+
+/* Amber overwrite warning */
+.vad-warn-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 7px 8px;
+  background: var(--accent-amber-soft);
+  border: 1px solid #FCD34D;
+  color: var(--accent-amber);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.vad-warn-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* Collapsible overrides inside VAD panel */
+.vad-panel .sb-acc {
+  background: var(--bg-sheet);
+  border: 1px solid var(--rule);
+  margin: 0;
+}
+
+.vad-panel .sb-acc-body {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 8px 10px 10px;
+}
+
+/* Segment list */
+.vad-seg-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.vad-seg-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--rule);
+  background: var(--bg-bar);
+  max-height: 210px;
+  overflow-y: auto;
+}
+
+.vad-seg-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg-sheet);
+  cursor: pointer;
+  transition: background-color 100ms var(--ease);
+}
+
+.vad-seg-row:last-child {
+  border-bottom: none;
+}
+
+.vad-seg-row:hover {
+  background: var(--bg-hover);
+}
+
+.vad-seg-row.is-active {
+  background: var(--vad-teal-soft);
+  box-shadow: inset 2px 0 0 0 var(--vad-teal);
+}
+
+.vad-seg-row.is-excluded {
+  background: var(--bg-subtle);
+  color: var(--ink-faint);
+}
+
+.vad-seg-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--vad-teal-dark);
+  min-width: 22px;
+}
+
+.vad-seg-row.is-excluded .vad-seg-num {
+  color: var(--ink-faint);
+  text-decoration: line-through;
+}
+
+.vad-seg-span {
+  flex: 1 1 auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vad-seg-row.is-excluded .vad-seg-span {
+  color: var(--ink-faint);
+  text-decoration: line-through;
+}
+
+.vad-seg-dur {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10.5px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.vad-panel button.vad-row-icon-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 100ms var(--ease), border-color 100ms var(--ease), color 100ms var(--ease);
+}
+
+.vad-panel button.vad-row-icon-btn:hover {
+  background: var(--bg-sheet);
+  border-color: var(--rule);
+  color: var(--ink);
+}
+
+.vad-panel button.vad-row-icon-btn.is-danger:hover {
+  color: var(--accent-red);
+  border-color: #FECACA;
+  background: var(--accent-red-soft);
+}
+
+.vad-panel button.vad-row-icon-btn.is-restore:hover {
+  color: var(--vad-teal-dark);
+  border-color: var(--vad-teal-border);
+  background: var(--vad-teal-soft);
+}
+
+/* Empty & zero-detection states */
+.vad-empty-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 10px;
+  padding: 24px 14px;
+  background: var(--bg-sheet);
+  border: 1px solid var(--rule);
+}
+
+.vad-empty-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.vad-empty-desc {
+  font-size: 11.5px;
+  color: var(--ink-muted);
+  line-height: 1.45;
+}
+
+.vad-zero-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--bg-subtle);
+  border: 1px dashed var(--rule-hover);
+}
+
+.vad-zero-title {
+  font-size: 11.5px;
+  color: var(--ink-muted);
+}
+
+.vad-zero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Error notice */
+.vad-error-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 7px 8px;
+  background: var(--accent-red-soft);
+  border: 1px solid #FECACA;
+  color: var(--accent-red);
+  font-size: 11.5px;
+}
+
+/* Pinned Footer */
+.vad-footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-sheet);
+  border-top: 1px solid var(--rule);
+}
+
+.vad-panel button.vad-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 29px;
+  padding: 0 11px;
+  border: 1px solid var(--rule);
+  background: var(--bg-sheet);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 120ms var(--ease), border-color 120ms var(--ease), color 120ms var(--ease);
+}
+
+.vad-panel button.vad-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--rule-hover);
+}
+
+.vad-panel button.vad-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.vad-panel button.vad-btn-primary {
+  flex: 1 1 auto;
+  background: var(--vad-teal);
+  border-color: var(--vad-teal-dark);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+.vad-panel button.vad-btn-primary:hover:not(:disabled) {
+  background: var(--vad-teal-dark);
+  border-color: #1E40AF;
+  color: #FFFFFF;
+}
+
+.vad-panel button.vad-btn-primary svg,
+button.blank-quickstart-vad-btn svg {
+  --tgi-stroke: #FFFFFF;
+  --tgi-stroke-muted: #FFFFFF;
+  --tgi-stroke-subtle: rgba(255, 255, 255, 0.85);
+  --tgi-stroke-faint: rgba(255, 255, 255, 0.72);
+  --tgi-stroke-hover: #FFFFFF;
+  --tgi-accent: #FFFFFF;
+  --tgi-accent-bg: rgba(255, 255, 255, 0.22);
+}
+
+/* ============================================================================
+   Stage Top 28px Non-Occluding VAD Preview Status Strip
+   ============================================================================ */
+
+.vad-stage-banner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 28px;
+  padding: 2px 12px;
+  background: #EEF4FF;
+  border-bottom: 1px solid #BFDBFE;
+  color: #1E3A8A;
+  font-size: 11.5px;
+  line-height: 1.3;
+  z-index: 25;
+}
+
+.vad-stage-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.vad-stage-banner-dot {
+  width: 7px;
+  height: 7px;
+  background: #2563EB;
+  flex-shrink: 0;
+}
+
+.vad-stage-banner-text {
+  font-weight: 500;
+  color: #1E3A8A;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+.vad-stage-banner-hint {
+  color: #1D4ED8;
+  opacity: 0.78;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.vad-stage-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+button.vad-stage-banner-btn {
+  appearance: none;
+  height: 21px;
+  padding: 0 8px;
+  border: 1px solid #BFDBFE;
+  background: #FFFFFF;
+  color: #1D4ED8;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 120ms var(--ease), border-color 120ms var(--ease), color 120ms var(--ease);
+}
+
+button.vad-stage-banner-btn:hover:not(:disabled) {
+  background: #DBEAFE;
+  border-color: #2563EB;
+  color: #1E3A8A;
+}
+
+button.vad-stage-banner-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Quickstart strip lightweight VAD CTA */
+.blank-quickstart-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+button.blank-quickstart-vad-btn {
+  appearance: none;
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid #1D4ED8;
+  background: #2563EB;
+  color: #FFFFFF;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 120ms var(--ease);
+}
+
+button.blank-quickstart-vad-btn:hover {
+  background: #1D4ED8;
+}

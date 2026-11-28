@@ -19,6 +19,7 @@ export type CorpusSharedStyle = Pick<
   | 'globalPoint'
   | 'tierStyles'
   | 'rules'
+  | 'layoutPrefs'
 >;
 
 export type CorpusItemStyleOverrides = Pick<

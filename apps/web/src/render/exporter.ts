@@ -1,5 +1,13 @@
 import type { AudioAnalysisSummary, PlatformBridge, TextGrid, ZipEntryInput } from '../bridge/types';
-import { computeLayout, type BandLayout, type ScoreLayout } from '../layout/computeLayout';
+import {
+  computeLayout,
+  resolveTierScaleKey,
+  resolveTierScaleMode,
+  type BandLayout,
+  type GlobalScaleMode,
+  type ScoreLayout,
+  type TierScaleMode
+} from '../layout/computeLayout';
 import {
   SVG_NS,
   formatCaptionTimeText,
@@ -29,7 +37,7 @@ import {
   estimateEmbeddedFontBytes,
   injectIpaFontsIntoSvg
 } from '../utils/ipaFontEmbed';
-import { hasAnyCustomStyle } from '../style/palettes';
+import { createDefaultStyleDocument, hasAnyCustomStyle } from '../style/palettes';
 import { propagateStylesOnTierChange } from '../style/reconcileStyle';
 import type { StyleDocument } from '../style/types';
 
@@ -48,9 +56,10 @@ export interface ExportPrefs {
   trigraphMode: 'ipa-only' | 'dual' | 'raw-only';
   hideMetaSymbols: boolean;
   hideStretchCues: boolean;
+  hideScaleBadges: boolean;
   showCaption: boolean;
   showLinearScaleBar: boolean;
-  scaleMode: 'follow' | 'linear' | 'adaptive';
+  scaleMode: 'follow' | 'linear' | 'mixed' | 'adaptive';
   tickPrecision: '2' | '3' | 'full' | 'none';
   tickFixedDecimals: boolean;
   marginPreset: 'tight' | 'standard' | 'wide';
@@ -84,6 +93,7 @@ export const DEFAULT_EXPORT_PREFS: ExportPrefs = {
   trigraphMode: 'ipa-only',
   hideMetaSymbols: true,
   hideStretchCues: false,
+  hideScaleBadges: false,
   showCaption: false,
   showLinearScaleBar: true,
   scaleMode: 'follow',
@@ -333,7 +343,8 @@ export interface ExportSceneInput {
   previewMode: boolean;
   stageWidth: number;
   uiWrapMode: 'auto' | 'single';
-  uiScaleMode: 'elastic' | 'linear';
+  uiScaleMode: GlobalScaleMode;
+  uiTierScaleOverrides?: Record<string, TierScaleMode> | null;
   uiTargetWidth: number;
   uiWidthAutoFit?: boolean;
   viewDomain: { min: number; max: number } | null;
@@ -410,7 +421,7 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
     tMax !== undefined ||
     vtg.tiers.length !== tg.tiers.length ||
     (input.tierIndices.length > 0 && input.tierIndices.some((tierIdx, pos) => tierIdx !== pos));
-  const alignedStyleDoc: StyleDocument | null = input.styleDoc
+  const baseAlignedStyleDoc: StyleDocument | null = input.styleDoc
     ? isSliced && hasAnyCustomStyle(input.styleDoc)
       ? propagateStylesOnTierChange(input.styleDoc, tg, vtg)
       : input.styleDoc
@@ -443,12 +454,30 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
     targetWidth = Math.max(760, Math.min(4600, Math.round(dur * 240)));
   }
 
-  const effectiveScaleMode: 'elastic' | 'linear' =
+  const effectiveScaleMode: GlobalScaleMode =
     prefs.scaleMode === 'follow'
       ? input.uiScaleMode
       : prefs.scaleMode === 'linear'
         ? 'linear'
-        : 'elastic';
+        : prefs.scaleMode === 'mixed'
+          ? 'mixed'
+          : 'elastic';
+
+  // Remap tierScaleOverrides onto the sliced vtg tier order/keys when exporting a subset of tiers
+  const effectiveTierScaleOverrides: Record<string, TierScaleMode> | null =
+    effectiveScaleMode === 'mixed' && input.uiTierScaleOverrides
+      ? (() => {
+          const out: Record<string, TierScaleMode> = {};
+          const srcIndices =
+            input.tierIndices.length > 0 ? input.tierIndices : tg.tiers.map((_, i) => i);
+          for (let newIdx = 0; newIdx < vtg.tiers.length; newIdx++) {
+            const origIdx = srcIndices[newIdx] ?? newIdx;
+            const resolved = resolveTierScaleMode(tg, origIdx, 'mixed', input.uiTierScaleOverrides);
+            out[resolveTierScaleKey(vtg, newIdx)] = resolved;
+          }
+          return out;
+        })()
+      : null;
 
   const specAvailable = Boolean(input.hasAudio && input.showSpectrogram && input.analysis);
   let specStrategy = 'curves-only';
@@ -474,7 +503,10 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
   const fontScale = prefs.presentationBoost ? 1.14 : 1;
   const strokeScale = prefs.presentationBoost ? 1.25 : 1;
   const captionHeight = prefs.showCaption ? 26 : 0;
-  const scaleBarExtraH = prefs.showLinearScaleBar && effectiveScaleMode === 'linear' ? 22 : 0;
+  const scaleBarExtraH =
+    prefs.showLinearScaleBar && (effectiveScaleMode === 'linear' || effectiveScaleMode === 'mixed')
+      ? 22
+      : 0;
 
   // Decouple exported layer opacities from transient editor selection state (P0-2)
   const sc = resolveScreenCueOpacities(input.cueMode, null);
@@ -493,6 +525,7 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
     showSpectrogram: specAvailable,
     tierOrder: input.tierOrder,
     scaleMode: effectiveScaleMode,
+    tierScaleOverrides: effectiveTierScaleOverrides,
     tickPrecision: prefs.tickPrecision,
     tickFixedDecimals: prefs.tickFixedDecimals,
     viewDomain: null,
@@ -601,6 +634,19 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
     }
   }
 
+  const exportStyleDoc: StyleDocument | null =
+    prefs.format === 'svg' && input.embedProjectMetadata
+      ? {
+          ...(baseAlignedStyleDoc ?? createDefaultStyleDocument()),
+          layoutPrefs: {
+            scaleMode: effectiveScaleMode,
+            ...(effectiveTierScaleOverrides && Object.keys(effectiveTierScaleOverrides).length > 0
+              ? { tierScaleOverrides: effectiveTierScaleOverrides }
+              : {})
+          }
+        }
+      : baseAlignedStyleDoc;
+
   const offSvg = document.createElementNS(SVG_NS, 'svg') as SVGSVGElement;
   offSvg.setAttribute('xmlns', SVG_NS);
 
@@ -619,7 +665,7 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
     currentTime: 0,
     showPlayhead: false,
     dragPreview: null,
-    styleDoc: alignedStyleDoc,
+    styleDoc: exportStyleDoc,
     exportCtx: {
       palette: getExportPalette(prefs.palette),
       transparentBg: prefs.transparentBg,
@@ -632,6 +678,7 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
       trigraphMode: prefs.trigraphMode,
       hideMetaSymbols: prefs.hideMetaSymbols,
       hideStretchCues: prefs.hideStretchCues,
+      hideScaleBadges: prefs.hideScaleBadges,
       legendMode: prefs.legendMode,
       legendLang: prefs.legendLang,
       showCaption: prefs.showCaption,

@@ -42,6 +42,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
   const filename = useEditorStore((s) => s.filename);
   const wrapMode = useEditorStore((s) => s.wrapMode);
   const scaleMode = useEditorStore((s) => s.scaleMode);
+  const tierScaleOverrides = useEditorStore((s) => s.tierScaleOverrides);
   const targetWidth = useEditorStore((s) => s.targetWidth);
   const widthAutoFit = useEditorStore((s) => s.widthAutoFit);
   const tickPrecision = useEditorStore((s) => s.tickPrecision);
@@ -193,6 +194,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
       stageWidth: Math.max(320, window.innerWidth - 56),
       uiWrapMode: wrapMode,
       uiScaleMode: scaleMode,
+      uiTierScaleOverrides: tierScaleOverrides,
       uiTargetWidth: targetWidth,
       uiWidthAutoFit: widthAutoFit,
       viewDomain,
@@ -219,6 +221,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
       selectedTiers,
       wrapMode,
       scaleMode,
+      tierScaleOverrides,
       targetWidth,
       widthAutoFit,
       viewDomain,
@@ -1042,6 +1045,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
                       <label className="export-check">
                         <input
                           type="checkbox"
+                          checked={prefs.hideScaleBadges}
+                          onChange={(e) => updatePrefs({ hideScaleBadges: e.target.checked })}
+                        />
+                        <span>隐藏混合模式 1:1 层标</span>
+                      </label>
+                      <label className="export-check">
+                        <input
+                          type="checkbox"
                           checked={prefs.showCaption}
                           onChange={(e) => updatePrefs({ showCaption: e.target.checked })}
                         />
@@ -1066,8 +1077,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
                         {(
                           [
                             ['follow', '跟随界面'],
-                            ['linear', '线性对齐'],
-                            ['adaptive', '自适应宽度']
+                            ['linear', '线性'],
+                            ['mixed', '混合'],
+                            ['adaptive', '自适应']
                           ] as const
                         ).map(([val, lbl]) => (
                           <button

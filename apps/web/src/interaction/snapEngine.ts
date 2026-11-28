@@ -1,10 +1,11 @@
-import type { AcousticSnapPeak, TextGrid } from '../bridge/types';
+import type { AcousticSnapPeak, TextGrid } from '../bridge/types.ts';
 import {
   elasticXInBand,
   timeFromElasticX,
   timeFromLinearX,
-  type BandLayout
-} from '../layout/computeLayout';
+  type BandLayout,
+  type TierScaleMode
+} from '../layout/computeLayout.ts';
 
 export type SnapTargetKind =
   | 'cross-tier-boundary'
@@ -30,7 +31,12 @@ export interface SnapContext {
   tg: TextGrid;
   band: BandLayout;
   pointerX: number;
-  fromSpec: boolean;
+  /** Coordinate space of the active drag surface ('linear' | 'elastic'). Falls back to `fromSpec` if omitted. */
+  coordSpace?: TierScaleMode;
+  /** True when dragging directly on the acoustic spectrogram / waveform track. Falls back to `fromSpec`. */
+  isAcousticTrack?: boolean;
+  /** Legacy flag preserved for backward compatibility (`true` => linear acoustic track). */
+  fromSpec?: boolean;
   minAllowed: number;
   maxAllowed: number;
   allowEndpoints?: boolean;
@@ -52,7 +58,9 @@ export interface DualEdgeSnapContext {
   band: BandLayout;
   rawXmin: number;
   duration: number;
-  fromSpec: boolean;
+  coordSpace?: TierScaleMode;
+  isAcousticTrack?: boolean;
+  fromSpec?: boolean;
   minXmin: number;
   maxXmax: number;
   activeTierIndex?: number;
@@ -66,6 +74,20 @@ export interface DualEdgeSnapContext {
   stickyStartTime?: number | null;
   stickyEndTime?: number | null;
   hiddenTierIndices?: number[];
+}
+
+export function getSnapCoordX(snap: Pick<SnapResult, 'x' | 'linX'>, coordSpace: TierScaleMode): number {
+  return coordSpace === 'linear' ? snap.linX : snap.x;
+}
+
+function resolveSnapSpace(ctx: {
+  coordSpace?: TierScaleMode;
+  isAcousticTrack?: boolean;
+  fromSpec?: boolean;
+}): { isLinearSpace: boolean; isAcoustic: boolean } {
+  const isAcoustic = ctx.isAcousticTrack ?? Boolean(ctx.fromSpec);
+  const isLinearSpace = ctx.coordSpace ? ctx.coordSpace === 'linear' : isAcoustic;
+  return { isLinearSpace, isAcoustic };
 }
 
 export interface DualEdgeSnapResult {
@@ -106,8 +128,9 @@ function resolveAcousticPeakSnap(
   const peaks = ctx.acousticPeaks;
   if (!peaks || peaks.length === 0 || ctx.bypassAlt) return null;
 
-  const { band, pointerX, fromSpec } = ctx;
-  const cursorT = fromSpec
+  const { band, pointerX } = ctx;
+  const { isLinearSpace, isAcoustic } = resolveSnapSpace(ctx);
+  const cursorT = isLinearSpace
     ? timeFromLinearX(band, pointerX)
     : timeFromElasticX(band, pointerX);
   if (!Number.isFinite(cursorT)) return null;
@@ -124,7 +147,7 @@ function resolveAcousticPeakSnap(
     else hi = mid;
   }
 
-  const baseTol = fromSpec ? 8.5 : 9.5;
+  const baseTol = isAcoustic ? 8.5 : isLinearSpace ? 9.0 : 9.5;
   let bestPeak: AcousticSnapPeak | null = null;
   let bestDistPx = Infinity;
   let bestX = 0;
@@ -138,7 +161,7 @@ function resolveAcousticPeakSnap(
 
     const x = elasticXInBand(band, p.timeSec);
     const linX = band.linearXForTime(p.timeSec);
-    const targetX = fromSpec ? linX : x;
+    const targetX = isLinearSpace ? linX : x;
     const distPx = Math.abs(pointerX - targetX);
     const isSticky =
       ctx.stickyTime != null && Math.abs(p.timeSec - ctx.stickyTime) <= 1e-6;
@@ -184,7 +207,8 @@ function formatTierNamesLabel(names: string[], suffix = ''): string {
 export function resolveSnap(ctx: SnapContext): SnapResult | null {
   if (ctx.bypassAlt) return null;
 
-  const { tg, band, pointerX, fromSpec, minAllowed, maxAllowed, allowEndpoints = false } = ctx;
+  const { tg, band, pointerX, minAllowed, maxAllowed, allowEndpoints = false } = ctx;
+  const { isLinearSpace, isAcoustic } = resolveSnapSpace(ctx);
   const hiddenSet = new Set(ctx.hiddenTierIndices ?? []);
   const allHidden = tg.tiers.length > 0 && tg.tiers.every((_, i) => hiddenSet.has(i));
   const isTierVisible = (ti: number) => allHidden || !hiddenSet.has(ti);
@@ -355,7 +379,7 @@ export function resolveSnap(ctx: SnapContext): SnapResult | null {
 
     const x = elasticXInBand(band, rep.t);
     const linX = band.linearXForTime(rep.t);
-    const targetX = fromSpec ? linX : x;
+    const targetX = isLinearSpace ? linX : x;
     merged.push({
       t: rep.t,
       kind: rep.kind,
@@ -399,7 +423,7 @@ export function resolveSnap(ctx: SnapContext): SnapResult | null {
     if (merged[i].distPx < closestCand.distPx) closestCand = merged[i];
   }
   const closestGap = getMinAdjacentGapPx(closestCand.targetX);
-  if (fromSpec && closestGap < 4) {
+  if (isAcoustic && closestGap < 4) {
     return resolveAcousticPeakSnap(ctx, isAllowed);
   }
 
@@ -407,9 +431,12 @@ export function resolveSnap(ctx: SnapContext): SnapResult | null {
   for (const c of merged) {
     const gap = getMinAdjacentGapPx(c.targetX);
     let tol: number;
-    if (fromSpec) {
+    if (isAcoustic) {
       if (gap < 4) continue;
       tol = Math.min(6, Math.max(2.5, gap * 0.35));
+    } else if (isLinearSpace) {
+      if (gap < 3) continue;
+      tol = Math.min(8, Math.max(3.5, gap * 0.38));
     } else {
       tol = Math.min(10, Math.max(4, gap * 0.42));
     }
@@ -454,13 +481,16 @@ function probeCoincidentEdgeSnap(
   maxAllowed: number,
   excludeOwnBoundaryTime?: number
 ): SnapResult | null {
-  const ptrX = ctx.fromSpec
+  const { isLinearSpace, isAcoustic } = resolveSnapSpace(ctx);
+  const ptrX = isLinearSpace
     ? ctx.band.linearXForTime(edgeTime)
     : elasticXInBand(ctx.band, edgeTime);
   const res = resolveSnap({
     tg: ctx.tg,
     band: ctx.band,
     pointerX: ptrX,
+    coordSpace: isLinearSpace ? 'linear' : 'elastic',
+    isAcousticTrack: isAcoustic,
     fromSpec: ctx.fromSpec,
     minAllowed,
     maxAllowed,
@@ -495,10 +525,12 @@ export function resolveDualEdgeSnap(ctx: DualEdgeSnapContext): DualEdgeSnapResul
     };
   }
 
-  const startPtrX = ctx.fromSpec
+  const { isLinearSpace, isAcoustic } = resolveSnapSpace(ctx);
+  const coordSpace: TierScaleMode = isLinearSpace ? 'linear' : 'elastic';
+  const startPtrX = isLinearSpace
     ? ctx.band.linearXForTime(clampedStart)
     : elasticXInBand(ctx.band, clampedStart);
-  const endPtrX = ctx.fromSpec
+  const endPtrX = isLinearSpace
     ? ctx.band.linearXForTime(clampedEnd)
     : elasticXInBand(ctx.band, clampedEnd);
 
@@ -506,6 +538,8 @@ export function resolveDualEdgeSnap(ctx: DualEdgeSnapContext): DualEdgeSnapResul
     tg: ctx.tg,
     band: ctx.band,
     pointerX: startPtrX,
+    coordSpace,
+    isAcousticTrack: isAcoustic,
     fromSpec: ctx.fromSpec,
     minAllowed: ctx.minXmin,
     maxAllowed: maxStart,
@@ -525,6 +559,8 @@ export function resolveDualEdgeSnap(ctx: DualEdgeSnapContext): DualEdgeSnapResul
     tg: ctx.tg,
     band: ctx.band,
     pointerX: endPtrX,
+    coordSpace,
+    isAcousticTrack: isAcoustic,
     fromSpec: ctx.fromSpec,
     minAllowed: ctx.minXmin + ctx.duration,
     maxAllowed: ctx.maxXmax,

@@ -1,5 +1,5 @@
-import type { PlatformBridge, TextGrid } from '../bridge/types';
-import { isValidPraatTrigraphAt } from './praatTrigraphCodes';
+import type { PlatformBridge, TextGrid } from '../bridge/types.ts';
+import { isValidPraatTrigraphAt } from './praatTrigraphCodes.ts';
 
 export const IPA_FONT_STACK =
   '"TGrid IPA Sans", "Andika", "Charis SIL", "Doulos SIL", "Gentium Plus", "Gentium Book Plus", "Segoe UI", "Lucida Grande", "Helvetica Neue", "Geneva", "Cambria", "Lucida Sans Unicode", "Noto Sans", "DejaVu Sans", "Liberation Sans", "FreeSans", "Inter", "Noto Sans CJK SC", "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols 2", sans-serif';

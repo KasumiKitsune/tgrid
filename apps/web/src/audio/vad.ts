@@ -24,6 +24,16 @@ export interface AsyncVadOptions extends Omit<VadOptions, 'snapZeroCrossing'> {
   snapZeroCrossing?: (t: number) => number | Promise<number>;
   /** 覆盖声学辅助引擎模式（默认读取全局偏好设置） */
   engineMode?: 'neural' | 'classic';
+  /** 文档时间偏移（文档时间 = 音频时间 + audioOffset），默认 0 */
+  audioOffset?: number;
+  /** 可选局部作用窗起点（文档时间） */
+  scopeStart?: number;
+  /** 可选局部作用窗终点（文档时间） */
+  scopeEnd?: number;
+  /** 中断信号 */
+  signal?: AbortSignal;
+  /** 分块进度回调 (doneChunks, totalChunks) */
+  onProgress?: (doneChunks: number, totalChunks: number) => void;
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -224,10 +234,21 @@ async function detectNeuralSegmentsChunked(
   const collected: VadSegment[] = [];
 
   let chunkIdx = 0;
+  const totalChunks = Math.max(1, Math.ceil(duration / chunkSec));
   for (let tStart = 0; tStart < duration - 1e-6; tStart += chunkSec) {
+    if (options?.signal?.aborted) {
+      const err = new Error('VAD aborted');
+      err.name = 'AbortError';
+      throw err;
+    }
     if (chunkIdx > 0) {
       // Yield between 30 s chunks so long recordings never block the UI thread
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+    if (options?.signal?.aborted) {
+      const err = new Error('VAD aborted');
+      err.name = 'AbortError';
+      throw err;
     }
     chunkIdx++;
 
@@ -257,6 +278,7 @@ async function detectNeuralSegmentsChunked(
         collected.push({ start: gStart, end: gEnd });
       }
     }
+    options?.onProgress?.(chunkIdx, totalChunks);
   }
 
   return finalizeSegments(collected, duration, options);
@@ -264,33 +286,62 @@ async function detectNeuralSegmentsChunked(
 
 /**
  * 异步语音端点检测：默认启用 AcouSeg 1.0 分块推理（30 s 分块 + 0.5 s 重叠），
- * 经典模式或推理异常时无缝回退至纯规则双门限，并支持异步过零点对齐回调。
+ * 经典模式或推理异常时无缝回退至纯规则双门限，支持 audioOffset、局部作用窗、进度与取消控制。
  */
 export async function detectSpeechSegmentsAsync(
   mono: Float32Array,
   sampleRate: number,
   options?: AsyncVadOptions
 ): Promise<VadSegment[]> {
+  if (mono.length === 0 || !Number.isFinite(sampleRate) || sampleRate <= 0) return [];
+  const audioDuration = mono.length / sampleRate;
+  const audioOffset = Number.isFinite(options?.audioOffset ?? 0) ? (options?.audioOffset ?? 0) : 0;
+  const docMin = audioOffset;
+  const docMax = audioOffset + audioDuration;
+  const hasScope = options?.scopeStart !== undefined || options?.scopeEnd !== undefined;
+  const effDocStart =
+    options?.scopeStart !== undefined && Number.isFinite(options.scopeStart)
+      ? Math.max(docMin, options.scopeStart)
+      : docMin;
+  const effDocEnd =
+    options?.scopeEnd !== undefined && Number.isFinite(options.scopeEnd)
+      ? Math.min(docMax, options.scopeEnd)
+      : docMax;
+  if (effDocEnd <= effDocStart + 1e-6) return [];
+
+  const sLo = hasScope ? Math.max(0, Math.floor((effDocStart - audioOffset) * sampleRate)) : 0;
+  const sHi = hasScope
+    ? Math.min(mono.length, Math.ceil((effDocEnd - audioOffset) * sampleRate))
+    : mono.length;
+  const workingMono = hasScope ? mono.subarray(sLo, sHi) : mono;
+  const sliceOriginDoc = audioOffset + sLo / sampleRate;
   const mode = options?.engineMode ?? useEditorStore.getState().acousticEngineMode;
   let segs: VadSegment[] | null = null;
   if (mode === 'neural') {
     try {
-      segs = await detectNeuralSegmentsChunked(mono, sampleRate, options);
-    } catch {
+      segs = await detectNeuralSegmentsChunked(workingMono, sampleRate, options);
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') throw err;
       segs = null;
     }
   }
   if (segs === null) {
-    segs = detectRawSegments(mono, sampleRate, options);
+    segs = detectRawSegments(workingMono, sampleRate, options);
   }
+  const docSegs: VadSegment[] = segs
+    .map((seg) => ({
+      start: clamp(seg.start + sliceOriginDoc, effDocStart, effDocEnd),
+      end: clamp(seg.end + sliceOriginDoc, effDocStart, effDocEnd)
+    }))
+    .filter((seg) => seg.end - seg.start > 1e-6);
+
   const snap = options?.snapZeroCrossing;
-  if (!snap || segs.length === 0) return segs;
-  const duration = mono.length / sampleRate;
+  if (!snap || docSegs.length === 0) return docSegs;
   const out: VadSegment[] = [];
-  for (let i = 0; i < segs.length; i++) {
-    const seg = segs[i];
-    const lo = out.length > 0 ? out[out.length - 1].end : 0;
-    const hi = i + 1 < segs.length ? segs[i + 1].start : duration;
+  for (let i = 0; i < docSegs.length; i++) {
+    const seg = docSegs[i];
+    const lo = out.length > 0 ? out[out.length - 1].end : effDocStart;
+    const hi = i + 1 < docSegs.length ? docSegs[i + 1].start : effDocEnd;
     let s = seg.start;
     let e = seg.end;
     try {
@@ -311,3 +362,7 @@ export async function detectSpeechSegmentsAsync(
   }
   return out;
 }
+
+export * from './vadPostprocess';
+export * from './vadCache';
+export * from './vadWriter';

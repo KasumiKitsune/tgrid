@@ -56,6 +56,14 @@ export function hasAnyCustomSharedStyle(shared?: CorpusSharedStyle | null): bool
       if (hasNonEmptyRecord(tierStyle)) return true;
     }
   }
+  if (
+    shared.layoutPrefs &&
+    ((shared.layoutPrefs.scaleMode && shared.layoutPrefs.scaleMode !== 'elastic') ||
+      (shared.layoutPrefs.tierScaleOverrides &&
+        Object.keys(shared.layoutPrefs.tierScaleOverrides).length > 0))
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -92,7 +100,8 @@ export function extractSharedStyle(doc: StyleDocument): CorpusSharedStyle | unde
       : {}),
     ...(cloned.globalPoint && hasNonEmptyRecord(cloned.globalPoint)
       ? { globalPoint: cloned.globalPoint }
-      : {})
+      : {}),
+    ...(cloned.layoutPrefs ? { layoutPrefs: cloned.layoutPrefs } : {})
   };
   return hasAnyCustomSharedStyle(shared) ? shared : undefined;
 }
@@ -130,6 +139,14 @@ export function composeCorpusStyleDocument(
     if (sharedStyle.globalPoint) base.globalPoint = { ...sharedStyle.globalPoint };
     base.tierStyles = { ...(sharedStyle.tierStyles ?? {}) };
     base.rules = [...(sharedStyle.rules ?? [])];
+    if (sharedStyle.layoutPrefs) {
+      base.layoutPrefs = {
+        ...(sharedStyle.layoutPrefs.scaleMode ? { scaleMode: sharedStyle.layoutPrefs.scaleMode } : {}),
+        ...(sharedStyle.layoutPrefs.tierScaleOverrides
+          ? { tierScaleOverrides: { ...sharedStyle.layoutPrefs.tierScaleOverrides } }
+          : {})
+      };
+    }
   }
   if (itemStyle) {
     base.intervalOverrides = [...(itemStyle.intervalOverrides ?? [])];

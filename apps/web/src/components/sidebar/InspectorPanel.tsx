@@ -14,6 +14,7 @@ import type {
   TextGrid,
   TextGridFormat
 } from '../../bridge/types';
+import { resolveTierScaleMode } from '../../layout/computeLayout';
 import {
   decodeTrigraphGlossSync,
   formatPraatDouble,
@@ -451,6 +452,9 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
     const projectBoundaryToTier = useEditorStore((s) => s.projectBoundaryToTier);
     const alignMicroBoundaries = useEditorStore((s) => s.alignMicroBoundaries);
     const hiddenTierIndices = useEditorStore((s) => s.hiddenTierIndices);
+    const scaleMode = useEditorStore((s) => s.scaleMode);
+    const tierScaleOverrides = useEditorStore((s) => s.tierScaleOverrides);
+    const setTierScaleMode = useEditorStore((s) => s.setTierScaleMode);
     const toggleTierVisibility = useEditorStore((s) => s.toggleTierVisibility);
     const soloTier = useEditorStore((s) => s.soloTier);
     const showAllTiers = useEditorStore((s) => s.showAllTiers);
@@ -3946,6 +3950,42 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
             </div>
 
             <div className="insp-divider" />
+
+            <div className="insp-inline-row" style={{ marginBottom: 6 }}>
+              <span className="insp-field-label" style={{ marginBottom: 0 }}>
+                时间比例
+              </span>
+              {(() => {
+                const curTierScale = resolveTierScaleMode(
+                  tg,
+                  ti,
+                  scaleMode,
+                  tierScaleOverrides
+                );
+                return (
+                  <div className="segmented" role="group" aria-label="本层时间比例">
+                    <button
+                      type="button"
+                      className={`compact ${curTierScale === 'linear' ? 'active' : ''}`}
+                      aria-pressed={curTierScale === 'linear'}
+                      title="按 1:1 真实物理时长与语谱图垂直对齐"
+                      onClick={() => setTierScaleMode(ti, 'linear')}
+                    >
+                      线性 (1:1)
+                    </button>
+                    <button
+                      type="button"
+                      className={`compact ${curTierScale === 'elastic' ? 'active' : ''}`}
+                      aria-pressed={curTierScale === 'elastic'}
+                      title="按文字宽度自适应展开，便于阅读密集标注"
+                      onClick={() => setTierScaleMode(ti, 'elastic')}
+                    >
+                      自适应双尺
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
 
             <ToggleSwitch
               compact

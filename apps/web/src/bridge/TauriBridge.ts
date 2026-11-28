@@ -29,6 +29,7 @@ import type {
   TextGridFormat,
   TierDiagnostics,
   VadParams,
+  VadPosteriorTrack,
   VadSegmentResult,
   YunlongStepResult,
   ZipEntryInput
@@ -287,6 +288,60 @@ export class TauriBridge implements PlatformBridge {
       sampleRate,
       params: params ?? null
     });
+  }
+
+  async extractVadPosteriorsChunk(
+    sessionId: number,
+    startSec: number,
+    endSec: number
+  ): Promise<VadPosteriorTrack> {
+    const raw = await invoke<{
+      hopMs: number;
+      originSec: number;
+      numFrames: number;
+      pVad: number[];
+      pObstruent: number[];
+      pStopCl: number[];
+    }>('extract_vad_posteriors_chunk', {
+      sessionId,
+      startSec,
+      endSec
+    });
+    return {
+      hopMs: raw.hopMs,
+      originSec: raw.originSec,
+      numFrames: raw.numFrames,
+      pVad: Uint8Array.from(raw.pVad),
+      pObstruent: Uint8Array.from(raw.pObstruent),
+      pStopCl: Uint8Array.from(raw.pStopCl)
+    };
+  }
+
+  async extractVadPosteriorsPcm(
+    samples: Float32Array,
+    sampleRate: number,
+    originSec = 0
+  ): Promise<VadPosteriorTrack> {
+    const raw = await invoke<{
+      hopMs: number;
+      originSec: number;
+      numFrames: number;
+      pVad: number[];
+      pObstruent: number[];
+      pStopCl: number[];
+    }>('extract_vad_posteriors_pcm', {
+      samples: Array.from(samples),
+      sampleRate,
+      originSec
+    });
+    return {
+      hopMs: raw.hopMs,
+      originSec: raw.originSec,
+      numFrames: raw.numFrames,
+      pVad: Uint8Array.from(raw.pVad),
+      pObstruent: Uint8Array.from(raw.pObstruent),
+      pStopCl: Uint8Array.from(raw.pStopCl)
+    };
   }
 
   async extractAcousticSnapPeaks(

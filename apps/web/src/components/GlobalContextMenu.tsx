@@ -220,12 +220,23 @@ export const GlobalContextMenu: React.FC<GlobalContextMenuProps> = ({
 
         items.push(
           {
-            label: st.scaleMode === 'linear' ? '切换自适应宽度' : '切换线性对齐',
+            label:
+              st.scaleMode === 'elastic'
+                ? '切换分层混合比例'
+                : st.scaleMode === 'mixed'
+                  ? '切换全线性对齐 (1:1)'
+                  : '切换自适应双尺',
             icon: 'toggleScale',
             action: () =>
               useEditorStore
                 .getState()
-                .setScaleMode(st.scaleMode === 'linear' ? 'elastic' : 'linear')
+                .setScaleMode(
+                  st.scaleMode === 'elastic'
+                    ? 'mixed'
+                    : st.scaleMode === 'mixed'
+                      ? 'linear'
+                      : 'elastic'
+                )
           },
           {
             label: st.legendOpen ? '隐藏图例导读' : '图例导读',

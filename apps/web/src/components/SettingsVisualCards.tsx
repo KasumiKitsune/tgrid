@@ -1,5 +1,6 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import type { GlobalScaleMode } from '../layout/computeLayout';
 import type { EditInspectorMode } from '../store/useEditorStore';
 import {
   getElementRectScale,
@@ -170,13 +171,14 @@ export const WrapModeVisualCards: React.FC<{
 };
 
 /* ============================================================================
-   图卡 2 · 时间比例（自适应宽度 vs 线性对齐）
+   图卡 2 · 时间比例（自适应双尺 / 分层混合 / 线性对齐）
    ============================================================================ */
 export const ScaleModeVisualCards: React.FC<{
-  value: 'elastic' | 'linear';
-  onChange: (v: 'elastic' | 'linear') => void;
+  value: GlobalScaleMode;
+  onChange: (v: GlobalScaleMode) => void;
 }> = ({ value, onChange }) => {
   const isElastic = value === 'elastic';
+  const isMixed = value === 'mixed';
   const isLinear = value === 'linear';
   const hiStroke = '#1D4ED8';
   const hiFill = '#EEF3FF';
@@ -184,56 +186,69 @@ export const ScaleModeVisualCards: React.FC<{
   const loFill = '#F2F0EA';
 
   return (
-    <div className="pvc-grid-2" role="group" aria-label="时间比例">
+    <div className="pvc-grid-3" role="group" aria-label="时间比例">
       <button
         type="button"
-        className={`pvc-card ${isElastic ? 'is-active' : ''}`}
+        className={`pvc-card is-compact ${isElastic ? 'is-active' : ''}`}
         aria-pressed={isElastic}
-        title="短音段按文字宽度适度展开，长静音自动折叠"
+        title="全部层级按文字宽度适度展开，长静音同步折叠"
         onClick={() => onChange('elastic')}
       >
-        <svg className="pvc-svg" viewBox="0 0 116 36" aria-hidden="true">
-          {/* Upper narrow physical time scale */}
-          <rect x="6" y="4" width="104" height="7" fill="#FFFFFF" stroke="#D3CFC5" strokeWidth="0.9" />
-          <rect x="44" y="4" width="14" height="7" fill={isElastic ? hiFill : loFill} stroke={isElastic ? hiStroke : loStroke} strokeWidth="0.9" />
-          <line x1="88" y1="4" x2="88" y2="11" stroke="#D3CFC5" strokeWidth="0.9" />
-          {/* Slanted dual-scale projection lines */}
-          <line x1="44" y1="11" x2="26" y2="22" stroke={isElastic ? hiStroke : loStroke} strokeWidth="1" strokeDasharray="2 1.5" />
-          <line x1="58" y1="11" x2="72" y2="22" stroke={isElastic ? hiStroke : loStroke} strokeWidth="1" strokeDasharray="2 1.5" />
-          <line x1="88" y1="11" x2="94" y2="22" stroke={isElastic ? '#93C5FD' : '#D3CFC5'} strokeWidth="0.9" strokeDasharray="2 1.5" />
-          {/* Lower expanded readable text tier */}
-          <rect x="6" y="22" width="104" height="10" fill="#FFFFFF" stroke={isElastic ? hiStroke : '#D3CFC5'} strokeWidth="1" />
-          <rect x="26" y="22" width="46" height="10" fill={isElastic ? hiFill : loFill} stroke={isElastic ? hiStroke : loStroke} strokeWidth="0.9" />
-          <line x1="94" y1="22" x2="94" y2="32" stroke="#D3CFC5" strokeWidth="0.9" />
+        <svg className="pvc-svg" viewBox="0 0 80 34" aria-hidden="true">
+          <rect x="4" y="3" width="72" height="6" fill="#FFFFFF" stroke="#D3CFC5" strokeWidth="0.9" />
+          <rect x="30" y="3" width="10" height="6" fill={isElastic ? hiFill : loFill} stroke={isElastic ? hiStroke : loStroke} strokeWidth="0.9" />
+          <line x1="30" y1="9" x2="18" y2="20" stroke={isElastic ? hiStroke : loStroke} strokeWidth="1" strokeDasharray="2 1.5" />
+          <line x1="40" y1="9" x2="52" y2="20" stroke={isElastic ? hiStroke : loStroke} strokeWidth="1" strokeDasharray="2 1.5" />
+          <rect x="4" y="20" width="72" height="10" fill="#FFFFFF" stroke={isElastic ? hiStroke : '#D3CFC5'} strokeWidth="1" />
+          <rect x="18" y="20" width="34" height="10" fill={isElastic ? hiFill : loFill} stroke={isElastic ? hiStroke : loStroke} strokeWidth="0.9" />
         </svg>
         <div className="pvc-card-hd">
-          <span>自适应宽度</span>
+          <span>自适应</span>
         </div>
       </button>
 
       <button
         type="button"
-        className={`pvc-card ${isLinear ? 'is-active' : ''}`}
-        aria-pressed={isLinear}
-        title="按真实物理时长 1:1 排列，与语谱图严格垂直对齐"
-        onClick={() => onChange('linear')}
+        className={`pvc-card is-compact ${isMixed ? 'is-active' : ''}`}
+        aria-pressed={isMixed}
+        title="分层混合：按层独立选择线性 (1:1) 或自适应双尺"
+        onClick={() => onChange('mixed')}
       >
-        <svg className="pvc-svg" viewBox="0 0 116 36" aria-hidden="true">
-          {/* Upper physical time scale */}
-          <rect x="6" y="4" width="104" height="7" fill="#FFFFFF" stroke="#D3CFC5" strokeWidth="0.9" />
-          <rect x="30" y="4" width="38" height="7" fill={isLinear ? hiFill : loFill} stroke={isLinear ? hiStroke : loStroke} strokeWidth="0.9" />
-          <line x1="88" y1="4" x2="88" y2="11" stroke="#D3CFC5" strokeWidth="0.9" />
-          {/* Straight vertical 1:1 alignment gridlines */}
-          <line x1="30" y1="11" x2="30" y2="22" stroke={isLinear ? hiStroke : loStroke} strokeWidth="1" strokeDasharray="2 1.5" />
-          <line x1="68" y1="11" x2="68" y2="22" stroke={isLinear ? hiStroke : loStroke} strokeWidth="1" strokeDasharray="2 1.5" />
-          <line x1="88" y1="11" x2="88" y2="22" stroke={isLinear ? '#93C5FD' : '#D3CFC5'} strokeWidth="0.9" strokeDasharray="2 1.5" />
-          {/* Lower strictly aligned tier */}
-          <rect x="6" y="22" width="104" height="10" fill="#FFFFFF" stroke={isLinear ? hiStroke : '#D3CFC5'} strokeWidth="1" />
-          <rect x="30" y="22" width="38" height="10" fill={isLinear ? hiFill : loFill} stroke={isLinear ? hiStroke : loStroke} strokeWidth="0.9" />
-          <line x1="88" y1="22" x2="88" y2="32" stroke="#D3CFC5" strokeWidth="0.9" />
+        <svg className="pvc-svg" viewBox="0 0 80 34" aria-hidden="true">
+          <rect x="4" y="2" width="72" height="5" fill="#FFFFFF" stroke="#D3CFC5" strokeWidth="0.85" />
+          <rect x="28" y="2" width="12" height="5" fill={isMixed ? hiFill : loFill} stroke={isMixed ? hiStroke : loStroke} strokeWidth="0.85" />
+          {/* Linear 1:1 tier */}
+          <rect x="4" y="9" width="72" height="6" fill="#FFFFFF" stroke={isMixed ? '#93C5FD' : '#D3CFC5'} strokeWidth="0.85" />
+          <rect x="28" y="9" width="12" height="6" fill={isMixed ? hiFill : loFill} stroke={isMixed ? hiStroke : loStroke} strokeWidth="0.85" />
+          {/* Transition neck */}
+          <line x1="28" y1="15" x2="16" y2="23" stroke={isMixed ? hiStroke : loStroke} strokeWidth="1" strokeDasharray="2 1.5" />
+          <line x1="40" y1="15" x2="54" y2="23" stroke={isMixed ? hiStroke : loStroke} strokeWidth="1" strokeDasharray="2 1.5" />
+          {/* Elastic tier */}
+          <rect x="4" y="23" width="72" height="8" fill="#FFFFFF" stroke={isMixed ? hiStroke : '#D3CFC5'} strokeWidth="1" />
+          <rect x="16" y="23" width="38" height="8" fill={isMixed ? hiFill : loFill} stroke={isMixed ? hiStroke : loStroke} strokeWidth="0.9" />
         </svg>
         <div className="pvc-card-hd">
-          <span>线性对齐</span>
+          <span>混合</span>
+        </div>
+      </button>
+
+      <button
+        type="button"
+        className={`pvc-card is-compact ${isLinear ? 'is-active' : ''}`}
+        aria-pressed={isLinear}
+        title="全部层级按真实物理时长 1:1 与语谱图严格垂直对齐"
+        onClick={() => onChange('linear')}
+      >
+        <svg className="pvc-svg" viewBox="0 0 80 34" aria-hidden="true">
+          <rect x="4" y="3" width="72" height="6" fill="#FFFFFF" stroke="#D3CFC5" strokeWidth="0.9" />
+          <rect x="22" y="3" width="28" height="6" fill={isLinear ? hiFill : loFill} stroke={isLinear ? hiStroke : loStroke} strokeWidth="0.9" />
+          <line x1="22" y1="9" x2="22" y2="20" stroke={isLinear ? hiStroke : loStroke} strokeWidth="1" strokeDasharray="2 1.5" />
+          <line x1="50" y1="9" x2="50" y2="20" stroke={isLinear ? hiStroke : loStroke} strokeWidth="1" strokeDasharray="2 1.5" />
+          <rect x="4" y="20" width="72" height="10" fill="#FFFFFF" stroke={isLinear ? hiStroke : '#D3CFC5'} strokeWidth="1" />
+          <rect x="22" y="20" width="28" height="10" fill={isLinear ? hiFill : loFill} stroke={isLinear ? hiStroke : loStroke} strokeWidth="0.9" />
+        </svg>
+        <div className="pvc-card-hd">
+          <span>线性</span>
         </div>
       </button>
     </div>

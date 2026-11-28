@@ -28,9 +28,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const stageAvailableWidth = useEditorStore((s) => s.stageAvailableWidth);
   const setTargetWidth = useEditorStore((s) => s.setTargetWidth);
   const setWidthAutoFit = useEditorStore((s) => s.setWidthAutoFit);
+  const tg = useEditorStore((s) => s.tg);
   const layout = useEditorStore((s) => s.layout);
   const scaleMode = useEditorStore((s) => s.scaleMode);
   const setScaleMode = useEditorStore((s) => s.setScaleMode);
+  const applySmartMixedScale = useEditorStore((s) => s.applySmartMixedScale);
   const tickPrecision = useEditorStore((s) => s.tickPrecision);
   const setTickPrecision = useEditorStore((s) => s.setTickPrecision);
   const tickFixedDecimals = useEditorStore((s) => s.tickFixedDecimals);
@@ -233,7 +235,19 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
 
           <div className="cs-block">
-            <span className="cs-lbl cs-lbl-muted">时间比例</span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+              <span className="cs-lbl cs-lbl-muted">时间比例</span>
+              {tg.tiers.length >= 2 && (
+                <button
+                  type="button"
+                  className="cs-inline-link-btn"
+                  title="按各层文字密度自动分配线性 (1:1) 与自适应双尺"
+                  onClick={() => applySmartMixedScale()}
+                >
+                  智能分配
+                </button>
+              )}
+            </div>
             <ScaleModeVisualCards value={scaleMode} onChange={setScaleMode} />
           </div>
 

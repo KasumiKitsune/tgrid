@@ -26,6 +26,8 @@ import {
   find_zero_crossing,
   align_split_boundaries_json,
   detect_speech_segments_nn_json,
+  extract_vad_posteriors_chunk_json,
+  extract_vad_posteriors_pcm_json,
   extract_acoustic_snap_peaks_json,
   snap_acoustic_boundary_json
 } from '../wasm-pkg/tg_wasm';
@@ -60,6 +62,7 @@ import type {
   TextGridFormat,
   TierDiagnostics,
   VadParams,
+  VadPosteriorTrack,
   VadSegmentResult,
   YunlongStepResult,
   ZipEntryInput
@@ -329,6 +332,58 @@ export class WebWasmBridge implements PlatformBridge {
     return JSON.parse(
       detect_speech_segments_nn_json(samples, sampleRate, JSON.stringify(params ?? {}))
     ) as VadSegmentResult[];
+  }
+
+  async extractVadPosteriorsChunk(
+    sessionId: number,
+    startSec: number,
+    endSec: number
+  ): Promise<VadPosteriorTrack> {
+    await this.init();
+    const raw = JSON.parse(
+      extract_vad_posteriors_chunk_json(sessionId, startSec, endSec)
+    ) as {
+      hopMs: number;
+      originSec: number;
+      numFrames: number;
+      pVad: number[];
+      pObstruent: number[];
+      pStopCl: number[];
+    };
+    return {
+      hopMs: raw.hopMs,
+      originSec: raw.originSec,
+      numFrames: raw.numFrames,
+      pVad: Uint8Array.from(raw.pVad),
+      pObstruent: Uint8Array.from(raw.pObstruent),
+      pStopCl: Uint8Array.from(raw.pStopCl)
+    };
+  }
+
+  async extractVadPosteriorsPcm(
+    samples: Float32Array,
+    sampleRate: number,
+    originSec = 0
+  ): Promise<VadPosteriorTrack> {
+    await this.init();
+    const raw = JSON.parse(
+      extract_vad_posteriors_pcm_json(samples, sampleRate, originSec)
+    ) as {
+      hopMs: number;
+      originSec: number;
+      numFrames: number;
+      pVad: number[];
+      pObstruent: number[];
+      pStopCl: number[];
+    };
+    return {
+      hopMs: raw.hopMs,
+      originSec: raw.originSec,
+      numFrames: raw.numFrames,
+      pVad: Uint8Array.from(raw.pVad),
+      pObstruent: Uint8Array.from(raw.pObstruent),
+      pStopCl: Uint8Array.from(raw.pStopCl)
+    };
   }
 
   async extractAcousticSnapPeaks(

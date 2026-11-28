@@ -537,7 +537,23 @@ export function cloneStyleDocument(doc: StyleDocument): StyleDocument {
       points: doc.orphaned.points.map((o) => ({ ...o, style: { ...o.style } }))
     };
   }
+  if (doc.layoutPrefs) {
+    cloned.layoutPrefs = {
+      ...(doc.layoutPrefs.scaleMode ? { scaleMode: doc.layoutPrefs.scaleMode } : {}),
+      ...(doc.layoutPrefs.tierScaleOverrides
+        ? { tierScaleOverrides: { ...doc.layoutPrefs.tierScaleOverrides } }
+        : {})
+    };
+  }
   return cloned;
+}
+
+export function hasCustomLayoutPrefs(doc: StyleDocument | null | undefined): boolean {
+  const lp = doc?.layoutPrefs;
+  if (!lp) return false;
+  if (lp.scaleMode && lp.scaleMode !== 'elastic') return true;
+  if (lp.tierScaleOverrides && Object.keys(lp.tierScaleOverrides).length > 0) return true;
+  return false;
 }
 
 function hasNonEmptyPatch(patch: object | undefined): boolean {

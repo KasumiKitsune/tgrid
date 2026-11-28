@@ -15,6 +15,26 @@ pub struct VadSegment {
     pub end: f64,
 }
 
+/// Quantized 10 ms (100 Hz) neural frame posteriors for fast interactive client-side VAD postprocessing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VadPosteriorTrack {
+    pub hop_ms: u32,
+    pub origin_sec: f64,
+    pub num_frames: usize,
+    pub p_vad: Vec<u8>,
+    pub p_obstruent: Vec<u8>,
+    pub p_stop_cl: Vec<u8>,
+}
+
+#[inline]
+fn quantize_prob_u8(p: f32) -> u8 {
+    if !p.is_finite() {
+        return 0;
+    }
+    (p.clamp(0.0, 1.0) * 255.0).round() as u8
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct VadParams {
@@ -182,6 +202,186 @@ pub fn detect_speech_segments_dsp(
     }
 
     finalize_vad_segments(mono, sample_rate, duration, raw, merge_gap_sec, min_speech_sec, pad_sec, params.snap_zero_crossing)
+}
+
+/// Extract quantized 10 ms (100 Hz) neural VAD posteriors using a provided `MicroSegNet` model.
+/// Runs in 30 s chunks with 0.5 s overlap so arbitrarily long buffers stay memory-bounded.
+pub fn extract_vad_posteriors_nn_with_model(
+    samples: &[f32],
+    sample_rate: u32,
+    origin_sec: f64,
+    model: &MicroSegNet,
+) -> VadPosteriorTrack {
+    let safe_origin = if origin_sec.is_finite() {
+        origin_sec
+    } else {
+        0.0
+    };
+    if samples.is_empty() || sample_rate == 0 {
+        return VadPosteriorTrack {
+            hop_ms: 10,
+            origin_sec: safe_origin,
+            num_frames: 0,
+            p_vad: Vec::new(),
+            p_obstruent: Vec::new(),
+            p_stop_cl: Vec::new(),
+        };
+    }
+
+    let fs = sample_rate as f64;
+    let duration = (samples.len() as f64) / fs;
+    let total_frames = ((duration * 100.0).round() as usize).max(1);
+    let mut p_vad = vec![0u8; total_frames];
+    let mut p_obstruent = vec![0u8; total_frames];
+    let mut p_stop_cl = vec![0u8; total_frames];
+
+    let chunk_sec = 30.0f64;
+    let overlap_sec = 0.5f64;
+    let mut t_start = 0.0f64;
+    while t_start < duration - 1e-6 {
+        let t_end = (t_start + chunk_sec).min(duration);
+        let pad_l = (t_start - overlap_sec).max(0.0);
+        let pad_r = (t_end + overlap_sec).min(duration);
+        let s_lo = (pad_l * fs).floor() as usize;
+        let s_hi = ((pad_r * fs).ceil() as usize).min(samples.len());
+        if s_hi <= s_lo {
+            break;
+        }
+        let (_, post) = model.forward_pcm(&samples[s_lo..s_hi], sample_rate);
+        let f_out_lo = (t_start * 100.0).floor() as usize;
+        let f_out_hi = ((t_end * 100.0).ceil() as usize).min(total_frames);
+        let offset_frames = ((t_start - pad_l) * 100.0).round() as usize;
+        for f in f_out_lo..f_out_hi {
+            let local_f = (f - f_out_lo + offset_frames).min(post.num_frames.saturating_sub(1));
+            if local_f < post.num_frames {
+                let m = &post.manner_probs[local_f * 8..(local_f + 1) * 8];
+                let pv = post.vad_speech_10ms[local_f].max(1.0 - m[MANNER_SIL]);
+                p_vad[f] = quantize_prob_u8(pv);
+                p_obstruent[f] = quantize_prob_u8(m[MANNER_FRIC_VL] + m[MANNER_BURST_ASP]);
+                p_stop_cl[f] = quantize_prob_u8(m[MANNER_STOP_CL]);
+            }
+        }
+        t_start = t_end;
+    }
+
+    VadPosteriorTrack {
+        hop_ms: 10,
+        origin_sec: safe_origin,
+        num_frames: total_frames,
+        p_vad,
+        p_obstruent,
+        p_stop_cl,
+    }
+}
+
+/// Extract quantized 10 ms (100 Hz) neural VAD posteriors using the built-in `TGrid-AcouSeg 1.0` model.
+pub fn extract_vad_posteriors_nn(
+    samples: &[f32],
+    sample_rate: u32,
+    origin_sec: f64,
+) -> VadPosteriorTrack {
+    extract_vad_posteriors_nn_with_model(
+        samples,
+        sample_rate,
+        origin_sec,
+        crate::nn::builtin_acouseg_net(),
+    )
+}
+
+/// Extract quantized 10 ms posteriors strictly cropped to the 10 ms global grid covering
+/// `[start_sec, end_sec]`, using `padded_samples` starting at `pad_origin_sec` for acoustic context.
+pub fn extract_vad_posteriors_nn_window_with_model(
+    padded_samples: &[f32],
+    sample_rate: u32,
+    pad_origin_sec: f64,
+    start_sec: f64,
+    end_sec: f64,
+    model: &MicroSegNet,
+) -> VadPosteriorTrack {
+    let s0 = if start_sec.is_finite() {
+        start_sec.max(0.0)
+    } else {
+        0.0
+    };
+    let s1 = if end_sec.is_finite() {
+        end_sec.max(s0)
+    } else {
+        s0
+    };
+    let f_global_lo = ((s0 * 100.0) + 1e-6).floor().max(0.0) as usize;
+    let f_global_hi = ((s1 * 100.0) - 1e-6).ceil().max(0.0) as usize;
+    let out_frames = f_global_hi.saturating_sub(f_global_lo);
+    let aligned_origin_sec = (f_global_lo as f64) * 0.010;
+
+    if out_frames == 0 || padded_samples.is_empty() || sample_rate == 0 {
+        return VadPosteriorTrack {
+            hop_ms: 10,
+            origin_sec: aligned_origin_sec,
+            num_frames: 0,
+            p_vad: Vec::new(),
+            p_obstruent: Vec::new(),
+            p_stop_cl: Vec::new(),
+        };
+    }
+
+    let safe_pad_origin = if pad_origin_sec.is_finite() {
+        pad_origin_sec
+    } else {
+        0.0
+    };
+    let full =
+        extract_vad_posteriors_nn_with_model(padded_samples, sample_rate, safe_pad_origin, model);
+    if full.num_frames == 0 {
+        return VadPosteriorTrack {
+            hop_ms: 10,
+            origin_sec: aligned_origin_sec,
+            num_frames: 0,
+            p_vad: Vec::new(),
+            p_obstruent: Vec::new(),
+            p_stop_cl: Vec::new(),
+        };
+    }
+
+    let mut p_vad = Vec::with_capacity(out_frames);
+    let mut p_obstruent = Vec::with_capacity(out_frames);
+    let mut p_stop_cl = Vec::with_capacity(out_frames);
+    let max_idx = (full.num_frames - 1) as isize;
+
+    for i in 0..out_frames {
+        let target_t = aligned_origin_sec + (i as f64) * 0.010;
+        let local_f = (((target_t - safe_pad_origin) * 100.0).round() as isize)
+            .clamp(0, max_idx) as usize;
+        p_vad.push(full.p_vad[local_f]);
+        p_obstruent.push(full.p_obstruent[local_f]);
+        p_stop_cl.push(full.p_stop_cl[local_f]);
+    }
+
+    VadPosteriorTrack {
+        hop_ms: 10,
+        origin_sec: aligned_origin_sec,
+        num_frames: out_frames,
+        p_vad,
+        p_obstruent,
+        p_stop_cl,
+    }
+}
+
+/// Extract quantized 10 ms posteriors for `[start_sec, end_sec]` with the built-in `TGrid-AcouSeg 1.0` model.
+pub fn extract_vad_posteriors_nn_window(
+    padded_samples: &[f32],
+    sample_rate: u32,
+    pad_origin_sec: f64,
+    start_sec: f64,
+    end_sec: f64,
+) -> VadPosteriorTrack {
+    extract_vad_posteriors_nn_window_with_model(
+        padded_samples,
+        sample_rate,
+        pad_origin_sec,
+        start_sec,
+        end_sec,
+        crate::nn::builtin_acouseg_net(),
+    )
 }
 
 /// Neural-hybrid VAD (Section 4.3B) reusing `MicroSegNet` posteriors with 30s chunking + 0.5s overlap.
@@ -1560,4 +1760,66 @@ pub fn snap_boundary_to_acoustic_edge(
         window_sec,
         crate::nn::builtin_acouseg_net(),
     )
+}
+
+#[cfg(test)]
+mod vad_posterior_tests {
+    use super::*;
+
+    fn synth_voiced_speech(sample_rate: u32, duration_sec: f64) -> Vec<f32> {
+        let n = (sample_rate as f64 * duration_sec).round() as usize;
+        let fs = sample_rate as f64;
+        let mut out = vec![0.0f32; n];
+        for (i, slot) in out.iter_mut().enumerate() {
+            let t = i as f64 / fs;
+            // Silence [0..0.4s], voiced harmonic vowel-like pulse [0.4..1.2s], silence [1.2..1.8s]
+            if (0.40..=1.20).contains(&t) {
+                let env = ((t - 0.40) / 0.03).min(1.0).min(((1.20 - t) / 0.03).min(1.0));
+                let s = 0.35 * (TAU * 160.0 * t).sin()
+                    + 0.28 * (TAU * 480.0 * t).sin()
+                    + 0.18 * (TAU * 800.0 * t).sin()
+                    + 0.12 * (TAU * 1280.0 * t).sin();
+                *slot = (s * env) as f32;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn extract_vad_posteriors_handles_empty_and_valid_signal() {
+        let empty = extract_vad_posteriors_nn(&[], 16000, 0.0);
+        assert_eq!(empty.hop_ms, 10);
+        assert_eq!(empty.num_frames, 0);
+        assert!(empty.p_vad.is_empty());
+
+        let pcm = synth_voiced_speech(16000, 1.8);
+        let track = extract_vad_posteriors_nn(&pcm, 16000, 0.0);
+        assert_eq!(track.hop_ms, 10);
+        assert_eq!(track.origin_sec, 0.0);
+        assert_eq!(track.num_frames, 180);
+        assert_eq!(track.p_vad.len(), 180);
+        assert_eq!(track.p_obstruent.len(), 180);
+        assert_eq!(track.p_stop_cl.len(), 180);
+
+        let sil_mean: f64 = track.p_vad[0..30].iter().map(|&v| v as f64).sum::<f64>() / 30.0;
+        let speech_mean: f64 = track.p_vad[50..110].iter().map(|&v| v as f64).sum::<f64>() / 60.0;
+        assert!(
+            speech_mean > sil_mean + 20.0,
+            "expected higher p_vad in speech ({speech_mean:.1}) than silence ({sil_mean:.1})"
+        );
+    }
+
+    #[test]
+    fn extract_vad_posteriors_window_aligns_to_10ms_grid() {
+        let pcm = synth_voiced_speech(16000, 1.8);
+        let sr = 16000u32;
+        let pad_l = 0.0f64;
+        let win = extract_vad_posteriors_nn_window(&pcm, sr, pad_l, 0.50, 1.10);
+        assert_eq!(win.hop_ms, 10);
+        assert!((win.origin_sec - 0.50).abs() < 1e-9);
+        assert_eq!(win.num_frames, 60);
+        assert_eq!(win.p_vad.len(), 60);
+        assert_eq!(win.p_obstruent.len(), 60);
+        assert_eq!(win.p_stop_cl.len(), 60);
+    }
 }

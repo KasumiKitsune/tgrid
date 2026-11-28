@@ -11,6 +11,7 @@ import React, {
 } from 'react';
 import { getPlatformBridge } from '../bridge/PlatformBridge';
 import type { TextGrid } from '../bridge/types';
+import { resolveTierScaleMode } from '../layout/computeLayout';
 import {
   decodeTrigraphGlossSync,
   formatPraatDouble,
@@ -86,6 +87,7 @@ export interface FloatingActionBarProps {
     useAcoustic: boolean
   ) => Promise<boolean>;
   onOpenSplitModal: (tierIndex: number, itemIndex: number) => void;
+  onOpenVad?: (opts?: import('./sidebar/VadPanel').VadOpenOptions) => void;
 }
 
 type PopoverId = 'time' | 'split' | 'align' | 'project' | 'duplicate' | 'style' | 'more';
@@ -522,7 +524,8 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
       onShowScrubPreview,
       onClearScrubPreview,
       onRunSmartSplit,
-      onOpenSplitModal
+      onOpenSplitModal,
+      onOpenVad
     },
     ref
   ) => {
@@ -534,6 +537,9 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
     const audioOffset = useEditorStore((s) => s.audioOffset);
     const analysis = useEditorStore((s) => s.analysis);
     const hiddenTierIndices = useEditorStore((s) => s.hiddenTierIndices);
+    const scaleMode = useEditorStore((s) => s.scaleMode);
+    const tierScaleOverrides = useEditorStore((s) => s.tierScaleOverrides);
+    const setTierScaleMode = useEditorStore((s) => s.setTierScaleMode);
     const floatingBarConfig = useEditorStore((s) => s.floatingBarConfig);
     const floatingBarDensity: FloatingBarDensity = useEditorStore((s) => s.floatingBarDensity);
     const customShortcuts = useEditorStore((s) => s.customShortcuts);
@@ -818,7 +824,11 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
                   <span
                     className={`fb-arch-pop-check ${cfg.boundaryExtend.value ? 'is-on' : ''}`}
                   >
-                    {cfg.boundaryExtend.value && <UiIcon name="check" size={10} />}
+                    {cfg.boundaryExtend.value && (
+                      <svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true">
+                        <path d="M2.2 6.3L4.8 8.9L9.8 3.4" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
                   </span>
                 </button>
               </>
@@ -2253,6 +2263,30 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
                 </div>
                 <AnchoredPopover open={openPop === 'split'}>
                   <div className="fb-arch-pop-title">智能与规则拆分</div>
+                  {onOpenVad && audioBuffer && iv.text.trim() === '' && durSec >= 0.4 && (
+                    <>
+                      <button
+                        type="button"
+                        className="fb-arch-pop-item is-rec"
+                        onClick={() => {
+                          setOpenPop(null);
+                          onOpenVad({
+                            scopeMode: 'interval',
+                            writeMode: 'split-interval',
+                            tierIndex: ti,
+                            itemIndex: ii
+                          });
+                        }}
+                      >
+                        <span className="fb-arch-pop-lead">
+                          <UiIcon name="vadDetect" size={13} />
+                          <span>区间内语音检测 (VAD)…</span>
+                        </span>
+                        <span className="fb-arch-pop-sub">推荐</span>
+                      </button>
+                      <div className="fb-arch-pop-div" />
+                    </>
+                  )}
                   {smartSplitPlan?.primary && (
                     <button
                       type="button"
@@ -2313,7 +2347,11 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
                     <span
                       className={`fb-arch-pop-check ${smartSplitUseAcoustic && audioBuffer ? 'is-on' : ''}`}
                     >
-                      {smartSplitUseAcoustic && audioBuffer && <UiIcon name="check" size={10} />}
+                      {smartSplitUseAcoustic && audioBuffer && (
+                        <svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true">
+                          <path d="M2.2 6.3L4.8 8.9L9.8 3.4" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
                     </span>
                   </div>
                   <div className="fb-arch-pop-div" />
@@ -2363,6 +2401,27 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
                     </span>
                     <span className="fb-arch-pop-sub">N 段</span>
                   </button>
+                  {onOpenVad && !(audioBuffer && iv.text.trim() === '' && durSec >= 0.4) && (
+                    <button
+                      type="button"
+                      className="fb-arch-pop-item"
+                      onClick={() => {
+                        setOpenPop(null);
+                        onOpenVad({
+                          scopeMode: 'interval',
+                          writeMode: 'split-interval',
+                          tierIndex: ti,
+                          itemIndex: ii
+                        });
+                      }}
+                    >
+                      <span className="fb-arch-pop-lead">
+                        <UiIcon name="vadDetect" size={13} />
+                        <span>区间内语音检测 (VAD)…</span>
+                      </span>
+                      <span className="fb-arch-pop-sub">VAD</span>
+                    </button>
+                  )}
                 </AnchoredPopover>
               </div>
             );
@@ -4266,6 +4325,26 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
                 <span>{isCompact ? '改名' : '层名快编'}</span>
               </button>
             );
+          case 'tier-scale': {
+            const curTierScale = resolveTierScaleMode(tg, ti, scaleMode, tierScaleOverrides);
+            const isLinearTier = curTierScale === 'linear';
+            return (
+              <button
+                key={id}
+                type="button"
+                className={`fb-arch-btn ${isLinearTier ? 'is-active-toggle' : ''}`}
+                title={
+                  isLinearTier
+                    ? '当前为线性 (1:1)，点击切为自适应双尺'
+                    : '当前为自适应双尺，点击切为线性 (1:1)'
+                }
+                onClick={() => setTierScaleMode(ti, isLinearTier ? 'elastic' : 'linear')}
+              >
+                <UiIcon name="toggleScale" size={13} />
+                <span>{isLinearTier ? '1:1' : isCompact ? '双尺' : '自适应'}</span>
+              </button>
+            );
+          }
           case 'tier-visibility':
             return (
               <button
@@ -4418,6 +4497,26 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
                 </span>
               </button>
             );
+          case 'tier-scale': {
+            const curTierScale = resolveTierScaleMode(tg, ti, scaleMode, tierScaleOverrides);
+            const isLinearTier = curTierScale === 'linear';
+            return (
+              <button
+                key={id}
+                type="button"
+                className="fb-arch-pop-item"
+                onClick={() => {
+                  setOpenPop(null);
+                  setTierScaleMode(ti, isLinearTier ? 'elastic' : 'linear');
+                }}
+              >
+                <span className="fb-arch-pop-lead">
+                  <UiIcon name="toggleScale" size={13} />
+                  <span>{isLinearTier ? '切换为自适应双尺' : '切换为线性 (1:1)'}</span>
+                </span>
+              </button>
+            );
+          }
           case 'tier-visibility':
             return (
               <button

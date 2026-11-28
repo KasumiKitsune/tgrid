@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { resolveTierScaleMode } from '../../layout/computeLayout';
 import { isComposingEvent } from '../../shortcuts/registry';
 import { formatQuote, formatTierLabel } from '../../store/historyModel';
 import { useEditorStore } from '../../store/useEditorStore';
@@ -34,6 +35,10 @@ export const TiersPanel: React.FC = () => {
   const reorderTier = useEditorStore((s) => s.reorderTier);
   const removeTierWithUndoToast = useEditorStore((s) => s.removeTierWithUndoToast);
   const commitTgMutation = useEditorStore((s) => s.commitTgMutation);
+  const scaleMode = useEditorStore((s) => s.scaleMode);
+  const tierScaleOverrides = useEditorStore((s) => s.tierScaleOverrides);
+  const setTierScaleMode = useEditorStore((s) => s.setTierScaleMode);
+  const applySmartMixedScale = useEditorStore((s) => s.applySmartMixedScale);
 
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [nameDraft, setNameDraft] = useState('');
@@ -259,17 +264,30 @@ export const TiersPanel: React.FC = () => {
         }
         defaultOpen={true}
       >
-        {hiddenTierIndices.length > 0 && (
-          <div style={{ marginBottom: 6 }}>
-            <button
-              type="button"
-              className="compact sb-full-btn"
-              onClick={showAllTiers}
-              title="恢复显示全部已隐藏层级"
-            >
-              <UiIcon name="showTier" size={13} />
-              <span>显示全部 ({hiddenTierIndices.length} 已隐藏)</span>
-            </button>
+        {(hiddenTierIndices.length > 0 || tg.tiers.length >= 2) && (
+          <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+            {hiddenTierIndices.length > 0 && (
+              <button
+                type="button"
+                className="compact sb-full-btn"
+                onClick={showAllTiers}
+                title="恢复显示全部已隐藏层级"
+              >
+                <UiIcon name="showTier" size={13} />
+                <span>显示全部 ({hiddenTierIndices.length} 已隐藏)</span>
+              </button>
+            )}
+            {tg.tiers.length >= 2 && (
+              <button
+                type="button"
+                className="compact sb-full-btn"
+                onClick={() => applySmartMixedScale()}
+                title="根据各层文本密度智能分配线性 (1:1) 与自适应双尺"
+              >
+                <UiIcon name="toggleScale" size={13} />
+                <span>智能分配比例</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -397,6 +415,30 @@ export const TiersPanel: React.FC = () => {
                         {tier.name || '未命名层'}
                       </span>
                     )}
+
+                    {!isEditing && (() => {
+                      const tierScale = resolveTierScaleMode(tg, idx, scaleMode, tierScaleOverrides);
+                      const isLinearTier = tierScale === 'linear';
+                      return (
+                        <button
+                          type="button"
+                          className={`sb-tier-scale-btn ${isLinearTier ? 'is-linear' : 'is-elastic'}`}
+                          title={
+                            isLinearTier
+                              ? '当前：线性等比 (1:1)，点击切换为自适应双尺'
+                              : '当前：自适应双尺，点击切换为线性等比 (1:1)'
+                          }
+                          aria-label={`切换第 ${idx + 1} 层时间比例`}
+                          aria-pressed={isLinearTier}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTierScaleMode(idx, isLinearTier ? 'elastic' : 'linear');
+                          }}
+                        >
+                          {isLinearTier ? '1:1' : '弹性'}
+                        </button>
+                      );
+                    })()}
 
                     {!isEditing && (
                       <span className="sb-tier-count">
