@@ -65,7 +65,6 @@ import {
 import {
   getBoundaryBoundsForTier,
   useEditorStore,
-  type FloatingBarTarget,
   type SidebarTab
 } from '../store/useEditorStore';
 import { resolveF0RangeOverride } from '../utils/f0Range';
@@ -101,7 +100,7 @@ import {
 } from '../utils/multiSelection';
 import type { TextGrid } from '../bridge/types';
 import { SubmenuChevronIcon, UiIcon, type IconName } from './Icons';
-import { ScrubNumberInput } from './ScrubNumberInput';
+import { FloatingActionBar } from './FloatingActionBar';
 import { IpaImePopover, IpaModePill } from './IpaImePopover';
 import { isIpaRelatedElement, useIpaIme } from './useIpaIme';
 import { AcousticMicroLoupe, type MicroLoupeAnchor } from './AcousticMicroLoupe';
@@ -179,33 +178,6 @@ function collectPeerTexts(
     }
   }
   return peers;
-}
-
-const FLOATING_FIELD_IDS = new Set([
-  'iv-times',
-  'iv-dur',
-  'pt-time',
-  'bnd-time',
-  'tier-name',
-  'tier-bounds'
-]);
-
-function assembleFloatingBarNodes(
-  entries: Array<{ id: string; node: React.ReactNode }>
-): React.ReactNode[] | null {
-  if (entries.length === 0) return null;
-  const out: React.ReactNode[] = [];
-  for (let i = 0; i < entries.length; i++) {
-    if (i > 0) {
-      const prevIsField = FLOATING_FIELD_IDS.has(entries[i - 1].id);
-      const curIsField = FLOATING_FIELD_IDS.has(entries[i].id);
-      if (prevIsField !== curIsField) {
-        out.push(<div key={`sep-${entries[i - 1].id}-${entries[i].id}`} className="sep" />);
-      }
-    }
-    out.push(<React.Fragment key={entries[i].id}>{entries[i].node}</React.Fragment>);
-  }
-  return out;
 }
 
 function isSafeInputShortcutEvent(e: KeyboardEvent): boolean {
@@ -523,6 +495,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const tg = useEditorStore((s) => s.tg);
     const activeTabId = useEditorStore((s) => s.activeTabId);
     const corpusActiveEntryId = useEditorStore((s) => s.corpusActiveEntryId);
+    const corpusSwitching = useEditorStore((s) => s.corpusSwitching);
+    const audioLoading = useEditorStore((s) => s.audioLoading);
     const pendingAutoEditTarget = useEditorStore((s) => s.pendingAutoEditTarget);
     const clearPendingAutoEditTarget = useEditorStore((s) => s.clearPendingAutoEditTarget);
     const docVersion = useEditorStore((s) => s.docVersion);
@@ -578,6 +552,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const canvasScale = useEditorStore((s) => s.canvasScale);
     const setCanvasScale = useEditorStore((s) => s.setCanvasScale);
     const floatingBarConfig = useEditorStore((s) => s.floatingBarConfig);
+    const floatingBarDensity = useEditorStore((s) => s.floatingBarDensity);
     const customShortcuts = useEditorStore((s) => s.customShortcuts);
     const exportOpen = useEditorStore((s) => s.exportOpen);
     const posterOpen = useEditorStore((s) => s.posterOpen);
@@ -737,16 +712,6 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     useEffect(() => {
       return () => cancelSubmenuClose();
     }, [cancelSubmenuClose]);
-
-    const getVisibleBarItems = useCallback(
-      (target: FloatingBarTarget): string[] => {
-        const sec = floatingBarConfig[target];
-        if (!sec) return [];
-        const hiddenSet = new Set(sec.hidden);
-        return sec.order.filter((id) => !hiddenSet.has(id));
-      },
-      [floatingBarConfig]
-    );
 
     const showScrubPreviewLine = useCallback(
       (previewT: number, tierIndex: number, fullBand: boolean) => {
@@ -2011,8 +1976,9 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       [tg, layout, ipaIme, clearHoverGuide]
     );
 
-    // Open inline editor after a newly created interval commits or corpus entry activates
-    useEffect(() => {
+    // Open inline editor synchronously before paint so the floating bar never flashes
+    // across a frame gap when a newly created interval commits or a corpus entry activates.
+    useLayoutEffect(() => {
       const pending = pendingInlineOpenRef.current;
       if (pending) {
         pendingInlineOpenRef.current = null;
@@ -2021,13 +1987,13 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       }
       if (pendingAutoEditTarget) {
         const target = pendingAutoEditTarget;
-        clearPendingAutoEditTarget();
         if (mode === 'edit') {
           openInline(
             { kind: target.kind, tierIndex: target.tierIndex, itemIndex: target.itemIndex },
             Boolean(target.caretAtEnd)
           );
         }
+        clearPendingAutoEditTarget();
       }
     }, [tg, layout, openInline, pendingAutoEditTarget, clearPendingAutoEditTarget, mode]);
 
@@ -7911,7 +7877,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                   action: () => alignMultiSelectionBounds('to-primary')
                 },
                 {
-                  label: '对齐左右边界至外包范围',
+                  label: '对齐左右边界至合并范围',
                   icon: 'nudgeShared',
                   action: () => alignMultiSelectionBounds('to-envelope')
                 }
@@ -8510,6 +8476,9 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       showFloatingBar &&
       selection &&
       !inlineTarget &&
+      !pendingAutoEditTarget &&
+      !corpusSwitching &&
+      !audioLoading &&
       (!dragPreview || scrubPreviewing) &&
       !intervalDragPreview
         ? getSelectionAnchor(layout, selection)
@@ -8517,969 +8486,106 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const anchorRect = selectionAnchor?.rect ?? null;
     const anchorBand = selectionAnchor?.band ?? null;
 
-    const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (isComposingEvent(e)) return;
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        e.currentTarget.blur();
-      }
-    };
+    const hasFloatingBarContent = Boolean(selection && anchorRect && anchorBand);
 
-    const renderFloatingBarContent = (): React.ReactNode => {
-      if (!selection || !anchorRect || !anchorBand) return null;
-
+    const floatingSelectionKey = useMemo(() => {
+      if (!selection) return 'none';
       if (multiAnalysis.count >= 2 && selection.kind === 'interval') {
-        const caps = multiAnalysis.capabilities;
-        const multiNodes: React.ReactNode[] = [
-          <span key="ms-count" className="dur-badge">
-            已选 {multiAnalysis.count} 项
-          </span>,
-          <div key="ms-sep-0" className="sep" />
-        ];
-        if (caps.canMerge) {
-          multiNodes.push(
-            <button
-              key="ms-merge"
-              type="button"
-              className="compact"
-              title={`合并所选连续区间 (${multiAnalysis.count} 段)`}
-              onClick={() => mergeMultiSelection()}
-            >
-              <UiIcon name="mergeRight" size={13} />
-              <span>合并 ({multiAnalysis.count})</span>
-            </button>
-          );
-        }
-        if (caps.canAlignBounds) {
-          multiNodes.push(
-            <button
-              key="ms-align-primary"
-              type="button"
-              className="compact"
-              title="将所选区间左右边界对齐至主选区间"
-              onClick={() => alignMultiSelectionBounds('to-primary')}
-            >
-              <UiIcon name="nudgeShared" size={13} />
-              <span>对齐主选</span>
-            </button>,
-            <button
-              key="ms-align-env"
-              type="button"
-              className="compact"
-              title="将所选区间左右边界对齐至外包范围"
-              onClick={() => alignMultiSelectionBounds('to-envelope')}
-            >
-              <UiIcon name="nudgeShared" size={13} />
-              <span>对齐外包</span>
-            </button>
-          );
-        }
-        if (caps.canRemapToPlayRange && playRange) {
-          multiNodes.push(
-            <button
-              key="ms-remap"
-              type="button"
-              className="compact"
-              title="将所选区间重映射到当前语谱图选区"
-              onClick={() => alignMultiSelectionBounds('to-range', playRange)}
-            >
-              <UiIcon name="nudgeShared" size={13} />
-              <span>重映射到选区</span>
-            </button>
-          );
-        }
-        if (caps.canClearText) {
-          multiNodes.push(
-            <button
-              key="ms-clear"
-              type="button"
-              className="compact"
-              title={`批量清空所选 ${multiAnalysis.nonEmptyCount} 项文本`}
-              onClick={() => clearMultiSelectionText()}
-            >
-              <UiIcon name="clear" size={13} />
-              <span>清空 ({multiAnalysis.nonEmptyCount})</span>
-            </button>
-          );
-        }
-        multiNodes.push(
-          <button
-            key="ms-cancel"
-            type="button"
-            className="compact"
-            title="退出复选模式 (Esc)"
-            onClick={() => clearMultiSelection()}
-          >
-            <UiIcon name="CloseIcon" size={13} />
-            <span>取消复选</span>
-          </button>
-        );
-        return multiNodes;
+        return `multi:${multiAnalysis.count}:${multiAnalysis.envelopeXmin}:${multiAnalysis.envelopeXmax}`;
       }
-
-      if (selection.kind === 'interval') {
-        const tier = tg.tiers[selection.tierIndex];
-        const iv = tier?.intervals[selection.itemIndex];
-        if (!tier || !iv) return null;
-        const visibleIds = getVisibleBarItems('interval');
-        if (visibleIds.length === 0) return null;
-
-        const isZoomedHere = Boolean(
-          viewDomain && Math.abs(viewDomain.min - iv.xmin) < 1e-4 && Math.abs(viewDomain.max - iv.xmax) < 1e-4
-        );
-        const durMs = Math.max(0, Math.round((iv.xmax - iv.xmin) * 1000));
-        const prev = tier.intervals[selection.itemIndex - 1];
-        const next = tier.intervals[selection.itemIndex + 1];
-        const hasContigPrev = Boolean(prev && prev.xmax === iv.xmin);
-        const hasContigNext = Boolean(next && next.xmin === iv.xmax);
-
-        const entries: Array<{ id: string; node: React.ReactNode }> = [];
-        for (const id of visibleIds) {
-          switch (id) {
-            case 'iv-times':
-              entries.push({
-                id,
-                node: (
-                  <>
-                    <ScrubNumberInput
-                      variant="floating"
-                      label="起"
-                      value={iv.xmin}
-                      min={hasContigPrev && prev ? prev.xmin : undefined}
-                      strictMin={hasContigPrev}
-                      max={iv.xmax}
-                      strictMax
-                      formatValue={formatPraatDouble}
-                      onScrubPreview={(previewT) =>
-                        showScrubPreviewLine(previewT, selection.tierIndex, false)
-                      }
-                      onScrubEnd={clearScrubPreview}
-                      onCommit={(val) => {
-                        if (val >= iv.xmax) {
-                          showToast('起点必须严格小于终点', true);
-                          return false;
-                        }
-                        if (prev && prev.xmax === iv.xmin && val <= prev.xmin) {
-                          showToast('起点不能越过左侧相邻区间', true);
-                          return false;
-                        }
-                        if (val !== iv.xmin) {
-                          const ti = selection.tierIndex;
-                          const ii = selection.itemIndex;
-                          const tierName = formatTierLabel(tier.name, ti);
-                          const oldVal = iv.xmin;
-                          commitTgMutation(
-                            (_draft, ctx) => {
-                              const dTier = ctx.editTier(ti);
-                              if (!dTier || dTier.kind !== 'intervalTier') return false;
-                              const dPrev = dTier.intervals[ii - 1];
-                              const cur = dTier.intervals[ii];
-                              if (!cur) return false;
-                              if (dPrev && dPrev.xmax === cur.xmin && val > dPrev.xmin) dPrev.xmax = val;
-                              cur.xmin = val;
-                              ctx.setNextPlayRange({ start: val, end: cur.xmax });
-                            },
-                            undefined,
-                            {
-                              type: 'edit-interval-edge',
-                              title: '调整区间起点',
-                              detail: `${tierName} · 起点 ${formatTimeSec(oldVal)} → ${formatTimeSec(val)} (${formatDeltaTime(val - oldVal)})`,
-                              icon: 'nudgeFine',
-                              tierName,
-                              focusTime: val,
-                              coalesce: {
-                                key: `edge:${ti}:${ii}:start`,
-                                originValue: oldVal,
-                                latestValue: val,
-                                chainPrevLatest: oldVal,
-                                formatMergedDetail: (orig, latest, count) => {
-                                  const o = Number(orig);
-                                  const l = Number(latest);
-                                  return `${tierName} · 起点 ${formatTimeSec(o)} → ${formatTimeSec(l)} (${formatDeltaTime(l - o)}${count > 1 ? ` · ${count}次` : ''})`;
-                                }
-                              }
-                            }
-                          );
-                        }
-                        return true;
-                      }}
-                    />
-                    <ScrubNumberInput
-                      variant="floating"
-                      label="止"
-                      value={iv.xmax}
-                      min={iv.xmin}
-                      strictMin
-                      max={hasContigNext && next ? next.xmax : undefined}
-                      strictMax={hasContigNext}
-                      formatValue={formatPraatDouble}
-                      onScrubPreview={(previewT) =>
-                        showScrubPreviewLine(previewT, selection.tierIndex, false)
-                      }
-                      onScrubEnd={clearScrubPreview}
-                      onCommit={(val) => {
-                        if (val <= iv.xmin) {
-                          showToast('终点必须严格大于起点', true);
-                          return false;
-                        }
-                        if (next && next.xmin === iv.xmax && val >= next.xmax) {
-                          showToast('终点不能越过右侧相邻区间', true);
-                          return false;
-                        }
-                        if (val !== iv.xmax) {
-                          const ti = selection.tierIndex;
-                          const ii = selection.itemIndex;
-                          const tierName = formatTierLabel(tier.name, ti);
-                          const oldVal = iv.xmax;
-                          commitTgMutation(
-                            (_draft, ctx) => {
-                              const dTier = ctx.editTier(ti);
-                              if (!dTier || dTier.kind !== 'intervalTier') return false;
-                              const dNext = dTier.intervals[ii + 1];
-                              const cur = dTier.intervals[ii];
-                              if (!cur) return false;
-                              if (dNext && dNext.xmin === cur.xmax && val < dNext.xmax) dNext.xmin = val;
-                              cur.xmax = val;
-                              ctx.setNextPlayRange({ start: cur.xmin, end: val });
-                            },
-                            undefined,
-                            {
-                              type: 'edit-interval-edge',
-                              title: '调整区间终点',
-                              detail: `${tierName} · 终点 ${formatTimeSec(oldVal)} → ${formatTimeSec(val)} (${formatDeltaTime(val - oldVal)})`,
-                              icon: 'nudgeFine',
-                              tierName,
-                              focusTime: val,
-                              coalesce: {
-                                key: `edge:${ti}:${ii}:end`,
-                                originValue: oldVal,
-                                latestValue: val,
-                                chainPrevLatest: oldVal,
-                                formatMergedDetail: (orig, latest, count) => {
-                                  const o = Number(orig);
-                                  const l = Number(latest);
-                                  return `${tierName} · 终点 ${formatTimeSec(o)} → ${formatTimeSec(l)} (${formatDeltaTime(l - o)}${count > 1 ? ` · ${count}次` : ''})`;
-                                }
-                              }
-                            }
-                          );
-                        }
-                        return true;
-                      }}
-                    />
-                  </>
-                )
-              });
-              break;
-            case 'iv-dur':
-              entries.push({
-                id,
-                node: (
-                  <span
-                    className="floating-dur-badge"
-                    style={{
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: '10.5px',
-                      color: '#C2BEB4',
-                      fontVariantNumeric: 'tabular-nums',
-                      padding: '0 3px'
-                    }}
-                  >
-                    {durMs} ms
-                  </span>
-                )
-              });
-              break;
-            case 'iv-edit':
-              entries.push({
-                id,
-                node: (
-                  <button type="button" className="compact" onClick={() => openInline(selection)}>
-                    <UiIcon name="edit" size={13} />
-                    <span>改字</span>
-                  </button>
-                )
-              });
-              break;
-            case 'iv-clear':
-              if (iv.text !== '') {
-                entries.push({
-                  id,
-                  node: (
-                    <button
-                      type="button"
-                      className="compact"
-                      onClick={() => {
-                        const ti = selection.tierIndex;
-                        const ii = selection.itemIndex;
-                        const tierName = formatTierLabel(tier.name, ti);
-                        const oldText = iv.text;
-                        commitTgMutation(
-                          (_d, ctx) => {
-                            const dTier = ctx.editTier(ti);
-                            const target = dTier?.intervals[ii];
-                            if (!target || target.text === '') return false;
-                            target.text = '';
-                          },
-                          selection,
-                          {
-                            type: 'clear-interval-text',
-                            title: '清空区间文本',
-                            detail: `${tierName} · 原${formatQuote(oldText)}`,
-                            icon: 'clear',
-                            tierName,
-                            focusTime: iv.xmin
-                          }
-                        );
-                      }}
-                    >
-                      <UiIcon name="clear" size={13} />
-                      <span>清空</span>
-                    </button>
-                  )
-                });
-              }
-              break;
-            case 'iv-split':
-              entries.push({
-                id,
-                node: (
-                  <button
-                    type="button"
-                    className="compact"
-                    disabled={iv.xmax <= iv.xmin}
-                    onClick={() => splitInterval(selection.tierIndex, selection.itemIndex)}
-                  >
-                    <UiIcon name="split" size={13} />
-                    <span>切分</span>
-                  </button>
-                )
-              });
-              break;
-            case 'iv-split-equal':
-              entries.push({
-                id,
-                node: (
-                  <button
-                    type="button"
-                    className="compact"
-                    disabled={iv.xmax <= iv.xmin}
-                    title="等分为 2 段"
-                    onClick={() => splitIntervalEqualN(selection.tierIndex, selection.itemIndex, 2)}
-                  >
-                    <UiIcon name="splitEqual" size={13} />
-                    <span>等分</span>
-                  </button>
-                )
-              });
-              break;
-            case 'iv-merge-left':
-              entries.push({
-                id,
-                node: (
-                  <button
-                    type="button"
-                    className="compact"
-                    disabled={selection.itemIndex === 0}
-                    onClick={() => mergeIntervalWith(selection.tierIndex, selection.itemIndex, -1)}
-                  >
-                    <UiIcon name="mergeLeft" size={13} />
-                    <span>合左</span>
-                  </button>
-                )
-              });
-              break;
-            case 'iv-merge-right':
-              entries.push({
-                id,
-                node: (
-                  <button
-                    type="button"
-                    className="compact"
-                    disabled={selection.itemIndex >= tier.intervals.length - 1}
-                    onClick={() => mergeIntervalWith(selection.tierIndex, selection.itemIndex, 1)}
-                  >
-                    <UiIcon name="mergeRight" size={13} />
-                    <span>合右</span>
-                  </button>
-                )
-              });
-              break;
-            case 'iv-play':
-              entries.push({
-                id,
-                node: (
-                  <button
-                    type="button"
-                    className="compact"
-                    disabled={iv.xmax <= iv.xmin}
-                    onClick={() => {
-                      setPlayRange({ start: iv.xmin, end: iv.xmax });
-                      onStartPlayback(iv.xmin, iv.xmax);
-                    }}
-                  >
-                    <UiIcon name="play" size={13} />
-                    <span>播放</span>
-                  </button>
-                )
-              });
-              break;
-            case 'iv-play-ctx':
-              entries.push({
-                id,
-                node: (
-                  <button
-                    type="button"
-                    className="compact"
-                    disabled={iv.xmax <= iv.xmin}
-                    title="带语境播放 (±250 ms)"
-                    onClick={() => {
-                      const s = Math.max(tg.xmin, iv.xmin - 0.25);
-                      const en = Math.min(tg.xmax, iv.xmax + 0.25);
-                      if (en > s) onStartPlayback(s, en);
-                    }}
-                  >
-                    <UiIcon name="playContext" size={13} />
-                    <span>±250ms</span>
-                  </button>
-                )
-              });
-              break;
-            case 'iv-zoom':
-              entries.push({
-                id,
-                node: isZoomedHere ? (
-                  <button type="button" className="compact" onClick={() => setViewDomain(null)}>
-                    <UiIcon name="zoomReset" size={13} />
-                    <span>全长</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="compact"
-                    disabled={iv.xmax <= iv.xmin}
-                    onClick={() => setViewDomain({ min: iv.xmin, max: iv.xmax })}
-                  >
-                    <UiIcon name="zoomIn" size={13} />
-                    <span>放大</span>
-                  </button>
-                )
-              });
-              break;
-            case 'iv-copy-text':
-              entries.push({
-                id,
-                node: (
-                  <button
-                    type="button"
-                    className="compact"
-                    disabled={iv.text === ''}
-                    title="复制区间文本"
-                    onClick={() => copyText(iv.text, '区间文本')}
-                  >
-                    <UiIcon name="copy" size={13} />
-                    <span>复制</span>
-                  </button>
-                )
-              });
-              break;
-          }
-        }
-        return assembleFloatingBarNodes(entries);
+      if (selection.kind === 'interval' || selection.kind === 'point') {
+        return `${selection.kind}:${selection.tierIndex}:${selection.itemIndex}`;
       }
-
-      if (selection.kind === 'point') {
-        const tier = tg.tiers[selection.tierIndex];
-        const pt = tier?.points[selection.itemIndex];
-        if (!tier || !pt) return null;
-        const visibleIds = getVisibleBarItems('point');
-        if (visibleIds.length === 0) return null;
-
-        const entries: Array<{ id: string; node: React.ReactNode }> = [];
-        for (const id of visibleIds) {
-          switch (id) {
-            case 'pt-time':
-              entries.push({
-                id,
-                node: (
-                  <ScrubNumberInput
-                    variant="floating"
-                    label="时间"
-                    value={pt.number}
-                    min={Number.isFinite(tier.xmin) ? tier.xmin : undefined}
-                    max={Number.isFinite(tier.xmax) ? tier.xmax : undefined}
-                    formatValue={formatPraatDouble}
-                    onScrubPreview={(previewT) =>
-                      showScrubPreviewLine(previewT, selection.tierIndex, false)
-                    }
-                    onScrubEnd={clearScrubPreview}
-                    onCommit={(val) => {
-                      if (tier.points.some((p, i) => i !== selection.itemIndex && p.number === val)) {
-                        showToast('目标时刻已存在标点', true);
-                        return false;
-                      }
-                      if (val !== pt.number) {
-                        const ti = selection.tierIndex;
-                        const pi = selection.itemIndex;
-                        const tierName = formatTierLabel(tier.name, ti);
-                        const oldT = pt.number;
-                        commitTgMutation(
-                          (_draft, ctx) => {
-                            const dTier = ctx.editTier(ti);
-                            if (!dTier || dTier.kind !== 'textTier') return false;
-                            const targetPt = dTier.points[pi];
-                            if (!targetPt) return false;
-                            targetPt.number = val;
-                            dTier.points.sort((a, b) => a.number - b.number);
-                            const nextIdx = dTier.points.indexOf(targetPt);
-                            ctx.setNextSelection({
-                              kind: 'point',
-                              tierIndex: ti,
-                              itemIndex: Math.max(0, nextIdx),
-                              bandIndex: selection.bandIndex
-                            });
-                          },
-                          undefined,
-                          {
-                            type: 'move-point',
-                            title: '移动标注点',
-                            detail: `${tierName} · ${formatTimeSec(oldT)} → ${formatTimeSec(val)} (${formatDeltaTime(val - oldT)})`,
-                            icon: 'nudgeFine',
-                            tierName,
-                            focusTime: val,
-                            coalesce: {
-                              key: `move-point:${ti}`,
-                              originValue: oldT,
-                              latestValue: val,
-                              chainPrevLatest: oldT,
-                              formatMergedDetail: (orig, latest, count) => {
-                                const o = Number(orig);
-                                const l = Number(latest);
-                                return `${tierName} · ${formatTimeSec(o)} → ${formatTimeSec(l)} (${formatDeltaTime(l - o)}${count > 1 ? ` · ${count}次` : ''})`;
-                              }
-                            }
-                          }
-                        );
-                      }
-                      return true;
-                    }}
-                  />
-                )
-              });
-              break;
-            case 'pt-edit':
-              entries.push({
-                id,
-                node: (
-                  <button type="button" className="compact" onClick={() => openInline(selection)}>
-                    <UiIcon name="edit" size={13} />
-                    <span>改字</span>
-                  </button>
-                )
-              });
-              break;
-            case 'pt-play':
-              entries.push({
-                id,
-                node: (
-                  <button
-                    type="button"
-                    className="compact"
-                    onClick={() => {
-                      setPlayRange(null);
-                      onStartPlayback(pt.number, tg.xmax);
-                    }}
-                  >
-                    <UiIcon name="play" size={13} />
-                    <span>播放</span>
-                  </button>
-                )
-              });
-              break;
-            case 'pt-play-ctx':
-              entries.push({
-                id,
-                node: (
-                  <button
-                    type="button"
-                    className="compact"
-                    title="跨越标点带语境试听 (±250 ms)"
-                    onClick={() => {
-                      const s = Math.max(tg.xmin, pt.number - 0.25);
-                      const en = Math.min(tg.xmax, pt.number + 0.25);
-                      if (en > s) onStartPlayback(s, en);
-                    }}
-                  >
-                    <UiIcon name="playContext" size={13} />
-                    <span>±250ms</span>
-                  </button>
-                )
-              });
-              break;
-            case 'pt-delete':
-              entries.push({
-                id,
-                node: (
-                  <button
-                    type="button"
-                    className="compact danger"
-                    onClick={() => {
-                      const ti = selection.tierIndex;
-                      const pi = selection.itemIndex;
-                      const tierName = formatTierLabel(tier.name, ti);
-                      const ptTime = pt.number;
-                      const ptMark = pt.mark;
-                      commitTgMutation(
-                        (_draft, ctx) => {
-                          const dTier = ctx.editTier(ti);
-                          if (!dTier || !dTier.points[pi]) return false;
-                          dTier.points.splice(pi, 1);
-                        },
-                        null,
-                        {
-                          type: 'delete-point',
-                          title: '删除标注点',
-                          detail: `${tierName} · ${formatTimeSec(ptTime)} ${formatQuote(ptMark)}`,
-                          icon: 'trash',
-                          tierName,
-                          focusTime: ptTime
-                        }
-                      );
-                    }}
-                  >
-                    <UiIcon name="trash" size={13} />
-                    <span>删除</span>
-                  </button>
-                )
-              });
-              break;
-          }
-        }
-        return assembleFloatingBarNodes(entries);
-      }
-
       if (selection.kind === 'boundary') {
-        const visibleIds = getVisibleBarItems('boundary');
-        if (visibleIds.length === 0) return null;
-        const { minAllowed, maxAllowed } = getBoundaryDragBounds(
-          tg,
-          selection.tierIndex,
-          selection.time,
-          false
-        );
-        const zHint = getEffectiveShortcutHint('snap-zero-crossing', customShortcuts);
-        const entries: Array<{ id: string; node: React.ReactNode }> = [];
-        for (const id of visibleIds) {
-          switch (id) {
-            case 'bnd-time':
-              entries.push({
-                id,
-                node: (
-                  <ScrubNumberInput
-                    variant="floating"
-                    label="边界"
-                    value={selection.time}
-                    min={Number.isFinite(minAllowed) ? minAllowed : undefined}
-                    max={Number.isFinite(maxAllowed) ? maxAllowed : undefined}
-                    formatValue={formatPraatDouble}
-                    onScrubPreview={(previewT) =>
-                      showScrubPreviewLine(previewT, selection.tierIndex, false)
-                    }
-                    onScrubEnd={clearScrubPreview}
-                    onCommit={(val) =>
-                      moveTierBoundary(selection.tierIndex, selection.time, val, false, {
-                        nextSelection: {
-                          kind: 'boundary',
-                          tierIndex: selection.tierIndex,
-                          time: val,
-                          bandIndex: selection.bandIndex
-                        }
-                      })
-                    }
-                  />
-                )
-              });
-              break;
-            case 'bnd-zero':
-              entries.push({
-                id,
-                node: (
-                  <button
-                    type="button"
-                    className="compact"
-                    disabled={!analysis}
-                    title={zHint ? `吸附最近音频过零点 (${zHint})` : '吸附最近音频过零点'}
-                    onClick={() => void snapTargetToZeroCrossing(selection)}
-                  >
-                    <UiIcon name="zeroCross" size={13} />
-                    <span>过零</span>
-                  </button>
-                )
-              });
-              break;
-            case 'bnd-audition':
-              entries.push({
-                id,
-                node: (
-                  <button
-                    type="button"
-                    className="compact"
-                    onClick={() => {
-                      const s = Math.max(tg.xmin, selection.time - 0.2);
-                      const en = Math.min(tg.xmax, selection.time + 0.2);
-                      if (en > s) onStartPlayback(s, en);
-                    }}
-                  >
-                    <UiIcon name="playContext" size={13} />
-                    <span>试听 ±200ms</span>
-                  </button>
-                )
-              });
-              break;
-            case 'bnd-delete':
-              entries.push({
-                id,
-                node: (
-                  <button
-                    type="button"
-                    className="compact danger"
-                    onClick={() => deleteBoundaryAt(selection.tierIndex, selection.time)}
-                  >
-                    <UiIcon name="delBoundary" size={13} />
-                    <span>删除边界</span>
-                  </button>
-                )
-              });
-              break;
-          }
-        }
-        return assembleFloatingBarNodes(entries);
+        return `boundary:${selection.tierIndex}:${selection.time}`;
       }
-
       if (selection.kind === 'spine') {
-        const { minAllowed, maxAllowed } = getBoundaryDragBounds(tg, 0, selection.time, true);
-        const showSpineZero = !floatingBarConfig.boundary.hidden.includes('bnd-zero');
-        const zHint = getEffectiveShortcutHint('snap-zero-crossing', customShortcuts);
-        return (
-          <>
-            <ScrubNumberInput
-              variant="floating"
-              label="对齐时刻"
-              value={selection.time}
-              min={Number.isFinite(minAllowed) ? minAllowed : undefined}
-              max={Number.isFinite(maxAllowed) ? maxAllowed : undefined}
-              formatValue={formatPraatDouble}
-              onScrubPreview={(previewT) => showScrubPreviewLine(previewT, 0, true)}
-              onScrubEnd={clearScrubPreview}
-              onCommit={(val) =>
-                moveSharedTimestamp(selection.time, val, {
-                  nextSelection: {
-                    kind: 'spine',
-                    time: val,
-                    bandIndex: selection.bandIndex
-                  }
-                })
-              }
-            />
-            {showSpineZero && (
-              <>
-                <div className="sep" />
-                <button
-                  type="button"
-                  className="compact"
-                  disabled={!analysis}
-                  title={zHint ? `跨层吸附最近音频过零点 (${zHint})` : '跨层吸附最近音频过零点'}
-                  onClick={() => void snapTargetToZeroCrossing(selection)}
-                >
-                  <UiIcon name="zeroCross" size={13} />
-                  <span>过零</span>
-                </button>
-              </>
-            )}
-          </>
-        );
+        return `spine:${selection.time}`;
       }
+      return `tier:${selection.tierIndex}`;
+    }, [selection, multiAnalysis.count, multiAnalysis.envelopeXmin, multiAnalysis.envelopeXmax]);
 
-      if (selection.kind === 'tier') {
-        const tier = tg.tiers[selection.tierIndex];
-        if (!tier) return null;
-        const visibleIds = getVisibleBarItems('tier');
-        if (visibleIds.length === 0) return null;
+    const [floatingDragOffset, setFloatingDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+    const [isFloatingBarDragging, setIsFloatingBarDragging] = useState(false);
+    const floatingDragOffsetRef = useRef(floatingDragOffset);
+    floatingDragOffsetRef.current = floatingDragOffset;
+    const floatingDragCleanupRef = useRef<(() => void) | null>(null);
 
-        const entries: Array<{ id: string; node: React.ReactNode }> = [];
-        for (const id of visibleIds) {
-          switch (id) {
-            case 'tier-name':
-              entries.push({
-                id,
-                node: (
-                  <label className="field-inline">
-                    层名
-                    <input
-                      type="text"
-                      defaultValue={tier.name}
-                      key={`tn-${selection.tierIndex}-${tier.name}`}
-                      onKeyDown={blurOnEnter}
-                      onBlur={(e) => {
-                        if (e.target.value !== tier.name) {
-                          const ti = selection.tierIndex;
-                          const prevName = tier.name;
-                          const nextName = e.target.value;
-                          commitTgMutation(
-                            (_d, ctx) => {
-                              const dTier = ctx.editTier(ti);
-                              if (!dTier || dTier.name === nextName) return false;
-                              dTier.name = nextName;
-                            },
-                            undefined,
-                            {
-                              type: 'rename-tier',
-                              title: '重命名层级',
-                              detail: `${formatQuote(prevName)}→${formatQuote(nextName)}`,
-                              icon: 'edit',
-                              tierName: formatTierLabel(nextName, ti)
-                            }
-                          );
-                        }
-                      }}
-                    />
-                  </label>
-                )
-              });
-              break;
-            case 'tier-bounds':
-              entries.push({
-                id,
-                node: (
-                  <>
-                    <ScrubNumberInput
-                      variant="floating"
-                      label="起"
-                      value={tier.xmin}
-                      max={tier.xmax}
-                      strictMax
-                      formatValue={formatPraatDouble}
-                      onCommit={(val) => {
-                        if (!Number.isFinite(val) || val >= tier.xmax) {
-                          showToast('起点必须严格小于终点', true);
-                          return false;
-                        }
-                        if (val !== tier.xmin) {
-                          const ti = selection.tierIndex;
-                          const tierName = formatTierLabel(tier.name, ti);
-                          const oldV = tier.xmin;
-                          commitTgMutation(
-                            (_d, ctx) => {
-                              const dTier = ctx.editTier(ti);
-                              if (!dTier || dTier.xmin === val) return false;
-                              dTier.xmin = val;
-                            },
-                            undefined,
-                            {
-                              type: 'edit-tier-bounds',
-                              title: '修改层起点',
-                              detail: `${formatQuote(tierName)} · ${formatTimeSec(oldV)} → ${formatTimeSec(val)}`,
-                              icon: 'copyTime',
-                              tierName,
-                              focusTime: val
-                            }
-                          );
-                        }
-                        return true;
-                      }}
-                    />
-                    <ScrubNumberInput
-                      variant="floating"
-                      label="止"
-                      value={tier.xmax}
-                      min={tier.xmin}
-                      strictMin
-                      formatValue={formatPraatDouble}
-                      onCommit={(val) => {
-                        if (!Number.isFinite(val) || val <= tier.xmin) {
-                          showToast('终点必须严格大于起点', true);
-                          return false;
-                        }
-                        if (val !== tier.xmax) {
-                          const ti = selection.tierIndex;
-                          const tierName = formatTierLabel(tier.name, ti);
-                          const oldV = tier.xmax;
-                          commitTgMutation(
-                            (_d, ctx) => {
-                              const dTier = ctx.editTier(ti);
-                              if (!dTier || dTier.xmax === val) return false;
-                              dTier.xmax = val;
-                            },
-                            undefined,
-                            {
-                              type: 'edit-tier-bounds',
-                              title: '修改层终点',
-                              detail: `${formatQuote(tierName)} · ${formatTimeSec(oldV)} → ${formatTimeSec(val)}`,
-                              icon: 'copyTime',
-                              tierName,
-                              focusTime: val
-                            }
-                          );
-                        }
-                        return true;
-                      }}
-                    />
-                  </>
-                )
-              });
-              break;
-            case 'tier-move':
-              entries.push({
-                id,
-                node: (
-                  <>
-                    <button
-                      type="button"
-                      className="compact"
-                      disabled={selection.tierIndex === 0}
-                      onClick={() => moveTier(selection.tierIndex, -1)}
-                    >
-                      <UiIcon name="up" size={13} />
-                      <span>上移</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="compact"
-                      disabled={selection.tierIndex >= tg.tiers.length - 1}
-                      onClick={() => moveTier(selection.tierIndex, 1)}
-                    >
-                      <UiIcon name="down" size={13} />
-                      <span>下移</span>
-                    </button>
-                  </>
-                )
-              });
-              break;
-            case 'tier-delete':
-              entries.push({
-                id,
-                node: (
-                  <button
-                    type="button"
-                    className="compact danger"
-                    onClick={() => removeTierWithUndoToast(selection.tierIndex)}
-                  >
-                    <UiIcon name="trash" size={13} />
-                    <span>删除</span>
-                  </button>
-                )
-              });
-              break;
-          }
-        }
-        return assembleFloatingBarNodes(entries);
-      }
+    // Reset temporary drag offset automatically whenever the selected object changes
+    useEffect(() => {
+      floatingDragCleanupRef.current?.();
+      floatingDragCleanupRef.current = null;
+      setFloatingDragOffset({ x: 0, y: 0 });
+      setIsFloatingBarDragging(false);
+    }, [floatingSelectionKey]);
 
-      return null;
-    };
+    useEffect(() => {
+      return () => {
+        floatingDragCleanupRef.current?.();
+        floatingDragCleanupRef.current = null;
+      };
+    }, []);
 
-    const floatingBarContent = renderFloatingBarContent();
-    const hasFloatingBarContent = Boolean(floatingBarContent);
+    const handleFloatingBarDragStart = useCallback((e: React.PointerEvent<HTMLElement>) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      floatingDragCleanupRef.current?.();
+
+      const sheetEl = sheetRef.current;
+      const startClientX = e.clientX;
+      const startClientY = e.clientY;
+      const originX = floatingDragOffsetRef.current.x;
+      const originY = floatingDragOffsetRef.current.y;
+      const prevCursor = document.body.style.cursor;
+      const prevSelect = document.body.style.userSelect;
+      document.body.style.cursor = 'grabbing';
+      document.body.style.userSelect = 'none';
+      setIsFloatingBarDragging(true);
+
+      const onMove = (ev: PointerEvent) => {
+        const z = sheetEl ? getElementRectScale(sheetEl) : 1;
+        const dx = (ev.clientX - startClientX) / z;
+        const dy = (ev.clientY - startClientY) / z;
+        setFloatingDragOffset({
+          x: Math.round(originX + dx),
+          y: Math.round(originY + dy)
+        });
+      };
+
+      const finish = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', finish);
+        window.removeEventListener('pointercancel', finish);
+        document.body.style.cursor = prevCursor;
+        document.body.style.userSelect = prevSelect;
+        setIsFloatingBarDragging(false);
+        floatingDragCleanupRef.current = null;
+      };
+
+      floatingDragCleanupRef.current = finish;
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', finish);
+      window.addEventListener('pointercancel', finish);
+    }, []);
+
+    const handleOpenSplitModalFromFloating = useCallback(
+      (ti: number, ii: number) => {
+        const tier = tg.tiers[ti];
+        const iv = tier?.intervals[ii];
+        if (!tier || !iv || iv.xmax <= iv.xmin) return;
+        setSplitEqualDialog({
+          tierIndex: ti,
+          itemIndex: ii,
+          tierName: tier.name || `层 ${ti + 1}`,
+          text: iv.text,
+          xmin: iv.xmin,
+          xmax: iv.xmax,
+          peerTexts: collectPeerTexts(tier.intervals, ii)
+        });
+      },
+      [tg]
+    );
 
     const [floatingPos, setFloatingPos] = useState<{ left: number; top: number } | null>(null);
 
@@ -9665,6 +8771,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       selection,
       hasFloatingBarContent,
       floatingBarConfig,
+      floatingBarDensity,
       layout.bands,
       layout.width,
       layout.height,
@@ -9877,19 +8984,35 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               </>
             )}
 
-            {/* High-Contrast Dark Customizable Floating Contextual Bar */}
-            {selection && anchorRect && anchorBand && floatingBarContent && (
-              <div
+            {/* Scheme 1: Warm Paper Architectural Double-Layer Floating Action Bar */}
+            {selection && anchorRect && anchorBand && hasFloatingBarContent && (
+              <FloatingActionBar
                 ref={floatingBarRef}
-                className={`floating-bar ${floatingPos ? 'visible' : ''}`}
-                style={
+                selection={selection}
+                multiAnalysis={multiAnalysis}
+                audioBuffer={audioBuffer}
+                visible={Boolean(floatingPos)}
+                position={
                   floatingPos
-                    ? { left: floatingPos.left, top: floatingPos.top }
-                    : { left: 6, top: Math.round(anchorBand.tiersBottomY + 8) }
+                    ? {
+                        left: floatingPos.left + floatingDragOffset.x,
+                        top: floatingPos.top + floatingDragOffset.y
+                      }
+                    : {
+                        left: 6 + floatingDragOffset.x,
+                        top: Math.round(anchorBand.tiersBottomY + 8) + floatingDragOffset.y
+                      }
                 }
-              >
-                {floatingBarContent}
-              </div>
+                isDragging={isFloatingBarDragging}
+                onDragHandlePointerDown={handleFloatingBarDragStart}
+                onStartPlayback={onStartPlayback}
+                onOpenInline={openInline}
+                onCopyText={copyText}
+                onShowScrubPreview={showScrubPreviewLine}
+                onClearScrubPreview={clearScrubPreview}
+                onRunSmartSplit={runSmartSplit}
+                onOpenSplitModal={handleOpenSplitModalFromFloating}
+              />
             )}
 
             {/* Live Dual-Scale (±40 ms / ±150 ms) Floating Acoustic Micro-Loupe */}

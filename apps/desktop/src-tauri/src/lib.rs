@@ -445,6 +445,96 @@ fn scan_corpus_dir(dir: String) -> Result<CorpusDirScanResult, String> {
     })
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalFileStat {
+    exists: bool,
+    size: u64,
+    modified_ms: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DroppedPathInfo {
+    path: String,
+    name: String,
+    parent_dir: String,
+    is_dir: bool,
+    size: u64,
+    exists: bool,
+}
+
+#[tauri::command]
+fn inspect_dropped_paths(paths: Vec<String>) -> Vec<DroppedPathInfo> {
+    paths
+        .into_iter()
+        .map(|raw_path| {
+            let trimmed = raw_path.trim().to_string();
+            let p = std::path::Path::new(&trimmed);
+            let name = p
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| trimmed.clone());
+            let parent_dir = p
+                .parent()
+                .map(|par| par.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            match std::fs::metadata(p) {
+                Ok(meta) => {
+                    let is_dir = meta.is_dir();
+                    DroppedPathInfo {
+                        path: trimmed,
+                        name,
+                        parent_dir,
+                        is_dir,
+                        size: if is_dir { 0 } else { meta.len() },
+                        exists: true,
+                    }
+                }
+                Err(_) => DroppedPathInfo {
+                    path: trimmed,
+                    name,
+                    parent_dir,
+                    is_dir: false,
+                    size: 0,
+                    exists: false,
+                },
+            }
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn stat_local_file(path: String) -> Result<LocalFileStat, String> {
+    match std::fs::metadata(&path) {
+        Ok(meta) if meta.is_file() => {
+            let modified_ms = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            Ok(LocalFileStat {
+                exists: true,
+                size: meta.len(),
+                modified_ms,
+            })
+        }
+        Ok(_) => Ok(LocalFileStat {
+            exists: false,
+            size: 0,
+            modified_ms: 0,
+        }),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(LocalFileStat {
+            exists: false,
+            size: 0,
+            modified_ms: 0,
+        }),
+        Err(e) => Err(format!("无法获取文件状态 {path}: {e}")),
+    }
+}
+
 #[tauri::command]
 fn read_local_file(path: String) -> Result<Vec<u8>, String> {
     std::fs::read(&path).map_err(|e| format!("无法读取文件 {path}: {e}"))
@@ -895,6 +985,8 @@ pub fn run() {
             find_zero_crossing,
             align_split_boundaries,
             scan_corpus_dir,
+            stat_local_file,
+            inspect_dropped_paths,
             read_local_file,
             read_local_file_if_exists,
             write_local_file,
@@ -1002,6 +1094,32 @@ mod tests {
                 .unwrap(),
             None
         );
+
+        let present_stat = stat_local_file(target.to_string_lossy().into_owned()).unwrap();
+        assert!(present_stat.exists);
+        assert_eq!(present_stat.size, b"updated".len() as u64);
+        assert!(present_stat.modified_ms > 0);
+
+        let missing_stat =
+            stat_local_file(dir.join("missing.TextGrid").to_string_lossy().into_owned()).unwrap();
+        assert!(!missing_stat.exists);
+        assert_eq!(missing_stat.size, 0);
+        assert_eq!(missing_stat.modified_ms, 0);
+
+        let inspected = inspect_dropped_paths(vec![
+            dir.to_string_lossy().into_owned(),
+            target.to_string_lossy().into_owned(),
+            dir.join("missing.TextGrid").to_string_lossy().into_owned(),
+        ]);
+        assert_eq!(inspected.len(), 3);
+        assert!(inspected[0].exists && inspected[0].is_dir && inspected[0].size == 0);
+        assert!(
+            inspected[1].exists
+                && !inspected[1].is_dir
+                && inspected[1].size == b"updated".len() as u64
+                && inspected[1].name == "001_ba.TextGrid"
+        );
+        assert!(!inspected[2].exists && !inspected[2].is_dir);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

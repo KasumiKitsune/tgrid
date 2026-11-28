@@ -30,6 +30,9 @@ export interface TopbarProps {
   onNewTab: () => void;
   onSwitchTab: (tabId: string) => void;
   onRequestCloseTab: (tabId: string) => void;
+  ctxTargetTabId?: string | null;
+  onTabContextMenu?: (tabId: string, e: React.MouseEvent) => void;
+  onTabStripBlankContextMenu?: (e: React.MouseEvent) => void;
   onBatchConvertIpa: (direction: 'toUnicode' | 'toPraat') => void;
   corpusCanPrev?: boolean;
   corpusCanNext?: boolean;
@@ -37,6 +40,10 @@ export interface TopbarProps {
   onCorpusNext?: () => void;
   onToggleCorpusAutoPlay?: () => void;
   onToggleCorpusAutoVad?: () => void;
+  onCorpusSaveCurrent?: () => void;
+  onCorpusSaveAll?: () => void;
+  onToggleCorpusAutoSave?: () => void;
+  corpusSaveProgress?: { done: number; total: number } | null;
   onExportCorpusZip?: () => void;
   exportingCorpusZip?: boolean;
 }
@@ -50,6 +57,9 @@ export const Topbar: React.FC<TopbarProps> = ({
   onNewTab,
   onSwitchTab,
   onRequestCloseTab,
+  ctxTargetTabId,
+  onTabContextMenu,
+  onTabStripBlankContextMenu,
   onBatchConvertIpa,
   corpusCanPrev,
   corpusCanNext,
@@ -57,6 +67,10 @@ export const Topbar: React.FC<TopbarProps> = ({
   onCorpusNext,
   onToggleCorpusAutoPlay,
   onToggleCorpusAutoVad,
+  onCorpusSaveCurrent,
+  onCorpusSaveAll,
+  onToggleCorpusAutoSave,
+  corpusSaveProgress,
   onExportCorpusZip,
   exportingCorpusZip
 }) => {
@@ -90,8 +104,15 @@ export const Topbar: React.FC<TopbarProps> = ({
         strip.scrollLeft += e.deltaY;
       }
     };
+    const onScroll = () => {
+      window.dispatchEvent(new Event('tg-close-tab-ctx'));
+    };
     strip.addEventListener('wheel', onWheel, { passive: false });
-    return () => strip.removeEventListener('wheel', onWheel);
+    strip.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      strip.removeEventListener('wheel', onWheel);
+      strip.removeEventListener('scroll', onScroll);
+    };
   }, []);
 
   // Track maximized state on desktop
@@ -129,10 +150,24 @@ export const Topbar: React.FC<TopbarProps> = ({
   // On Web, preserve the clean SEO title while viewing the unmodified default sample so crawlers
   // do not index "春晓示例.TextGrid" as the site's main title.
   useEffect(() => {
+    const activeTabNow = tabs.find((t) => t.id === activeTabId);
+    const activeCorpusExt =
+      activeTabNow?.kind === 'corpus' && activeTabNow.corpus
+        ? (activeTabNow.corpus as typeof activeTabNow.corpus & {
+            unsavedItemIds?: string[];
+            projectIndexDirty?: boolean;
+          })
+        : null;
+    const activeHasUnsaved = Boolean(
+      isDirty ||
+        (activeCorpusExt &&
+          ((activeCorpusExt.unsavedItemIds?.length ?? 0) > 0 ||
+            Boolean(activeCorpusExt.projectIndexDirty)))
+    );
     const defaultWebTitle = 'T·Grid — Praat TextGrid 编辑器与语音标注出图工具';
     const isUnmodifiedDefaultSample =
-      !isDesktop && !isDirty && tabs.length <= 1 && (!filename || filename === '春晓示例.TextGrid');
-    const docLabel = filename ? `${isDirty ? '● ' : ''}${filename} — ` : '';
+      !isDesktop && !activeHasUnsaved && tabs.length <= 1 && (!filename || filename === '春晓示例.TextGrid');
+    const docLabel = filename ? `${activeHasUnsaved ? '● ' : ''}${filename} — ` : '';
     const desktopTitle = `${docLabel}T·Grid - TextGrid Editor`;
     document.title = isUnmodifiedDefaultSample ? defaultWebTitle : desktopTitle;
     if (!isDesktop) return;
@@ -144,7 +179,7 @@ export const Topbar: React.FC<TopbarProps> = ({
         // ignore
       }
     })();
-  }, [filename, isDirty, isDesktop, tabs.length]);
+  }, [filename, isDirty, isDesktop, tabs, activeTabId]);
 
   const handleMinimize = async () => {
     if (!isDesktop) return;
@@ -178,8 +213,25 @@ export const Topbar: React.FC<TopbarProps> = ({
     }
   };
 
+  const handleBlankStripContextMenu = (e: React.MouseEvent) => {
+    if (!onTabStripBlankContextMenu) return;
+    if ((e.target as HTMLElement).closest('.tab-item, .tab-add-btn, .win-btn')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    (e.nativeEvent as MouseEvent & { __tgCtxHandled?: boolean }).__tgCtxHandled = true;
+    onTabStripBlankContextMenu(e);
+  };
+
   const tabStrip = (
-    <div className="tabstrip-area">
+    <div
+      className="tabstrip-area"
+      onContextMenu={handleBlankStripContextMenu}
+      onDoubleClick={(e) => {
+        if (isDesktop) return;
+        if ((e.target as HTMLElement).closest('.tab-item, button')) return;
+        onNewTab();
+      }}
+    >
       <div
         ref={tabstripRef}
         className="tabstrip"
@@ -189,6 +241,27 @@ export const Topbar: React.FC<TopbarProps> = ({
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           const isCorpus = tab.kind === 'corpus' && Boolean(tab.corpus);
+          const corpusExt = isCorpus
+            ? (tab.corpus! as typeof tab.corpus & {
+                unsavedItemIds?: string[];
+                projectIndexDirty?: boolean;
+              })
+            : null;
+          const corpusUnsavedCount = isCorpus
+            ? Math.max(
+                corpusExt?.unsavedItemIds?.length ?? 0,
+                tab.isDirty ? 1 : 0
+              )
+            : 0;
+          const corpusHasUnsaved = isCorpus
+            ? Boolean(
+                tab.isDirty ||
+                  corpusUnsavedCount > 0 ||
+                  corpusExt?.projectIndexDirty ||
+                  (!tab.corpus!.writable && tab.corpus!.dirtyCount > 0)
+              )
+            : false;
+          const tabHasUnsaved = isCorpus ? corpusHasUnsaved : tab.isDirty;
           const corpusTotal = isCorpus ? tab.corpus!.items.length : 0;
           let corpusDone = 0;
           if (isCorpus) {
@@ -203,8 +276,17 @@ export const Topbar: React.FC<TopbarProps> = ({
           const progressTitle = showCorpusStatusMarks
             ? `已完成 ${corpusDone} / 共 ${corpusTotal} 条`
             : `共 ${corpusTotal} 条`;
+          const corpusUnsavedHint = !corpusHasUnsaved
+            ? ''
+            : corpusUnsavedCount > 0
+              ? ` · 有 ${corpusUnsavedCount} 条词条未保存`
+              : corpusExt?.projectIndexDirty
+                ? ' · 有未保存的项目状态变更'
+                : !tab.corpus!.writable && tab.corpus!.dirtyCount > 0
+                  ? ` · 已暂存 ${tab.corpus!.dirtyCount} 项修改`
+                  : ' · 有未保存修改';
           const tooltip = isCorpus
-            ? `${tab.corpus!.projectName} (${progressText})${tab.filename ? ` · 当前：${tab.filename}` : ''}${tab.isDirty ? ' (待保存)' : ''}`
+            ? `${tab.corpus!.projectName} (${progressText})${corpusUnsavedHint}${tab.filename ? ` · 当前：${tab.filename}` : ''}`
             : tab.currentFilePath
               ? `${tab.currentFilePath}${tab.isDirty ? ' (未保存)' : ''}`
               : `${tab.filename}${tab.isDirty ? ' (未保存)' : ''}`;
@@ -215,9 +297,16 @@ export const Topbar: React.FC<TopbarProps> = ({
               tabIndex={isActive ? 0 : -1}
               aria-selected={isActive}
               data-tab-active={isActive ? 'true' : undefined}
-              className={`tab-item ${isActive ? 'active' : ''} ${isCorpus ? 'is-corpus' : ''}`}
+              className={`tab-item ${isActive ? 'active' : ''} ${isCorpus ? 'is-corpus' : ''} ${ctxTargetTabId === tab.id ? 'ctx-target' : ''}`}
               title={tooltip}
               onClick={() => onSwitchTab(tab.id)}
+              onContextMenu={(e) => {
+                if (!onTabContextMenu) return;
+                e.preventDefault();
+                e.stopPropagation();
+                (e.nativeEvent as MouseEvent & { __tgCtxHandled?: boolean }).__tgCtxHandled = true;
+                onTabContextMenu(tab.id, e);
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
@@ -236,7 +325,16 @@ export const Topbar: React.FC<TopbarProps> = ({
                 }
               }}
             >
-              {tab.isDirty && <span className="dirty-dot" aria-label="有未保存的修改" />}
+              {tabHasUnsaved && (
+                <span
+                  className="dirty-dot"
+                  aria-label={
+                    isCorpus && corpusUnsavedCount > 0
+                      ? `有 ${corpusUnsavedCount} 条词条未保存`
+                      : '有未保存的修改'
+                  }
+                />
+              )}
               {isCorpus ? (
                 <span className="tab-corpus-ind" title={`文件夹项目：${tab.corpus!.projectName}`}>
                   <CorpusFolderIcon size={12} />
@@ -306,7 +404,11 @@ export const Topbar: React.FC<TopbarProps> = ({
 
           {tabStrip}
 
-          <div className="titlebar-drag-spacer" data-tauri-drag-region="" />
+          <div
+            className="titlebar-drag-spacer"
+            data-tauri-drag-region=""
+            onContextMenu={handleBlankStripContextMenu}
+          />
 
           <div className="window-controls" role="group" aria-label="窗口控制">
             <button
@@ -367,6 +469,10 @@ export const Topbar: React.FC<TopbarProps> = ({
         onCorpusNext={onCorpusNext}
         onToggleCorpusAutoPlay={onToggleCorpusAutoPlay}
         onToggleCorpusAutoVad={onToggleCorpusAutoVad}
+        onCorpusSaveCurrent={onCorpusSaveCurrent}
+        onCorpusSaveAll={onCorpusSaveAll}
+        onToggleCorpusAutoSave={onToggleCorpusAutoSave}
+        corpusSaveProgress={corpusSaveProgress}
         onExportCorpusZip={onExportCorpusZip}
         exportingCorpusZip={exportingCorpusZip}
       />

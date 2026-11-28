@@ -1,4 +1,5 @@
 import React, { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { getTabAudioBuffer } from '../../audio/tabAudioStore';
 import { formatKeyCombo } from '../../shortcuts/registry';
 import { useEditorStore, type SidebarTab } from '../../store/useEditorStore';
 import { scanTextGridQa } from '../../utils/qaDiagnostics';
@@ -20,6 +21,8 @@ interface RightSidebarProps {
   onOpenAudioPicker: () => void;
   onClearAudio: () => void;
   onBatchConvertIpa?: (direction: 'toUnicode' | 'toPraat') => void;
+  audioBuffer?: AudioBuffer | null;
+  onOpenSplitModal?: (tierIndex: number, itemIndex: number) => void;
 }
 
 const RAIL_ITEMS: Array<{ tab: SidebarTab; title: string; icon: IconName; tooltip: string }> = [
@@ -30,7 +33,7 @@ const RAIL_ITEMS: Array<{ tab: SidebarTab; title: string; icon: IconName; toolti
 ];
 
 export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
-  ({ onStartPlayback, onOpenAudioPicker, onClearAudio }, ref) => {
+  ({ onStartPlayback, onOpenAudioPicker, onClearAudio, audioBuffer, onOpenSplitModal }, ref) => {
     const sidebarOpen = useEditorStore((s) => s.sidebarOpen);
     const sidebarTab = useEditorStore((s) => s.sidebarTab);
     const sidebarWidth = useEditorStore((s) => s.sidebarWidth);
@@ -47,8 +50,18 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
     const tg = useEditorStore((s) => s.tg);
     const tierCount = tg.tiers.length;
     const selection = useEditorStore((s) => s.selection);
+    const multiSelection = useEditorStore((s) => s.multiSelection);
     const playRange = useEditorStore((s) => s.playRange);
     const history = useEditorStore((s) => s.history);
+    const activeTabId = useEditorStore((s) => s.activeTabId);
+    const audioName = useEditorStore((s) => s.audioName);
+    const audioDuration = useEditorStore((s) => s.audioDuration);
+
+    const effectiveAudioBuffer = useMemo(() => {
+      void audioName;
+      void audioDuration;
+      return audioBuffer ?? getTabAudioBuffer(activeTabId);
+    }, [audioBuffer, activeTabId, audioName, audioDuration]);
 
     const hasQaIssues = useMemo(() => scanTextGridQa(tg).counts.total > 0, [tg]);
 
@@ -133,10 +146,11 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
     } else if (sidebarTab === 'customize') {
       headBadge = '悬浮条 · 快捷键';
     } else if (sidebarTab === 'inspector') {
-      if (selection?.kind === 'interval') headBadge = '区间';
+      if (multiSelection.length >= 2) headBadge = `多选 (${multiSelection.length})`;
+      else if (selection?.kind === 'interval') headBadge = '区间';
       else if (selection?.kind === 'point') headBadge = '标点';
       else if (selection?.kind === 'boundary') headBadge = '边界';
-      else if (selection?.kind === 'spine') headBadge = '时刻';
+      else if (selection?.kind === 'spine') headBadge = '对齐时刻';
       else if (selection?.kind === 'tier') headBadge = '层级';
       else if (playRange && playRange.end > playRange.start) headBadge = '选区';
       else headBadge = '文档';
@@ -190,7 +204,12 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
 
             <div className={`sidebar-body ${sidebarTab === 'history' ? 'is-full-height' : ''}`}>
               {sidebarTab === 'inspector' && (
-                <InspectorPanel ref={inspectorRef} onStartPlayback={onStartPlayback} />
+                <InspectorPanel
+                  ref={inspectorRef}
+                  onStartPlayback={onStartPlayback}
+                  audioBuffer={effectiveAudioBuffer}
+                  onOpenSplitModal={onOpenSplitModal}
+                />
               )}
               {sidebarTab === 'tiers' && <TiersPanel />}
               {sidebarTab === 'history' && <HistoryPanel />}
@@ -219,7 +238,7 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
                     ? `${item.title} — ${item.tooltip}（检测到结构或微偏异常）`
                     : `${item.title} — ${item.tooltip}`
                 }
-                aria-label={showQaDot ? `${item.title}（存在数据体检提醒）` : item.title}
+                aria-label={showQaDot ? `${item.title}（存在数据检查提醒）` : item.title}
                 aria-pressed={isActive}
                 onClick={() => toggleSidebarTab(item.tab)}
               >

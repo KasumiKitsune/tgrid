@@ -19,6 +19,7 @@ import type {
   CorpusItemStatus,
   CorpusProjectState
 } from '../corpus/types';
+import { formatKeyCombo } from '../shortcuts/registry';
 import { getLogicalViewportSize, getViewportZoom } from '../utils/uiScale';
 import { UiIcon } from './Icons';
 
@@ -26,6 +27,18 @@ export interface CorpusSidebarProps {
   corpus: CorpusProjectState;
   /** 当前编辑区是否有尚未落盘的修改 */
   isDirty?: boolean;
+  /** 是否开启自动保存 */
+  corpusAutoSave?: boolean;
+  /** 未保存词条 ID 列表 */
+  unsavedItemIds?: readonly string[];
+  /** 项目索引是否有未落盘变更 */
+  projectIndexDirty?: boolean;
+  /** 单文件离线模式下本地缓存是否被浏览器禁用 */
+  recoveryDegraded?: boolean;
+  /** 批量保存进度 */
+  saveProgress?: { done: number; total: number } | null;
+  /** 各词条自动保存覆写前的原件备份时间戳（itemId -> updatedAt） */
+  backupTimestamps?: Record<string, number>;
   /** 是否显示词条四态标记与状态筛选行（默认 true） */
   showStatusMarks?: boolean;
   /** 选中并切换至指定词条 */
@@ -38,6 +51,18 @@ export interface CorpusSidebarProps {
   onResizeWidth: (width: number) => void;
   /** 右键菜单中直接修改任意词条的标注状态 */
   onSetItemStatus?: (itemId: string, status: CorpusItemStatus) => void;
+  /** 保存单条词条到磁盘 */
+  onSaveItem?: (itemId: string) => void;
+  /** 批量保存全部未保存词条 */
+  onSaveAll?: () => void;
+  /** 还原单条词条为磁盘原文件 */
+  onRevertItem?: (itemId: string) => void;
+  /** 放弃全部未保存修改 */
+  onDiscardAllDrafts?: () => void;
+  /** 恢复某条词条自动保存覆写前的编辑前备份 */
+  onRestoreItemBackup?: (itemId: string) => void;
+  /** 切换自动保存开关 */
+  onToggleAutoSave?: () => void;
   /** 桌面端可用时在系统文件管理器中定位该词条音频文件 */
   onRevealItem?: (itemId: string) => void;
   /** 复制文件名或音标文本（未传入时自动回退到 navigator.clipboard.writeText） */
@@ -110,6 +135,16 @@ function formatDurationShort(duration: number | null): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+function formatBackupTime(ts: number): string {
+  try {
+    const d = new Date(ts);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } catch {
+    return '';
+  }
+}
+
 function getFileBaseName(relPath: string): string {
   const parts = relPath.split(/[/\\]/);
   return parts[parts.length - 1] || relPath;
@@ -118,12 +153,24 @@ function getFileBaseName(relPath: string): string {
 export const CorpusSidebar: React.FC<CorpusSidebarProps> = ({
   corpus,
   isDirty = false,
+  corpusAutoSave = false,
+  unsavedItemIds,
+  projectIndexDirty = false,
+  recoveryDegraded = false,
+  saveProgress = null,
+  backupTimestamps,
   showStatusMarks = true,
   onSelectItem,
   onChangeFilter,
   onToggleOpen,
   onResizeWidth,
   onSetItemStatus,
+  onSaveItem,
+  onSaveAll,
+  onRevertItem,
+  onDiscardAllDrafts,
+  onRestoreItemBackup,
+  onToggleAutoSave,
   onRevealItem,
   onCopyItemText,
   canRevealItem = false,
@@ -141,6 +188,25 @@ export const CorpusSidebar: React.FC<CorpusSidebarProps> = ({
   const listViewportRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const ctxMenuRef = useRef<HTMLDivElement>(null);
+
+  const corpusExt = corpus as CorpusProjectState & {
+    unsavedItemIds?: string[];
+    projectIndexDirty?: boolean;
+    recoveryDegraded?: boolean;
+  };
+  const resolvedUnsavedIds = unsavedItemIds ?? corpusExt.unsavedItemIds ?? [];
+  const resolvedIndexDirty = projectIndexDirty || Boolean(corpusExt.projectIndexDirty);
+  const resolvedDegraded = recoveryDegraded || Boolean(corpusExt.recoveryDegraded);
+
+  const unsavedSet = useMemo(() => {
+    const s = new Set<string>(resolvedUnsavedIds);
+    if (isDirty && activeItemId) s.add(activeItemId);
+    return s;
+  }, [resolvedUnsavedIds, isDirty, activeItemId]);
+
+  const unsavedCount = unsavedSet.size;
+  const hasPendingSave = unsavedCount > 0 || resolvedIndexDirty;
+  const isSaving = corpus.saveStatus === 'saving';
 
   const counts = useMemo(() => {
     const c: Record<'all' | CorpusItemStatus, number> = {
@@ -286,12 +352,12 @@ export const CorpusSidebar: React.FC<CorpusSidebarProps> = ({
     }
     const { width: vw, height: vh } = getLogicalViewportSize();
     const menuEl = ctxMenuRef.current;
-    const menuW = menuEl ? menuEl.offsetWidth : 196;
-    const menuH = menuEl ? menuEl.offsetHeight : 220;
+    const menuW = menuEl ? menuEl.offsetWidth : 210;
+    const menuH = menuEl ? menuEl.offsetHeight : 280;
     const left = Math.max(8, Math.min(ctxMenu.x, vw - menuW - 8));
     const top = Math.max(8, Math.min(ctxMenu.y, vh - menuH - 8));
     setCtxPos({ left, top });
-  }, [ctxMenu, showStatusMarks, canRevealItem]);
+  }, [ctxMenu, showStatusMarks, canRevealItem, unsavedSet, backupTimestamps]);
 
   const handleRowContextMenu = (e: React.MouseEvent<HTMLDivElement>, itemId: string) => {
     e.preventDefault();
@@ -370,26 +436,38 @@ export const CorpusSidebar: React.FC<CorpusSidebarProps> = ({
 
   const hasActiveFilter = Boolean(filter.query.trim()) || effectiveStatusFilter !== 'all';
 
-  let saveFooterText = '自动保存已开启';
+  let saveFooterText = corpusAutoSave ? '自动保存已开启 · 已同步' : '已与磁盘同步';
   let saveFooterTone: 'normal' | 'saving' | 'error' | 'pending' = 'normal';
   if (corpus.saveStatus === 'error') {
     saveFooterText = corpus.lastSaveError
       ? `保存失败：${corpus.lastSaveError}`
       : '保存失败，请检查文件权限';
     saveFooterTone = 'error';
-  } else if (corpus.saveStatus === 'saving') {
-    saveFooterText = '正在保存修改…';
+  } else if (isSaving) {
+    saveFooterText =
+      saveProgress && saveProgress.total > 0
+        ? `正在保存 ${saveProgress.done}/${saveProgress.total}…`
+        : '正在保存修改…';
     saveFooterTone = 'saving';
-  } else if (isDirty) {
-    saveFooterText = '有修改，即将自动保存';
+  } else if (unsavedCount > 0) {
+    saveFooterText = resolvedDegraded
+      ? `待保存 ${unsavedCount} 条（仅内存暂存）`
+      : `待保存 ${unsavedCount} 条（已暂存本地防丢）`;
     saveFooterTone = 'pending';
-  } else if (corpus.saveStatus === 'saved') {
-    saveFooterText = '自动保存已开启 · 已保存';
-    saveFooterTone = 'normal';
+  } else if (resolvedIndexDirty) {
+    saveFooterText = '有未保存的项目状态变更';
+    saveFooterTone = 'pending';
   }
 
   const ctxItem = ctxMenu ? corpus.itemMap[ctxMenu.itemId] ?? null : null;
+  const ctxItemUnsaved = Boolean(ctxItem && unsavedSet.has(ctxItem.id));
+  const ctxItemBackupTs = ctxItem ? backupTimestamps?.[ctxItem.id] ?? null : null;
   const showOpenAction = Boolean(ctxItem && ctxItem.id !== activeItemId);
+  const showDraftActions = Boolean(
+    ctxItem &&
+      ((ctxItemUnsaved && ((corpus.writable && onSaveItem) || onRevertItem)) ||
+        (ctxItemBackupTs && onRestoreItemBackup))
+  );
   const showStatusSection = Boolean(ctxItem && showStatusMarks && onSetItemStatus);
   const showRevealSection = Boolean(ctxItem && canRevealItem && onRevealItem);
 
@@ -397,6 +475,8 @@ export const CorpusSidebar: React.FC<CorpusSidebarProps> = ({
   const headBadgeTitle = showStatusMarks
     ? `已完成 ${counts.done} 条，共 ${counts.all} 条`
     : `共 ${counts.all} 条词条`;
+
+  const readonlyPendingCount = Math.max(unsavedCount, corpus.dirtyCount);
 
   return (
     <aside
@@ -429,6 +509,15 @@ export const CorpusSidebar: React.FC<CorpusSidebarProps> = ({
               <span>{counts.all}</span>
             )}
           </div>
+          {unsavedCount > 0 && (
+            <span
+              className="corpus-rail-unsaved"
+              title={`有 ${unsavedCount} 条词条未保存`}
+              aria-label={`有 ${unsavedCount} 条词条未保存`}
+            >
+              {unsavedCount}
+            </span>
+          )}
         </div>
       )}
 
@@ -583,6 +672,8 @@ export const CorpusSidebar: React.FC<CorpusSidebarProps> = ({
                     {visibleSlice.map(({ item, order }) => {
                       const isActive = item.id === activeItemId;
                       const isCtxTarget = ctxMenu?.itemId === item.id;
+                      const isItemUnsaved = unsavedSet.has(item.id);
+                      const parseError = (item as CorpusItemRecord & { parseError?: string }).parseError;
                       const durText = formatDurationShort(item.duration);
                       const displayTitle = item.label || item.id;
                       const showSubId = !item.ipaPreview && item.label && item.label !== item.id;
@@ -592,9 +683,9 @@ export const CorpusSidebar: React.FC<CorpusSidebarProps> = ({
                           role="option"
                           aria-selected={isActive}
                           tabIndex={sidebarOpen ? 0 : -1}
-                          className={`corpus-row is-${item.status} ${isActive ? 'is-active' : ''} ${isCtxTarget ? 'is-ctx-target' : ''} ${!showStatusMarks ? 'no-status-mark' : ''} ${item.missing ? 'is-missing' : ''}`}
+                          className={`corpus-row is-${item.status} ${isActive ? 'is-active' : ''} ${isCtxTarget ? 'is-ctx-target' : ''} ${isItemUnsaved ? 'is-unsaved' : ''} ${!showStatusMarks ? 'no-status-mark' : ''} ${item.missing ? 'is-missing' : ''}`}
                           style={{ height: ROW_HEIGHT }}
-                          title={`${order}. ${displayTitle} (${item.audioRelPath})${item.ipaPreview ? ` — ${item.ipaPreview}` : ''}`}
+                          title={`${order}. ${displayTitle} (${item.audioRelPath})${isItemUnsaved ? ' [未保存]' : ''}${parseError ? ` [原文件损坏：${parseError}]` : ''}${item.ipaPreview ? ` — ${item.ipaPreview}` : ''}`}
                           onClick={() => onSelectItem(item.id)}
                           onContextMenu={(e) => handleRowContextMenu(e, item.id)}
                           onKeyDown={(e) => {
@@ -616,6 +707,13 @@ export const CorpusSidebar: React.FC<CorpusSidebarProps> = ({
                           <div className="corpus-row-main">
                             <div className="corpus-row-top">
                               <span className="corpus-row-order">{order}</span>
+                              {isItemUnsaved && (
+                                <span
+                                  className="corpus-row-dirty-dot"
+                                  title="有未保存修改"
+                                  aria-label="未保存"
+                                />
+                              )}
                               <span className="corpus-row-title">{displayTitle}</span>
                             </div>
                             <div className="corpus-row-sub">
@@ -632,7 +730,11 @@ export const CorpusSidebar: React.FC<CorpusSidebarProps> = ({
                           </div>
 
                           <div className="corpus-row-right">
-                            {item.missing ? (
+                            {parseError ? (
+                              <span className="corpus-row-missing" title={parseError}>
+                                损坏
+                              </span>
+                            ) : item.missing ? (
                               <span className="corpus-row-missing">缺失</span>
                             ) : (
                               durText && <span className="corpus-row-dur">{durText}</span>
@@ -647,34 +749,124 @@ export const CorpusSidebar: React.FC<CorpusSidebarProps> = ({
             </div>
 
             <div className={`corpus-footer ${!corpus.writable ? 'is-readonly' : ''}`}>
+              {resolvedDegraded && (
+                <div
+                  className="corpus-footer-degraded"
+                  title="当前单文件离线环境下浏览器禁用了本地存储缓存，关闭页面前请及时导出 (.zip)"
+                >
+                  单文件离线模式下浏览器禁用本地缓存，请阶段性导出 (.zip) 保存进度
+                </div>
+              )}
+
               {!corpus.writable ? (
                 <div className="corpus-footer-readonly">
-                  <span
-                    className="corpus-footer-note"
-                    title={corpus.readOnlyReason || '当前浏览器不支持直接写入文件夹，修改已暂存在本地'}
-                  >
-                    {corpus.dirtyCount > 0
-                      ? `只读模式 · 已暂存 ${corpus.dirtyCount} 项修改`
-                      : corpus.readOnlyReason || '浏览器只读模式，可打包导出修改'}
-                  </span>
+                  <div className="corpus-footer-status-row">
+                    <span
+                      className="corpus-footer-note"
+                      title={corpus.readOnlyReason || '当前浏览器不支持直接写入文件夹，修改已暂存在本地'}
+                    >
+                      {readonlyPendingCount > 0
+                        ? `只读模式 · 已暂存 ${readonlyPendingCount} 项修改`
+                        : corpus.readOnlyReason || '浏览器只读模式，可打包导出修改'}
+                    </span>
+                    {unsavedCount > 0 && onDiscardAllDrafts && (
+                      <button
+                        type="button"
+                        className="corpus-footer-link-btn"
+                        tabIndex={sidebarOpen ? 0 : -1}
+                        title="放弃全部已暂存修改"
+                        onClick={onDiscardAllDrafts}
+                      >
+                        放弃
+                      </button>
+                    )}
+                  </div>
                   {onExportModifiedZip && (
                     <button
                       type="button"
-                      className="compact corpus-export-zip-btn"
+                      className="compact primary corpus-export-zip-btn"
                       disabled={exportingZip}
                       tabIndex={sidebarOpen ? 0 : -1}
                       title="将已修改的标注文件与项目索引打包导出为 .zip"
                       onClick={onExportModifiedZip}
                     >
                       <CorpusExportZipIcon size={12} />
-                      <span>{exportingZip ? '导出中…' : '导出修改 (.zip)'}</span>
+                      <span>
+                        {exportingZip
+                          ? '导出中…'
+                          : readonlyPendingCount > 0
+                            ? `导出修改 (.zip) (${readonlyPendingCount})`
+                            : '导出修改 (.zip)'}
+                      </span>
                     </button>
                   )}
                 </div>
               ) : (
-                <div className={`corpus-footer-save is-${saveFooterTone}`} title={saveFooterText}>
-                  <CorpusSaveIcon size={12} />
-                  <span className="corpus-footer-save-text">{saveFooterText}</span>
+                <div className="corpus-footer-writable">
+                  <div className="corpus-footer-status-row">
+                    <div className={`corpus-footer-save is-${saveFooterTone}`} title={saveFooterText}>
+                      <CorpusSaveIcon size={12} />
+                      <span className="corpus-footer-save-text">{saveFooterText}</span>
+                    </div>
+                    {unsavedCount > 0 && onDiscardAllDrafts && !isSaving && (
+                      <button
+                        type="button"
+                        className="corpus-footer-link-btn"
+                        tabIndex={sidebarOpen ? 0 : -1}
+                        title="放弃全部未保存词条修改，恢复磁盘原文件"
+                        onClick={onDiscardAllDrafts}
+                      >
+                        放弃全部
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="corpus-footer-actions">
+                    {onSaveAll && (
+                      <button
+                        type="button"
+                        className={`compact corpus-save-all-btn ${hasPendingSave ? 'primary' : ''}`}
+                        disabled={!hasPendingSave || isSaving}
+                        tabIndex={sidebarOpen ? 0 : -1}
+                        title={`批量将全部未保存词条写回原文件夹 (${formatKeyCombo('Mod+Alt+S')})`}
+                        onClick={onSaveAll}
+                      >
+                        <CorpusSaveIcon size={12} />
+                        <span>
+                          {isSaving && saveProgress && saveProgress.total > 0
+                            ? `正在保存 ${saveProgress.done}/${saveProgress.total}…`
+                            : isSaving
+                              ? '正在保存…'
+                              : unsavedCount > 0
+                                ? `保存全部 (${unsavedCount})`
+                                : resolvedIndexDirty
+                                  ? '保存状态'
+                                  : '保存全部'}
+                        </span>
+                      </button>
+                    )}
+
+                    {onToggleAutoSave && (
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={corpusAutoSave}
+                        className={`compact corpus-autosave-toggle ${corpusAutoSave ? 'is-on' : ''}`}
+                        tabIndex={sidebarOpen ? 0 : -1}
+                        title={
+                          corpusAutoSave
+                            ? '自动保存已开启（覆盖原文件前会保留 7 天编辑前备份）；点击关闭'
+                            : '自动保存默认关闭，避免误操作覆盖原文件；点击开启'
+                        }
+                        onClick={onToggleAutoSave}
+                      >
+                        <span className="corpus-switch-track" aria-hidden="true">
+                          <span className="corpus-switch-thumb" />
+                        </span>
+                        <span>自动保存</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -732,9 +924,69 @@ export const CorpusSidebar: React.FC<CorpusSidebarProps> = ({
               </button>
             )}
 
-            {showStatusSection && (
+            {showDraftActions && (
               <>
                 {showOpenAction && <div className="menu-divider" />}
+                {ctxItemUnsaved && corpus.writable && onSaveItem && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      const targetId = ctxItem.id;
+                      setCtxMenu(null);
+                      onSaveItem(targetId);
+                    }}
+                  >
+                    <span className="ctx-item-main">
+                      <span className="ctx-item-icon" aria-hidden="true">
+                        <CorpusSaveIcon size={13} />
+                      </span>
+                      <span>保存此条</span>
+                    </span>
+                  </button>
+                )}
+                {ctxItemUnsaved && onRevertItem && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      const targetId = ctxItem.id;
+                      setCtxMenu(null);
+                      onRevertItem(targetId);
+                    }}
+                  >
+                    <span className="ctx-item-main">
+                      <span className="ctx-item-icon" aria-hidden="true">
+                        <UiIcon name="undo" size={13} />
+                      </span>
+                      <span>还原为磁盘原文件</span>
+                    </span>
+                  </button>
+                )}
+                {ctxItemBackupTs && onRestoreItemBackup && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      const targetId = ctxItem.id;
+                      setCtxMenu(null);
+                      onRestoreItemBackup(targetId);
+                    }}
+                  >
+                    <span className="ctx-item-main">
+                      <span className="ctx-item-icon" aria-hidden="true">
+                        <UiIcon name="history" size={13} />
+                      </span>
+                      <span>恢复为编辑前备份（{formatBackupTime(ctxItemBackupTs)}）</span>
+                    </span>
+                  </button>
+                )}
+              </>
+            )}
+
+            {showStatusSection && (
+              <>
+                {(showOpenAction || showDraftActions) && <div className="menu-divider" />}
                 {CORPUS_STATUS_ORDER.map((status) => {
                   const meta = CORPUS_STATUS_META[status];
                   const isCurrent = ctxItem.status === status;
@@ -764,7 +1016,9 @@ export const CorpusSidebar: React.FC<CorpusSidebarProps> = ({
               </>
             )}
 
-            {(showOpenAction || showStatusSection) && <div className="menu-divider" />}
+            {(showOpenAction || showDraftActions || showStatusSection) && (
+              <div className="menu-divider" />
+            )}
 
             <button
               type="button"

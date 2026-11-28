@@ -39,10 +39,47 @@
       "icons/icon.ico",
       "icons/icon.png"
     ],
+    "fileAssociations": [
+      {
+        "ext": ["TextGrid", "textgrid"],
+        "name": "Praat TextGrid",
+        "description": "Praat TextGrid 语音标注文件",
+        "role": "Editor",
+        "mimeType": "text/plain"
+      },
+      {
+        "ext": ["Collection", "collection"],
+        "name": "Praat Collection",
+        "description": "Praat Collection 集合文件",
+        "role": "Editor",
+        "mimeType": "text/plain"
+      }
+    ],
     "windows": {
       "nsis": {
         "languages": ["SimpChinese", "English"],
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "installMode": "both",
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "installer/nsis-header.bmp",
+        "sidebarImage": "installer/nsis-sidebar.bmp"
+      }
+    },
+    "macOS": {
+      "dmg": {
+        "background": "installer/dmg-background.png",
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 185,
+          "y": 195
+        },
+        "applicationFolderPosition": {
+          "x": 475,
+          "y": 195
+        }
       }
     }
   }

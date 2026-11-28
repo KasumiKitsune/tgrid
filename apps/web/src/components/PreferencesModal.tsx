@@ -1,5 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isTauriRuntime } from '../bridge/PlatformBridge';
+import {
+  clearExpiredRecoverySnapshots,
+  getRecoveryStorageStats,
+  type RecoveryStorageStats
+} from '../corpus/recoveryStore';
 import {
   SHORTCUT_GROUPS,
   formatKeyCombo,
@@ -7,7 +12,10 @@ import {
   isComposingEvent
 } from '../shortcuts/registry';
 import { clampHistoryLimit } from '../store/historyModel';
-import { useEditorStore, type PreferencesSection } from '../store/useEditorStore';
+import {
+  useEditorStore,
+  type PreferencesSection
+} from '../store/useEditorStore';
 import { CloseIcon, UiIcon } from './Icons';
 import {
   EditModeVisualCards,
@@ -18,6 +26,8 @@ import {
   UiScaleVisualCards
 } from './SettingsVisualCards';
 import { CustomizePanel } from './sidebar/CustomizePanel';
+import { ToggleSwitch } from './ToggleSwitch';
+import '../styles/floatingBar.css';
 
 interface SearchableCardDef {
   id:
@@ -26,6 +36,7 @@ interface SearchableCardDef {
     | 'history-limit'
     | 'ui-scale'
     | 'general-toggles'
+    | 'corpus-safety'
     | 'floating-bar'
     | 'shortcuts';
   section: PreferencesSection;
@@ -41,7 +52,7 @@ const SEARCHABLE_CARDS: SearchableCardDef[] = [
   {
     id: 'edit-toggles',
     section: 'editing',
-    keywords: '点选 自动展开 属性栏 拖拽 边界 标点 声学 放大镜 局部 波形 语谱 交互'
+    keywords: '点选 自动展开 属性栏 拖拽 边界 标点 声学 放大镜 局部 波形 语谱 交互 顶部 工具页签 选项卡 自动切换 选中 对象'
   },
   {
     id: 'history-limit',
@@ -59,9 +70,14 @@ const SEARCHABLE_CARDS: SearchableCardDef[] = [
     keywords: '词条 状态 标记 进度 角标 未标 已完成 存疑 重录 启动 恢复 上次 未关闭 工作 标签页'
   },
   {
+    id: 'corpus-safety',
+    section: 'general',
+    keywords: '词表 自动保存 手动保存 原文件 保护 恢复 缓存 备份 过期 清理 空间 占用 磁盘'
+  },
+  {
     id: 'floating-bar',
     section: 'floating',
-    keywords: '悬浮条 浮动条 按钮 排序 定制 预设 完整 精简 极简 区间 标点 边界 层级'
+    keywords: '悬浮条 浮动条 浮动工具栏 显示样式 密度 精简 标准 数值直出 按钮 排序 定制 预设 区间 多选 标点 边界 层级'
   },
   {
     id: 'shortcuts',
@@ -74,10 +90,17 @@ const GENERIC_SHORTCUT_TERMS = new Set(['快捷键', '键位', '键盘', '绑定
 
 const NAV_ITEMS: Array<{ id: PreferencesSection; label: string }> = [
   { id: 'editing', label: '编辑与交互' },
-  { id: 'general', label: '界面与启动' },
-  { id: 'floating', label: '悬浮条按钮' },
+  { id: 'general', label: '界面与词表' },
+  { id: 'floating', label: '浮动工具栏' },
   { id: 'shortcuts', label: '快捷键' }
 ];
+
+function formatBytesReadable(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
 
 export const PreferencesModal: React.FC = () => {
   const isDesktop = isTauriRuntime();
@@ -93,6 +116,8 @@ export const PreferencesModal: React.FC = () => {
   const setAutoOpenInspectorOnSelect = useEditorStore((s) => s.setAutoOpenInspectorOnSelect);
   const showMicroLoupe = useEditorStore((s) => s.showMicroLoupe);
   const setShowMicroLoupe = useEditorStore((s) => s.setShowMicroLoupe);
+  const autoSwitchContextualRibbon = useEditorStore((s) => s.autoSwitchContextualRibbon);
+  const setAutoSwitchContextualRibbon = useEditorStore((s) => s.setAutoSwitchContextualRibbon);
 
   const historyLimit = useEditorStore((s) => s.historyLimit);
   const setHistoryLimit = useEditorStore((s) => s.setHistoryLimit);
@@ -103,14 +128,32 @@ export const PreferencesModal: React.FC = () => {
   const setShowCorpusStatusMarks = useEditorStore((s) => s.setShowCorpusStatusMarks);
   const restoreSessionOnStartup = useEditorStore((s) => s.restoreSessionOnStartup);
   const setRestoreSessionOnStartup = useEditorStore((s) => s.setRestoreSessionOnStartup);
+  const corpusAutoSave = useEditorStore((s) => s.corpusAutoSave);
+  const setCorpusAutoSave = useEditorStore((s) => s.setCorpusAutoSave);
+  const showToast = useEditorStore((s) => s.showToast);
 
   const customShortcuts = useEditorStore((s) => s.customShortcuts);
   const customizedShortcutCount = Object.keys(customShortcuts).length;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [historyLimitText, setHistoryLimitText] = useState(() => String(historyLimit));
+  const [recoveryStats, setRecoveryStats] = useState<RecoveryStorageStats | null>(null);
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [cleaningBackup, setCleaningBackup] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const backdropPointerDownRef = useRef(false);
+
+  const refreshRecoveryStats = useCallback(async () => {
+    setRecoveryLoading(true);
+    try {
+      const stats = await getRecoveryStorageStats();
+      setRecoveryStats(stats);
+    } catch {
+      setRecoveryStats(null);
+    } finally {
+      setRecoveryLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     setHistoryLimitText(String(historyLimit));
@@ -119,8 +162,31 @@ export const PreferencesModal: React.FC = () => {
   useEffect(() => {
     if (!preferencesOpen) {
       setSearchQuery('');
+      return;
     }
-  }, [preferencesOpen]);
+    void refreshRecoveryStats();
+  }, [preferencesOpen, refreshRecoveryStats]);
+
+  const handleClearExpiredBackups = async () => {
+    if (cleaningBackup) return;
+    setCleaningBackup(true);
+    try {
+      const res = await clearExpiredRecoverySnapshots();
+      await refreshRecoveryStats();
+      const totalRemoved = res.removedDrafts + res.removedSnapshots;
+      if (totalRemoved > 0) {
+        showToast(
+          `已清理 ${res.removedDrafts} 条过期草稿、${res.removedSnapshots} 份过期备份，释放 ${formatBytesReadable(res.freedBytes)}`
+        );
+      } else {
+        showToast('当前没有已过期的草稿或原件备份');
+      }
+    } catch {
+      showToast('清理本地恢复缓存失败', true);
+    } finally {
+      setCleaningBackup(false);
+    }
+  };
 
   const commitHistoryLimit = () => {
     const parsed = Number(historyLimitText);
@@ -205,6 +271,21 @@ export const PreferencesModal: React.FC = () => {
         showMicroLoupe={showMicroLoupe}
         onToggleMicroLoupe={setShowMicroLoupe}
       />
+      <div
+        className={`pvc-toggle-card ${autoSwitchContextualRibbon ? 'is-on' : ''}`}
+        style={{ marginTop: 10 }}
+      >
+        <div className="pvc-toggle-foot">
+          <ToggleSwitch
+            label="选中对象时自动切到顶部工具页签"
+            checked={autoSwitchContextualRibbon}
+            onChange={setAutoSwitchContextualRibbon}
+          />
+          <span className="pvc-toggle-sub">
+            编辑模式下点击区间、边界或标点时自动切入顶部对应操作页签，取消选中后回到原页签
+          </span>
+        </div>
+      </div>
     </section>
   );
 
@@ -313,6 +394,66 @@ export const PreferencesModal: React.FC = () => {
     </section>
   );
 
+  const renderCorpusSafetyCard = (searchHit = false) => (
+    <section
+      key="corpus-safety"
+      className={`prefs-card ${searchHit ? 'is-search-hit' : ''}`}
+      aria-label="词表保存与本地恢复缓存"
+    >
+      <div className="prefs-card-hd">
+        <span className="prefs-card-title">
+          <span>词表保存与恢复缓存</span>
+          <QTip
+            align="right"
+            tip="默认关闭自动保存以保护本地磁盘中的原始 TextGrid 文件；未保存草稿会自动暂存到浏览器或桌面端本地恢复库，防止意外退出丢稿。"
+          />
+        </span>
+        <span className="prefs-card-meta">
+          {corpusAutoSave ? '自动保存' : '手动保存（保护原文件）'}
+        </span>
+      </div>
+
+      <div className={`pvc-toggle-card ${corpusAutoSave ? 'is-on' : ''}`}>
+        <div className="pvc-toggle-foot">
+          <ToggleSwitch
+            label="词表默认自动保存"
+            checked={corpusAutoSave}
+            onChange={setCorpusAutoSave}
+          />
+          <span className="pvc-toggle-sub">
+            默认关闭以保护本地原文件：编辑与切换词条时仅写入本地待保存区，按保存或批量保存后才写回磁盘。开启后将自动写回原文件，并在首次覆盖前留存 7 天原件备份。
+          </span>
+        </div>
+      </div>
+
+      <div className="prefs-corpus-cache-box">
+        <div className="prefs-corpus-cache-info">
+          <span className="prefs-corpus-cache-title">本地恢复缓存占用</span>
+          <span className="prefs-corpus-cache-meta">
+            {recoveryLoading && !recoveryStats
+              ? '正在统计本地恢复缓存…'
+              : recoveryStats?.degraded
+                ? '当前运行环境受限，本地恢复缓存已降级为仅内存暂存'
+                : recoveryStats
+                  ? `共 ${formatBytesReadable(recoveryStats.totalBytes)}（待恢复草稿 ${recoveryStats.draftCount} 条 / ${formatBytesReadable(recoveryStats.draftBytes)}，原件备份 ${recoveryStats.snapshotCount} 份 / ${formatBytesReadable(recoveryStats.snapshotBytes)}）`
+                  : '暂无本地恢复缓存记录'}
+          </span>
+        </div>
+        <div className="prefs-corpus-cache-actions">
+          <button
+            type="button"
+            className="compact"
+            disabled={cleaningBackup || recoveryStats?.degraded}
+            onClick={() => void handleClearExpiredBackups()}
+          >
+            <UiIcon name="trash" size={12} />
+            <span>{cleaningBackup ? '清理中…' : '清理过期备份'}</span>
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+
   const renderSearchCard = (cardId: SearchableCardDef['id']) => {
     switch (cardId) {
       case 'edit-mode':
@@ -325,11 +466,13 @@ export const PreferencesModal: React.FC = () => {
         return renderUiScaleCard(true);
       case 'general-toggles':
         return renderGeneralTogglesCard(true);
+      case 'corpus-safety':
+        return renderCorpusSafetyCard(true);
       case 'floating-bar':
         return (
-          <section key="floating-bar" className="prefs-card is-search-hit" aria-label="悬浮条按钮">
+          <section key="floating-bar" className="prefs-card is-search-hit" aria-label="浮动工具栏">
             <div className="prefs-card-hd">
-              <span className="prefs-card-title">悬浮条按钮定制</span>
+              <span className="prefs-card-title">浮动工具栏样式与按钮</span>
               <button
                 type="button"
                 className="compact"
@@ -410,7 +553,7 @@ export const PreferencesModal: React.FC = () => {
               ref={searchInputRef}
               type="text"
               className="prefs-search-input"
-              placeholder="搜索：放大镜、历史、恢复、缩放、浮动条、快捷键…"
+              placeholder="搜索：放大镜、历史、自动保存、备份、浮动条、快捷键…"
               aria-label="搜索偏好设置"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -516,6 +659,7 @@ export const PreferencesModal: React.FC = () => {
                   <>
                     {renderUiScaleCard()}
                     {renderGeneralTogglesCard()}
+                    {renderCorpusSafetyCard()}
                   </>
                 )}
                 {preferencesSection === 'floating' && (

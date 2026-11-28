@@ -5,7 +5,17 @@ import type {
   PlatformBridge,
   ZipEntryInput
 } from '../bridge/types';
-import { CORPUS_PROJECT_FILENAME, type CorpusWorkspaceMode } from './types';
+import {
+  CORPUS_PROJECT_FILENAME,
+  type CorpusFileStat,
+  type CorpusWorkspaceMode
+} from './types';
+import { buildWebCorpusRootKey } from './recoveryStore.ts';
+
+export interface CorpusZipOverrideEntry {
+  relPath: string;
+  bytes: Uint8Array;
+}
 
 export interface CorpusWorkspaceAdapter {
   readonly projectId: string;
@@ -20,11 +30,20 @@ export interface CorpusWorkspaceAdapter {
   scan(): Promise<CorpusDirScanResult>;
   readFile(relPath: string): Promise<Uint8Array>;
   readFileIfExists(relPath: string): Promise<Uint8Array | null>;
+  /** 获取磁盘原文件存在态、字节大小与修改时间（用于保存前外部修改冲突检测） */
+  statFile(relPath: string): Promise<CorpusFileStat>;
   writeFile(relPath: string, bytes: Uint8Array): Promise<void>;
+  /** Web FSA 写盘前复检或重新请求写入权限，其他适配器默认返回当前可写态 */
+  ensureWritePermission?(): Promise<boolean>;
   /** 仅 Tauri 桌面端返回本地绝对路径，Web 端返回 null */
   resolveNativePath(relPath: string): string | null;
-  /** 打包导出所有修改过的文件为 .zip（主要用于 Web 降级只读模式） */
-  exportModifiedZip(bridge: PlatformBridge): Promise<{ bytes: Uint8Array; fileCount: number }>;
+  /** 打包导出修改过的文件及传入的未保存草稿覆盖项为 .zip */
+  exportModifiedZip(
+    bridge: PlatformBridge,
+    overrides?: CorpusZipOverrideEntry[]
+  ): Promise<{ bytes: Uint8Array; fileCount: number }>;
+  /** 清理 Web 只读/降级模式下的已导出本地暂存 */
+  clearPendingExports?(): Promise<void>;
   /** 当前暂存待导出的已修改文件数 */
   getPendingExportCount(): number;
   /** 清理适配器资源 */
@@ -63,6 +82,45 @@ function splitFileName(name: string): { stem: string; ext: string } {
     stem: name.slice(0, dot),
     ext: name.slice(dot + 1).toLowerCase()
   };
+}
+
+function isFingerprintRelevantFile(name: string): boolean {
+  if (!name || name.startsWith('.')) return false;
+  const { stem, ext } = splitFileName(name);
+  if (!stem) return false;
+  return AUDIO_EXTENSIONS.has(ext) || ext === 'textgrid';
+}
+
+function mergeZipEntries(
+  baseEntries: ZipEntryInput[],
+  overrides?: CorpusZipOverrideEntry[]
+): ZipEntryInput[] {
+  const byLower = new Map<string, ZipEntryInput>();
+  for (const item of baseEntries) {
+    byLower.set(item.name.toLowerCase(), item);
+  }
+  if (overrides) {
+    for (const ov of overrides) {
+      if (!ov.relPath) continue;
+      byLower.set(ov.relPath.toLowerCase(), {
+        name: ov.relPath,
+        data: ov.bytes
+      });
+    }
+  }
+  return Array.from(byLower.values());
+}
+
+/**
+ * 直接将传入的未保存草稿或恢复记录条目打包为 .zip 字节流。
+ */
+export async function buildCorpusZipFromEntries(
+  bridge: PlatformBridge,
+  entries: CorpusZipOverrideEntry[]
+): Promise<{ bytes: Uint8Array; fileCount: number }> {
+  const merged = mergeZipEntries([], entries);
+  const bytes = await bridge.buildZipStore(merged);
+  return { bytes, fileCount: merged.length };
 }
 
 function joinNativePath(dir: string, relPath: string): string {
@@ -218,6 +276,35 @@ async function idbPutEntry(entry: MirrorEntry): Promise<void> {
   });
 }
 
+async function idbDeleteRootEntries(rootKey: string): Promise<void> {
+  const db = await openMirrorDb();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      const store = tx.objectStore(IDB_STORE);
+      const req = store.index('rootKey').getAllKeys(IDBKeyRange.only(rootKey));
+      req.onsuccess = () => {
+        const keys = (req.result as IDBValidKey[]) || [];
+        for (const k of keys) {
+          store.delete(k);
+        }
+      };
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve();
+      };
+    } catch {
+      db.close();
+      resolve();
+    }
+  });
+}
+
 // ---------- 1. Tauri 桌面端适配器 ----------
 
 class TauriCorpusAdapter implements CorpusWorkspaceAdapter {
@@ -270,6 +357,20 @@ class TauriCorpusAdapter implements CorpusWorkspaceAdapter {
     return this.bridge.readNativeFileIfExists(this.resolveNativePath(relPath));
   }
 
+  async statFile(relPath: string): Promise<CorpusFileStat> {
+    if (typeof this.bridge.statNativeFile === 'function') {
+      const stat = await this.bridge.statNativeFile(this.resolveNativePath(relPath));
+      if (stat) {
+        return {
+          exists: stat.exists,
+          size: stat.size,
+          modifiedMs: stat.modifiedMs
+        };
+      }
+    }
+    return { exists: false, size: 0, modifiedMs: 0 };
+  }
+
   writeFile(relPath: string, bytes: Uint8Array): Promise<void> {
     const copy = bytes.slice();
     const task = this.writeQueue.then(async () => {
@@ -284,15 +385,17 @@ class TauriCorpusAdapter implements CorpusWorkspaceAdapter {
   }
 
   async exportModifiedZip(
-    bridge: PlatformBridge
+    bridge: PlatformBridge,
+    overrides?: CorpusZipOverrideEntry[]
   ): Promise<{ bytes: Uint8Array; fileCount: number }> {
-    const entries: ZipEntryInput[] = [];
+    const baseEntries: ZipEntryInput[] = [];
     for (const relPath of this.modifiedPaths) {
       const data = await this.readFileIfExists(relPath);
       if (data) {
-        entries.push({ name: relPath, data });
+        baseEntries.push({ name: relPath, data });
       }
     }
+    const entries = mergeZipEntries(baseEntries, overrides);
     const bytes = await bridge.buildZipStore(entries);
     return { bytes, fileCount: entries.length };
   }
@@ -330,23 +433,32 @@ interface FsaDirectoryHandle {
 
 class WebFsaCorpusAdapter implements CorpusWorkspaceAdapter {
   readonly projectId = createProjectId();
-  readonly rootKey: string;
   readonly projectName: string;
   readonly mode = 'web-fsa' as const;
   readonly writable: boolean;
   readonly readOnlyReason?: string;
 
+  private _rootKey: string;
   private readonly dirHandle: FsaDirectoryHandle;
   private fileHandleByLower = new Map<string, FsaFileHandle>();
   private modifiedFallback = new Map<string, { relPath: string; bytes: Uint8Array }>();
   private writeQueue: Promise<void> = Promise.resolve();
 
-  constructor(dirHandle: FsaDirectoryHandle, writable: boolean, readOnlyReason?: string) {
+  constructor(
+    dirHandle: FsaDirectoryHandle,
+    writable: boolean,
+    readOnlyReason?: string,
+    initialFileNames?: string[]
+  ) {
     this.dirHandle = dirHandle;
     this.projectName = dirHandle.name || '语料文件夹';
-    this.rootKey = `web-fsa:${this.projectName}`;
+    this._rootKey = buildWebCorpusRootKey('web-fsa', this.projectName, initialFileNames ?? []);
     this.writable = writable;
     this.readOnlyReason = readOnlyReason;
+  }
+
+  get rootKey(): string {
+    return this._rootKey;
   }
 
   resolveNativePath(): null {
@@ -420,6 +532,11 @@ class WebFsaCorpusAdapter implements CorpusWorkspaceAdapter {
     textGridFiles.sort((a, b) => a.relPath.toLowerCase().localeCompare(b.relPath.toLowerCase()));
     wordListFiles.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 
+    this._rootKey = buildWebCorpusRootKey('web-fsa', this.projectName, [
+      ...audioFiles.map((f) => f.relPath),
+      ...textGridFiles.map((f) => f.relPath)
+    ]);
+
     return {
       dirPath: this.projectName,
       dirName: this.projectName,
@@ -464,6 +581,42 @@ class WebFsaCorpusAdapter implements CorpusWorkspaceAdapter {
     }
   }
 
+  async statFile(relPath: string): Promise<CorpusFileStat> {
+    const handle = await this.getHandleIfExists(relPath);
+    if (!handle) {
+      return { exists: false, size: 0, modifiedMs: 0 };
+    }
+    try {
+      const file = await handle.getFile();
+      return {
+        exists: true,
+        size: file.size,
+        modifiedMs: file.lastModified
+      };
+    } catch {
+      this.fileHandleByLower.delete(relPath.toLowerCase());
+      return { exists: false, size: 0, modifiedMs: 0 };
+    }
+  }
+
+  async ensureWritePermission(): Promise<boolean> {
+    if (!this.writable) return false;
+    try {
+      if (typeof this.dirHandle.queryPermission === 'function') {
+        const perm = await this.dirHandle.queryPermission({ mode: 'readwrite' });
+        if (perm === 'granted') return true;
+        if (typeof this.dirHandle.requestPermission === 'function') {
+          const requested = await this.dirHandle.requestPermission({ mode: 'readwrite' });
+          return requested === 'granted';
+        }
+        return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   writeFile(relPath: string, bytes: Uint8Array): Promise<void> {
     const copy = bytes.slice();
     const task = this.writeQueue.then(async () => {
@@ -477,6 +630,11 @@ class WebFsaCorpusAdapter implements CorpusWorkspaceAdapter {
           updatedAt: Date.now()
         });
         return;
+      }
+
+      const permitted = await this.ensureWritePermission();
+      if (!permitted) {
+        throw new Error('目录写入权限已失效，请重新授权或使用「导出修改 (.zip)」保存。');
       }
 
       const handle = await this.dirHandle.getFileHandle(relPath, { create: true });
@@ -499,14 +657,21 @@ class WebFsaCorpusAdapter implements CorpusWorkspaceAdapter {
   }
 
   async exportModifiedZip(
-    bridge: PlatformBridge
+    bridge: PlatformBridge,
+    overrides?: CorpusZipOverrideEntry[]
   ): Promise<{ bytes: Uint8Array; fileCount: number }> {
-    const entries: ZipEntryInput[] = Array.from(this.modifiedFallback.values()).map((item) => ({
+    const baseEntries: ZipEntryInput[] = Array.from(this.modifiedFallback.values()).map((item) => ({
       name: item.relPath,
       data: item.bytes
     }));
+    const entries = mergeZipEntries(baseEntries, overrides);
     const bytes = await bridge.buildZipStore(entries);
     return { bytes, fileCount: entries.length };
+  }
+
+  async clearPendingExports(): Promise<void> {
+    this.modifiedFallback.clear();
+    await idbDeleteRootEntries(this.rootKey);
   }
 
   getPendingExportCount(): number {
@@ -536,10 +701,14 @@ class WebFallbackCorpusAdapter implements CorpusWorkspaceAdapter {
 
   constructor(projectName: string, fileEntries: Array<{ relPath: string; file: File }>) {
     this.projectName = projectName || '语料文件夹';
+    const fingerprintNames: string[] = [];
     for (const entry of fileEntries) {
       this.filesByLower.set(entry.relPath.toLowerCase(), entry);
+      if (isFingerprintRelevantFile(entry.relPath)) {
+        fingerprintNames.push(entry.relPath);
+      }
     }
-    this.rootKey = `web-fallback:${this.projectName.toLowerCase()}:${fileEntries.length}`;
+    this.rootKey = buildWebCorpusRootKey('web-fallback', this.projectName, fingerprintNames);
   }
 
   resolveNativePath(): null {
@@ -644,6 +813,18 @@ class WebFallbackCorpusAdapter implements CorpusWorkspaceAdapter {
     return new Uint8Array(await entry.file.arrayBuffer());
   }
 
+  async statFile(relPath: string): Promise<CorpusFileStat> {
+    const entry = this.filesByLower.get(relPath.toLowerCase());
+    if (!entry) {
+      return { exists: false, size: 0, modifiedMs: 0 };
+    }
+    return {
+      exists: true,
+      size: entry.file.size,
+      modifiedMs: entry.file.lastModified
+    };
+  }
+
   writeFile(relPath: string, bytes: Uint8Array): Promise<void> {
     const copy = bytes.slice();
     const lower = relPath.toLowerCase();
@@ -663,14 +844,21 @@ class WebFallbackCorpusAdapter implements CorpusWorkspaceAdapter {
   }
 
   async exportModifiedZip(
-    bridge: PlatformBridge
+    bridge: PlatformBridge,
+    overrides?: CorpusZipOverrideEntry[]
   ): Promise<{ bytes: Uint8Array; fileCount: number }> {
-    const entries: ZipEntryInput[] = Array.from(this.modifiedByLower.values()).map((item) => ({
+    const baseEntries: ZipEntryInput[] = Array.from(this.modifiedByLower.values()).map((item) => ({
       name: item.relPath,
       data: item.bytes
     }));
+    const entries = mergeZipEntries(baseEntries, overrides);
     const bytes = await bridge.buildZipStore(entries);
     return { bytes, fileCount: entries.length };
+  }
+
+  async clearPendingExports(): Promise<void> {
+    this.modifiedByLower.clear();
+    await idbDeleteRootEntries(this.rootKey);
   }
 
   getPendingExportCount(): number {
@@ -692,7 +880,10 @@ class MemoryCorpusAdapter implements CorpusWorkspaceAdapter {
   readonly mode = 'web-fallback' as const;
   readonly writable = true;
 
-  private readonly filesByLower = new Map<string, { relPath: string; bytes: Uint8Array }>();
+  private readonly filesByLower = new Map<
+    string,
+    { relPath: string; bytes: Uint8Array; modifiedMs: number }
+  >();
 
   constructor(
     rootKey: string,
@@ -701,10 +892,12 @@ class MemoryCorpusAdapter implements CorpusWorkspaceAdapter {
   ) {
     this.rootKey = rootKey;
     this.projectName = projectName;
+    const now = Date.now();
     for (const f of initialFiles) {
       this.filesByLower.set(f.relPath.toLowerCase(), {
         relPath: f.relPath,
-        bytes: f.bytes.slice()
+        bytes: f.bytes.slice(),
+        modifiedMs: now
       });
     }
   }
@@ -779,20 +972,35 @@ class MemoryCorpusAdapter implements CorpusWorkspaceAdapter {
     return entry ? entry.bytes.slice() : null;
   }
 
+  async statFile(relPath: string): Promise<CorpusFileStat> {
+    const entry = this.filesByLower.get(relPath.toLowerCase());
+    if (!entry) {
+      return { exists: false, size: 0, modifiedMs: 0 };
+    }
+    return {
+      exists: true,
+      size: entry.bytes.length,
+      modifiedMs: entry.modifiedMs
+    };
+  }
+
   async writeFile(relPath: string, bytes: Uint8Array): Promise<void> {
     this.filesByLower.set(relPath.toLowerCase(), {
       relPath,
-      bytes: bytes.slice()
+      bytes: bytes.slice(),
+      modifiedMs: Date.now()
     });
   }
 
   async exportModifiedZip(
-    bridge: PlatformBridge
+    bridge: PlatformBridge,
+    overrides?: CorpusZipOverrideEntry[]
   ): Promise<{ bytes: Uint8Array; fileCount: number }> {
-    const entries: ZipEntryInput[] = Array.from(this.filesByLower.values()).map((item) => ({
+    const baseEntries: ZipEntryInput[] = Array.from(this.filesByLower.values()).map((item) => ({
       name: item.relPath,
       data: item.bytes
     }));
+    const entries = mergeZipEntries(baseEntries, overrides);
     const bytes = await bridge.buildZipStore(entries);
     return { bytes, fileCount: entries.length };
   }
@@ -842,6 +1050,49 @@ export async function openTauriCorpusAdapter(
 }
 
 /**
+ * 将已获得的 FileSystemDirectoryHandle 包装为 Web FSA 文件夹工作区适配器（用于目录选择器或拖拽文件夹）。
+ */
+export async function createWebFsaCorpusAdapterFromHandle(
+  rawHandle: unknown
+): Promise<CorpusWorkspaceAdapter | null> {
+  const dirHandle = rawHandle as FsaDirectoryHandle | null;
+  if (!dirHandle || dirHandle.kind !== 'directory' || typeof dirHandle.entries !== 'function') {
+    return null;
+  }
+
+  let writable = true;
+  let readOnlyReason: string | undefined;
+  try {
+    const perm = (await dirHandle.queryPermission?.({ mode: 'readwrite' })) ?? 'granted';
+    if (perm !== 'granted') {
+      const req = (await dirHandle.requestPermission?.({ mode: 'readwrite' })) ?? 'denied';
+      if (req !== 'granted') {
+        writable = false;
+        readOnlyReason = '未授予文件夹写入权限，修改将暂存到本地缓存，请完成后导出压缩包。';
+      }
+    }
+  } catch {
+    writable = false;
+    readOnlyReason = '浏览器限制了目录写入权限，修改将暂存到本地缓存，请完成后导出压缩包。';
+  }
+
+  const initialFileNames: string[] = [];
+  try {
+    for await (const [name, handle] of dirHandle.entries()) {
+      if (handle.kind === 'file' && isFingerprintRelevantFile(name)) {
+        initialFileNames.push(name);
+      }
+    }
+  } catch {
+    // 扫描阶段会再次刷新目录指纹
+  }
+
+  const adapter = new WebFsaCorpusAdapter(dirHandle, writable, readOnlyReason, initialFileNames);
+  registerCorpusAdapter(adapter);
+  return adapter;
+}
+
+/**
  * Web Chromium 安全上下文打开文件夹工作区适配器（支持静默读写）。
  * 用户取消选择返回 null。
  */
@@ -863,25 +1114,7 @@ export async function openWebFsaCorpusAdapter(): Promise<CorpusWorkspaceAdapter 
     throw err;
   }
 
-  let writable = true;
-  let readOnlyReason: string | undefined;
-  try {
-    const perm = (await dirHandle.queryPermission?.({ mode: 'readwrite' })) ?? 'granted';
-    if (perm !== 'granted') {
-      const req = (await dirHandle.requestPermission?.({ mode: 'readwrite' })) ?? 'denied';
-      if (req !== 'granted') {
-        writable = false;
-        readOnlyReason = '未授予文件夹写入权限，修改将暂存到本地缓存，请完成后导出压缩包。';
-      }
-    }
-  } catch {
-    writable = false;
-    readOnlyReason = '浏览器限制了目录写入权限，修改将暂存到本地缓存，请完成后导出压缩包。';
-  }
-
-  const adapter = new WebFsaCorpusAdapter(dirHandle, writable, readOnlyReason);
-  registerCorpusAdapter(adapter);
-  return adapter;
+  return createWebFsaCorpusAdapterFromHandle(dirHandle);
 }
 
 /**
@@ -889,19 +1122,20 @@ export async function openWebFsaCorpusAdapter(): Promise<CorpusWorkspaceAdapter 
  * 仅提取一级目录内的文件，避免预读全部字节。
  */
 export function createWebFallbackCorpusAdapter(
-  fileList: FileList | File[]
+  fileList: FileList | File[],
+  projectNameOverride?: string
 ): CorpusWorkspaceAdapter | null {
   const files = Array.from(fileList);
   if (files.length === 0) return null;
 
-  let rootName = '语料文件夹';
+  let rootName = projectNameOverride?.trim() || '语料文件夹';
   const topLevel: Array<{ relPath: string; file: File }> = [];
 
   for (const file of files) {
     const rawRel = (file as File & { webkitRelativePath?: string }).webkitRelativePath || '';
     if (rawRel) {
       const parts = rawRel.split('/').filter(Boolean);
-      if (parts.length >= 2 && rootName === '语料文件夹') {
+      if (parts.length >= 2 && !projectNameOverride?.trim() && rootName === '语料文件夹') {
         rootName = parts[0];
       }
       // 仅扫描一级目录

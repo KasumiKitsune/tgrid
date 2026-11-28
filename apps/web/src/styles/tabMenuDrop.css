@@ -1,0 +1,289 @@
+/* Tab Right-Click Highlight & Bulk Drop Intake Modal */
+
+.tab-item.ctx-target:not(.active) {
+  background: var(--bg-hover);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+  z-index: 3;
+}
+
+.tab-item.ctx-target.active {
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.context-menu.tab-ctx-menu {
+  min-width: 214px;
+  z-index: 460;
+}
+
+/* Bulk Drop Confirmation & Routing Modal */
+
+.modal-card.bulk-drop-modal-card {
+  width: min(560px, calc(var(--vw) - 24px));
+  max-height: min(640px, calc(var(--vh) - 36px));
+}
+
+.bulk-drop-modal-body {
+  padding: 14px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.bulk-drop-summary {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink);
+  user-select: text;
+}
+
+.bulk-drop-summary strong {
+  font-weight: 600;
+}
+
+.bulk-drop-recommend {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--accent-blue-soft);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent-blue);
+}
+
+.bulk-drop-recommend-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.bulk-drop-recommend-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.bulk-drop-recommend-desc {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+
+.bulk-drop-recommend-folder {
+  font-family: var(--font-mono);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.bulk-drop-cap-notice {
+  margin: 0;
+  padding: 7px 10px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--accent-amber);
+  background: var(--accent-amber-soft);
+  border: 1px solid var(--rule);
+}
+
+.bulk-drop-list-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bulk-drop-list-count {
+  font-size: 11.5px;
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+}
+
+.bulk-drop-list-count.at-limit {
+  color: var(--accent-amber);
+  font-weight: 600;
+}
+
+.bulk-drop-quick-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bulk-drop-quick-btn {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.bulk-drop-quick-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--rule-hover);
+}
+
+.bulk-drop-quick-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.bulk-drop-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex: 1 1 auto;
+  min-height: 96px;
+  max-height: 236px;
+  overflow-y: auto;
+  background: var(--bg-sheet);
+  border: 1px solid var(--rule);
+}
+
+.bulk-drop-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 12px;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background-color 120ms var(--ease);
+}
+
+.bulk-drop-item:last-child {
+  border-bottom: none;
+}
+
+.bulk-drop-item:hover:not(.is-disabled) {
+  background: var(--bg-hover);
+}
+
+.bulk-drop-item.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.bulk-drop-item.is-open {
+  background: var(--bg-subtle);
+  color: var(--ink-muted);
+  cursor: default;
+}
+
+.bulk-drop-checkbox {
+  margin: 0;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  accent-color: var(--ink);
+  cursor: inherit;
+}
+
+.bulk-drop-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  color: var(--ink-muted);
+}
+
+.bulk-drop-item-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.bulk-drop-badge {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  font-size: 10.5px;
+  line-height: 1.35;
+  border: 1px solid var(--rule);
+  background: var(--bg-subtle);
+  color: var(--ink-muted);
+}
+
+.bulk-drop-badge.paired {
+  background: var(--accent-blue-soft);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.bulk-drop-badge.dir {
+  background: var(--bg-subtle);
+  color: var(--ink);
+}
+
+.bulk-drop-badge.opened {
+  color: var(--ink-faint);
+}
+
+.bulk-drop-item-size {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  min-width: 54px;
+  text-align: right;
+}
+
+.bulk-drop-ignored {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  line-height: 1.45;
+  padding: 6px 9px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--rule);
+}
+
+.bulk-drop-ignored summary {
+  cursor: pointer;
+  color: var(--ink-muted);
+  user-select: none;
+}
+
+.bulk-drop-ignored-list {
+  margin: 5px 0 0;
+  padding-left: 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  max-height: 76px;
+  overflow-y: auto;
+}
+
+.bulk-drop-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--bg-sheet);
+  border-top: 1px solid var(--rule);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.bulk-drop-foot-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}

@@ -37,12 +37,14 @@ import type {
   ContourBox,
   ContourPath,
   CorpusDirScanResult,
+  DroppedPathInfo,
   EngineInfo,
   IpaCandidate,
   IpaConvertResult,
   IpaSymbolInfo,
   LinearSeg,
   NativeFileFilter,
+  NativeFileStat,
   NativeOpenedFile,
   ParsedDocument,
   PlatformBridge,
@@ -332,6 +334,14 @@ export class WebWasmBridge implements PlatformBridge {
   }
 
   async readNativeFileIfExists(_path: string): Promise<Uint8Array | null> {
+    return null;
+  }
+
+  async statNativeFile(_path: string): Promise<NativeFileStat | null> {
+    return null;
+  }
+
+  async inspectDroppedPaths(_paths: string[]): Promise<DroppedPathInfo[] | null> {
     return null;
   }
 

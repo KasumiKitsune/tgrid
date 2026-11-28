@@ -51,20 +51,20 @@ const DELETE_MATRIX_ROWS: DeleteMatrixRow[] = [
     target: '标点',
     backspace: '删除并自动选中前一点',
     del: '删除并自动选中后一点',
-    shiftBackspace: '仅清空标点文本（留时刻）',
+    shiftBackspace: '仅清空标点文本（保留位置）',
     shiftDelete: '删除该标点'
   },
   {
     target: '整层',
-    backspace: '安全忽略',
-    del: '安全忽略',
-    shiftBackspace: '安全忽略',
-    shiftDelete: '删除整层（可撤销）'
+    backspace: '不触发操作',
+    del: '不触发操作',
+    shiftBackspace: '不触发操作',
+    shiftDelete: '删除整层（支持撤销）'
   },
   {
     target: '时间列',
-    backspace: '安全忽略',
-    del: '安全忽略',
+    backspace: '不触发操作',
+    del: '不触发操作',
     shiftBackspace: '跨层删除该时刻全部边界',
     shiftDelete: '跨层删除该时刻全部边界'
   }
@@ -178,10 +178,10 @@ export const ShortcutsModal: React.FC = () => {
             ))}
           </div>
 
-          {/* 4-Column Delete Semantics Matrix */}
-          <section className="shortcuts-matrix-wrap" aria-label="退格与删除四象限语义">
+          {/* 4-Column Delete Rules Table */}
+          <section className="shortcuts-matrix-wrap" aria-label="删除与退格规则">
             <div className="shortcuts-section-title">
-              退格与删除四象限语义 · 编辑模式（首次清空内容，再按或加 Shift 删结构，单步可撤销）
+              删除与退格规则 · 编辑模式（首次清空文本，再按或按住 Shift 删除边界或标点，支持撤销）
             </div>
             <table className="shortcuts-matrix-table">
               <thead>
@@ -215,9 +215,9 @@ export const ShortcutsModal: React.FC = () => {
             </table>
           </section>
 
-          {/* Mouse & Cross-Tier Magnet Gestures */}
-          <section className="shortcuts-section" aria-label="鼠标手势与跨层磁吸">
-            <div className="shortcuts-section-title">鼠标手势与跨层磁吸技巧</div>
+          {/* Mouse & Cross-Tier Alignment Gestures */}
+          <section className="shortcuts-section" aria-label="鼠标操作与跨层对齐">
+            <div className="shortcuts-section-title">鼠标操作与跨层对齐技巧</div>
             <div className="shortcuts-grid">
               <div className="shortcuts-list">
                 {MOUSE_GESTURE_TIPS.slice(0, Math.ceil(MOUSE_GESTURE_TIPS.length / 2)).map(

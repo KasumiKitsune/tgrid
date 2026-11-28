@@ -15,6 +15,17 @@ export type {
 
 export type CorpusItemStatus = 'todo' | 'done' | 'doubt' | 'trash';
 
+export interface CorpusFileFingerprint {
+  size: number;
+  modifiedMs: number;
+}
+
+export interface CorpusFileStat {
+  exists: boolean;
+  size: number;
+  modifiedMs: number;
+}
+
 export interface CorpusTierTemplateItem {
   name: string;
   kind: TierKind;
@@ -43,6 +54,10 @@ export interface CorpusItemRecord {
   updatedAt: number;
   /** 磁盘上是否已缺失对应音频文件 */
   missing?: boolean;
+  /** 磁盘已有 TextGrid 但解析失败时的错误信息（进入只读告警状态防误覆盖） */
+  parseError?: string;
+  /** 加载时记录的磁盘原文件基线指纹（用于保存前冲突检测） */
+  baseFingerprint?: CorpusFileFingerprint;
   /** 预留给字表导入的附加列信息 */
   meta?: Record<string, string>;
 }
@@ -127,6 +142,14 @@ export interface CorpusProjectState {
   sidebarWidth: number;
   /** 尚未导出或待落盘的修改计数 */
   dirtyCount: number;
+  /** 处于未保存暂存态的词条 ID 列表 */
+  unsavedItemIds: string[];
+  /** 是否存在尚未落盘的项目级索引/状态改动 */
+  projectIndexDirty: boolean;
+  /** 本地恢复缓存（IndexedDB）是否因浏览器限制降级为纯内存暂存 */
+  recoveryDegraded: boolean;
+  /** 当前项目待用户决定是否恢复的异常退出草稿条数 */
+  pendingRecoveryCount: number;
   /** 词条切换竞态保护序号 */
   loadSeq: number;
   /** 当前自动保存状态 */

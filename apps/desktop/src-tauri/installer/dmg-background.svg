@@ -1,0 +1,54 @@
+<svg viewBox="0 0 660 400" width="660" height="400" xmlns="http://www.w3.org/2000/svg">
+  <rect width="660" height="400" fill="#FAF9F6" />
+
+  <!-- Airy Phonetics Watermarks -->
+  <g fill="#141413" font-family="'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif" font-weight="300">
+    <text x="28" y="250" font-size="132" opacity="0.036">ə</text>
+    <text x="546" y="236" font-size="118" opacity="0.036">ŋ</text>
+    <text x="58" y="128" font-size="40" opacity="0.045">tʰ</text>
+    <text x="578" y="318" font-size="46" opacity="0.045">˥</text>
+  </g>
+
+  <!-- Swiss Grid Structural Lines -->
+  <line x1="36" y1="64" x2="624" y2="64" stroke="#E6E3DA" stroke-width="1" />
+  <line x1="36" y1="344" x2="624" y2="344" stroke="#E6E3DA" stroke-width="1" />
+  <line x1="330" y1="64" x2="330" y2="152" stroke="#EFECE4" stroke-width="1" />
+  <line x1="330" y1="256" x2="330" y2="344" stroke="#EFECE4" stroke-width="1" />
+
+  <!-- Top Editorial Masthead -->
+  <g transform="translate(36, 23)">
+    <rect x="0.3" y="0.3" width="21.4" height="21.4" fill="#ECEAE3" stroke="#CBC7BC" stroke-width="0.7" />
+    <g transform="scale(0.55)">
+      <path d="M7 7 H33 V13 H23 V33 H17 V13 H7 Z" fill="#141413" />
+      <rect x="7" y="15" width="8" height="5" fill="#2563EB" />
+      <rect x="7" y="22" width="8" height="11" fill="#D2CEC2" />
+      <rect x="25" y="15" width="8" height="11" fill="#D2CEC2" />
+      <rect x="25" y="28" width="8" height="5" fill="#7C3AED" />
+    </g>
+    <text x="30" y="15.5" font-family="'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif" font-size="15.5" font-weight="700" fill="#141413">T·Grid</text>
+    <circle cx="88" cy="11" r="1.6" fill="#C6C2B8" />
+    <text x="98" y="15" font-family="'Microsoft YaHei', 'PingFang SC', 'Segoe UI', sans-serif" font-size="11.5" fill="#6E6A61">语音标注与出图工具</text>
+  </g>
+  <text x="624" y="38.5" font-family="Consolas, 'Cascadia Mono', 'SF Mono', monospace" font-size="9.5" fill="#8C887E" text-anchor="end" letter-spacing="0.8">MACOS DESKTOP</text>
+
+  <!-- Drop Zone Left: center (185, 205) -->
+  <text x="185" y="126" font-family="Consolas, 'Cascadia Mono', 'SF Mono', monospace" font-size="9" fill="#9A968D" text-anchor="middle" letter-spacing="1">01</text>
+  <rect x="118" y="138" width="134" height="134" rx="16" fill="#FFFFFF" stroke="#E5E2D9" stroke-width="1" />
+
+  <!-- Drop Zone Right: center (475, 205) -->
+  <text x="475" y="126" font-family="Consolas, 'Cascadia Mono', 'SF Mono', monospace" font-size="9" fill="#9A968D" text-anchor="middle" letter-spacing="1">02</text>
+  <rect x="408" y="138" width="134" height="134" rx="16" fill="#FFFFFF" stroke="#E5E2D9" stroke-width="1" />
+
+  <!-- Minimalist Pulse Drag Arrow -->
+  <g>
+    <text x="330" y="178" font-family="'Microsoft YaHei', 'PingFang SC', 'Segoe UI', sans-serif" font-size="11.5" font-weight="500" fill="#141413" text-anchor="middle">拖移安装</text>
+    <polyline points="274,204 308,204 313,196 318,212 324,190 330,216 336,194 341,208 346,204 384,204" fill="none" stroke="#1D4ED8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M377 198 L386 204 L377 210" fill="none" stroke="#1D4ED8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+    <text x="330" y="230" font-family="Consolas, 'Cascadia Mono', 'SF Mono', monospace" font-size="8.2" fill="#9A968D" text-anchor="middle" letter-spacing="1.2">DRAG TO APPLICATIONS</text>
+  </g>
+
+  <!-- Swiss Footer -->
+  <text x="36" y="366" font-family="Consolas, 'Cascadia Mono', 'SF Mono', monospace" font-size="8.5" fill="#8C887E" letter-spacing="0.6">PRAAT TEXTGRID · COLLECTION</text>
+  <rect x="327.5" y="360" width="5" height="5" fill="#1D4ED8" />
+  <text x="624" y="366" font-family="Consolas, 'Cascadia Mono', 'SF Mono', monospace" font-size="8.5" fill="#8C887E" text-anchor="end" letter-spacing="0.6">IPA · WAVEFORM · VECTOR SVG</text>
+</svg>

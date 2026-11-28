@@ -223,6 +223,21 @@ export interface NativeOpenedFile {
   bytes: Uint8Array;
 }
 
+export interface NativeFileStat {
+  exists: boolean;
+  size: number;
+  modifiedMs: number;
+}
+
+export interface DroppedPathInfo {
+  path: string;
+  name: string;
+  parentDir: string;
+  isDir: boolean;
+  size: number;
+  exists: boolean;
+}
+
 export interface CorpusScannedAudioFile {
   relPath: string;
   stem: string;
@@ -321,6 +336,8 @@ export interface PlatformBridge {
   ): Promise<string | null>;
   readNativeFile(path: string): Promise<NativeOpenedFile | null>;
   readNativeFileIfExists(path: string): Promise<Uint8Array | null>;
+  statNativeFile?(path: string): Promise<NativeFileStat | null>;
+  inspectDroppedPaths?(paths: string[]): Promise<DroppedPathInfo[] | null>;
   writeNativeFile(path: string, bytes: Uint8Array): Promise<boolean>;
   writeNativeFileAtomic(path: string, bytes: Uint8Array): Promise<boolean>;
   openNativeDirectoryDialog(options?: { title?: string }): Promise<string | null>;

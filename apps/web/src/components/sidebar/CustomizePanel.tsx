@@ -14,10 +14,12 @@ import {
   FLOATING_BAR_PRESETS,
   useEditorStore,
   type FloatingBarConfig,
+  type FloatingBarDensity,
   type FloatingBarPresetKey,
   type FloatingBarTarget
 } from '../../store/useEditorStore';
-import { UiIcon, type IconName } from '../Icons';
+import { ChevronIcon, CloseIcon, UiIcon, type IconName } from '../Icons';
+import '../../styles/floatingBar.css';
 
 const DragGripIcon: React.FC<{ size?: number }> = ({ size = 12 }) => (
   <svg width={size} height={size} viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
@@ -27,6 +29,61 @@ const DragGripIcon: React.FC<{ size?: number }> = ({ size = 12 }) => (
     <circle cx="8" cy="6" r="0.95" />
     <circle cx="4" cy="9.5" r="0.95" />
     <circle cx="8" cy="9.5" r="0.95" />
+  </svg>
+);
+
+const MoreDotsIcon: React.FC = () => (
+  <svg width={13} height={13} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+    <circle cx="3.5" cy="8" r="1.2" />
+    <circle cx="8" cy="8" r="1.2" />
+    <circle cx="12.5" cy="8" r="1.2" />
+  </svg>
+);
+
+const CollapseIcon: React.FC = () => (
+  <svg
+    width={11}
+    height={11}
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.6}
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <path d="M4 8h8" />
+  </svg>
+);
+
+const NudgeLeftIcon: React.FC = () => (
+  <svg
+    width={12}
+    height={12}
+    viewBox="0 0 14 14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.55}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M8.5 3.5L5 7l3.5 3.5" />
+  </svg>
+);
+
+const NudgeRightIcon: React.FC = () => (
+  <svg
+    width={12}
+    height={12}
+    viewBox="0 0 14 14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.55}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M5.5 3.5L9 7l-3.5 3.5" />
   </svg>
 );
 
@@ -40,54 +97,128 @@ export function requestCustomizeSubtab(tab: CustomizeSubtab): void {
   subtabListeners.forEach((fn) => fn(tab));
 }
 
-const TARGET_OPTIONS: Array<{ key: FloatingBarTarget; label: string }> = [
-  { key: 'interval', label: '区间' },
-  { key: 'point', label: '标点' },
-  { key: 'boundary', label: '边界' },
-  { key: 'tier', label: '层级' }
+const DENSITY_OPTIONS: ReadonlyArray<{
+  value: FloatingBarDensity;
+  label: string;
+  desc: string;
+}> = [
+  {
+    value: 'compact',
+    label: '精简',
+    desc: '收紧行高与按钮间距并缩短标签，适合窄画布高频标注'
+  },
+  {
+    value: 'standard',
+    label: '标准',
+    desc: '时间读数收纳于顶部状态眉胶囊，动作行图标与文字均衡排布'
+  },
+  {
+    value: 'numeric',
+    label: '数值直出',
+    desc: '动作行左侧直接展开可拖拽微调的起止时间、时刻或层名框'
+  }
+];
+
+const TARGET_OPTIONS: Array<{
+  key: FloatingBarTarget;
+  label: string;
+  accent: string;
+  sampleKind: string;
+  sampleCtx: string;
+  sampleTime: string;
+}> = [
+  {
+    key: 'interval',
+    label: '区间',
+    accent: '#2563EB',
+    sampleKind: '区间',
+    sampleCtx: '音节 #3 · ma55',
+    sampleTime: '0.120–0.360s · 240ms'
+  },
+  {
+    key: 'multi',
+    label: '多选',
+    accent: '#4F46E5',
+    sampleKind: '多选',
+    sampleCtx: '已选 3 段 · 同层连续',
+    sampleTime: '0.120–0.840s · 720ms'
+  },
+  {
+    key: 'boundary',
+    label: '边界',
+    accent: '#D97706',
+    sampleKind: '边界',
+    sampleCtx: '音节 · pa | ma',
+    sampleTime: '0.360 s'
+  },
+  {
+    key: 'point',
+    label: '标点',
+    accent: '#0D9488',
+    sampleKind: '标点',
+    sampleCtx: '声调 · H*',
+    sampleTime: '0.240 s'
+  },
+  {
+    key: 'tier',
+    label: '层级',
+    accent: '#475569',
+    sampleKind: '层级',
+    sampleCtx: '音节 · 区间层 (12 段)',
+    sampleTime: '0.000–2.400s'
+  }
 ];
 
 const PRESET_OPTIONS: Array<{ key: FloatingBarPresetKey; label: string; title: string }> = [
-  { key: 'full', label: '完整', title: '显示起止时间框与全部常用按钮' },
-  { key: 'compact', label: '精简标注', title: '隐藏时间框，聚焦高频标注动作' },
-  { key: 'minimal', label: '极简', title: '仅保留核心改字、切分与播放按钮' }
+  { key: 'full', label: '全显', title: '显示当前及全部对象的全部可用按钮' },
+  { key: 'compact', label: '常用', title: '套用默认高频按钮组合' },
+  { key: 'minimal', label: '核心', title: '仅保留 3 个核心高频动作，其余归入「…」菜单' }
 ];
 
-const FIELD_ITEM_IDS = new Set([
-  'iv-times',
-  'pt-time',
-  'bnd-time',
-  'tier-name',
-  'tier-bounds'
-]);
-
 const FLOATING_ITEM_ICONS: Partial<Record<string, IconName>> = {
-  'iv-times': 'copyTime',
-  'iv-dur': 'copyTime',
-  'iv-edit': 'edit',
-  'iv-clear': 'clear',
-  'iv-split': 'split',
-  'iv-split-equal': 'splitEqual',
-  'iv-merge-left': 'mergeLeft',
-  'iv-merge-right': 'mergeRight',
   'iv-play': 'play',
   'iv-play-ctx': 'playContext',
+  'iv-edit': 'edit',
+  'iv-split': 'autoSplit',
+  'iv-merge-left': 'mergeLeft',
+  'iv-merge-right': 'mergeRight',
   'iv-zoom': 'zoomIn',
+  'iv-copy-to-tier': 'projectToTier',
   'iv-copy-text': 'copy',
-  'pt-time': 'copyTime',
-  'pt-edit': 'edit',
-  'pt-play-ctx': 'playContext',
-  'pt-play': 'play',
-  'pt-delete': 'trash',
-  'bnd-time': 'copyTime',
+  'iv-clear': 'clear',
+  'ml-merge': 'mergeRight',
+  'ml-align': 'nudgeShared',
+  'ml-play': 'play',
+  'ml-nudge': 'nudgeFine',
+  'ml-clear': 'clear',
+  'ml-zoom': 'zoomIn',
   'bnd-zero': 'zeroCross',
+  'bnd-link': 'nudgeShared',
   'bnd-audition': 'playContext',
+  'bnd-project': 'projectToTier',
   'bnd-delete': 'delBoundary',
+  'bnd-copy-time': 'copyTime',
+  'pt-edit': 'edit',
+  'pt-align': 'zeroCross',
+  'pt-play-ctx': 'playContext',
+  'pt-nudge': 'nudgeFine',
+  'pt-delete': 'trash',
+  'pt-snap-boundary': 'nudgeShared',
+  'pt-move-mid': 'split',
+  'pt-play': 'play',
   'tier-name': 'edit',
-  'tier-bounds': 'copyTime',
+  'tier-visibility': 'hideTier',
+  'tier-solo': 'layers',
+  'tier-duplicate': 'duplicateTier',
   'tier-move': 'navVertical',
+  'tier-clear': 'clear',
   'tier-delete': 'trash'
 };
+
+const PRIMARY_ITEM_IDS = new Set(['iv-play', 'ml-merge', 'bnd-zero', 'pt-edit', 'tier-name']);
+const DANGER_ITEM_IDS = new Set(['iv-clear', 'ml-clear', 'bnd-delete', 'pt-delete', 'tier-clear', 'tier-delete']);
+const ICON_ONLY_ITEM_IDS = new Set(['iv-merge-left', 'iv-merge-right', 'iv-zoom', 'ml-zoom']);
+const DROPDOWN_ITEM_IDS = new Set(['iv-copy-to-tier', 'ml-align', 'bnd-project', 'pt-align', 'tier-duplicate']);
 
 interface PendingConflict {
   actionId: string;
@@ -106,7 +237,7 @@ function sameStringList(a: readonly string[], b: readonly string[]): boolean {
 function matchesPreset(cfg: FloatingBarConfig, presetKey: FloatingBarPresetKey): boolean {
   const preset = FLOATING_BAR_PRESETS[presetKey];
   if (!preset) return false;
-  const targets: FloatingBarTarget[] = ['interval', 'point', 'boundary', 'tier'];
+  const targets: FloatingBarTarget[] = ['interval', 'multi', 'boundary', 'point', 'tier'];
   return targets.every(
     (t) =>
       sameStringList(cfg[t].order, preset[t].order) &&
@@ -136,6 +267,8 @@ export const CustomizePanel: React.FC<CustomizePanelProps> = ({
   const editInspectorMode = useEditorStore((s) => s.editInspectorMode);
   const setEditInspectorMode = useEditorStore((s) => s.setEditInspectorMode);
   const floatingBarConfig = useEditorStore((s) => s.floatingBarConfig);
+  const floatingBarDensity = useEditorStore((s) => s.floatingBarDensity);
+  const setFloatingBarDensity = useEditorStore((s) => s.setFloatingBarDensity);
   const toggleFloatingBarItem = useEditorStore((s) => s.toggleFloatingBarItem);
   const reorderFloatingBarItem = useEditorStore((s) => s.reorderFloatingBarItem);
   const applyFloatingBarPreset = useEditorStore((s) => s.applyFloatingBarPreset);
@@ -266,6 +399,164 @@ export const CustomizePanel: React.FC<CustomizePanelProps> = ({
     () => orderedItems.filter((item) => !hiddenSet.has(item.id)),
     [orderedItems, hiddenSet]
   );
+  const hiddenCount = orderedItems.length - visibleItems.length;
+  const activeTargetMeta = useMemo(
+    () => TARGET_OPTIONS.find((opt) => opt.key === target) ?? TARGET_OPTIONS[0],
+    [target]
+  );
+  const isCompactDensity = floatingBarDensity === 'compact';
+  const isNumericDensity = floatingBarDensity === 'numeric';
+
+  const renderPreviewActionItem = (
+    item: (typeof FLOATING_BAR_CATALOG)[FloatingBarTarget][number]
+  ): React.ReactNode => {
+    const labelText = isCompactDensity ? item.compactLabel ?? item.previewLabel : item.previewLabel;
+    const iconName = FLOATING_ITEM_ICONS[item.id];
+    const iconSize = isCompactDensity ? 12 : 13;
+
+    if (item.id === 'iv-split') {
+      return (
+        <span key={item.id} className="fb-arch-split-group" title={item.label}>
+          <span className="fb-arch-btn is-split-main">
+            <UiIcon name="autoSplit" size={iconSize} />
+            <span>{labelText}</span>
+          </span>
+          <span className="fb-arch-btn is-split-caret">
+            <ChevronIcon size={10} />
+          </span>
+        </span>
+      );
+    }
+
+    if (item.id === 'bnd-link') {
+      return (
+        <span key={item.id} className="fb-arch-seg" title={item.label}>
+          <span className="fb-arch-seg-btn is-on">{isCompactDensity ? '本层' : '仅本层'}</span>
+          <span className="fb-arch-seg-btn">{isCompactDensity ? '联动' : '联动对齐层'}</span>
+        </span>
+      );
+    }
+
+    if (item.id === 'ml-nudge' || item.id === 'pt-nudge') {
+      return (
+        <React.Fragment key={item.id}>
+          <span className="fb-arch-btn is-icon" title="左移 5 ms">
+            <NudgeLeftIcon />
+          </span>
+          <span className="fb-arch-btn is-icon" title="右移 5 ms">
+            <NudgeRightIcon />
+          </span>
+        </React.Fragment>
+      );
+    }
+
+    if (item.id === 'tier-move') {
+      return (
+        <React.Fragment key={item.id}>
+          <span className="fb-arch-btn is-icon" title="上移一层">
+            <UiIcon name="up" size={iconSize} />
+          </span>
+          <span className="fb-arch-btn is-icon" title="下移一层">
+            <UiIcon name="down" size={iconSize} />
+          </span>
+        </React.Fragment>
+      );
+    }
+
+    if (item.id === 'tier-name' && isNumericDensity) {
+      return (
+        <span key={item.id} className="cust-preview-scrub-pill" title="直接编辑层名称">
+          <span className="cust-preview-scrub-lbl">层名</span>
+          <span className="cust-preview-scrub-val">音节</span>
+        </span>
+      );
+    }
+
+    if (ICON_ONLY_ITEM_IDS.has(item.id) && iconName) {
+      return (
+        <span key={item.id} className="fb-arch-btn is-icon" title={item.label}>
+          <UiIcon name={iconName} size={iconSize} />
+        </span>
+      );
+    }
+
+    const cls = [
+      'fb-arch-btn',
+      PRIMARY_ITEM_IDS.has(item.id) ? 'is-primary' : '',
+      DANGER_ITEM_IDS.has(item.id) ? 'is-danger' : ''
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    return (
+      <span key={item.id} className={cls} title={item.label}>
+        {iconName && <UiIcon name={iconName} size={iconSize} />}
+        <span>{labelText}</span>
+        {DROPDOWN_ITEM_IDS.has(item.id) && <ChevronIcon size={10} />}
+      </span>
+    );
+  };
+
+  const renderPreviewInlineFields = (): React.ReactNode => {
+    if (!isNumericDensity) return null;
+    if (target === 'interval') {
+      return (
+        <>
+          <span className="fb-arch-inline-fields">
+            <span className="cust-preview-scrub-pill">
+              <span className="cust-preview-scrub-lbl">起</span>
+              <span className="cust-preview-scrub-val">0.1200</span>
+            </span>
+            <span className="cust-preview-scrub-pill">
+              <span className="cust-preview-scrub-lbl">止</span>
+              <span className="cust-preview-scrub-val">0.3600</span>
+            </span>
+          </span>
+          {visibleItems.length > 0 && <span className="fb-arch-sep" />}
+        </>
+      );
+    }
+    if (target === 'boundary') {
+      return (
+        <>
+          <span className="fb-arch-inline-fields">
+            <span className="cust-preview-scrub-pill">
+              <span className="cust-preview-scrub-lbl">边界</span>
+              <span className="cust-preview-scrub-val">0.3600</span>
+            </span>
+          </span>
+          {visibleItems.length > 0 && <span className="fb-arch-sep" />}
+        </>
+      );
+    }
+    if (target === 'point') {
+      return (
+        <>
+          <span className="fb-arch-inline-fields">
+            <span className="cust-preview-scrub-pill">
+              <span className="cust-preview-scrub-lbl">时刻</span>
+              <span className="cust-preview-scrub-val">0.2400</span>
+            </span>
+          </span>
+          {visibleItems.length > 0 && <span className="fb-arch-sep" />}
+        </>
+      );
+    }
+    if (target === 'tier' && hiddenSet.has('tier-name')) {
+      return (
+        <>
+          <span className="fb-arch-inline-fields">
+            <span className="cust-preview-scrub-pill">
+              <span className="cust-preview-scrub-lbl">层名</span>
+              <span className="cust-preview-scrub-val">音节</span>
+            </span>
+          </span>
+          {visibleItems.length > 0 && <span className="fb-arch-sep" />}
+        </>
+      );
+    }
+    return null;
+  };
 
   // Filtered shortcut groups
   const effectiveSearchQuery =
@@ -479,45 +770,39 @@ export const CustomizePanel: React.FC<CustomizePanelProps> = ({
               </div>
             )}
 
-            <div className="sb-setting-block">
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 6
-                }}
-              >
-                <span className="sb-field-lbl">布局预设</span>
-                <button
-                  type="button"
-                  className="compact"
-                  style={{ height: 22, padding: '0 7px', fontSize: 11 }}
-                  onClick={() => resetFloatingBarConfig()}
-                >
-                  <UiIcon name="reset" size={11} />
-                  <span>恢复默认</span>
-                </button>
+            <div className="sb-setting-block prefs-fb-density-wrap">
+              <div className="prefs-fb-density-head">
+                <span className="sb-field-lbl">显示样式</span>
+                <span className="prefs-card-meta">
+                  {DENSITY_OPTIONS.find((d) => d.value === floatingBarDensity)?.label ?? '标准'}
+                </span>
               </div>
-              <div className="cust-preset-row" role="group" aria-label="悬浮工具栏预设">
-                {PRESET_OPTIONS.map((preset) => (
-                  <button
-                    key={preset.key}
-                    type="button"
-                    className={matchesPreset(floatingBarConfig, preset.key) ? 'active' : ''}
-                    title={preset.title}
-                    onClick={() => applyFloatingBarPreset(preset.key)}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
+              <div className="prefs-fb-density-grid" role="radiogroup" aria-label="浮动工具栏显示样式">
+                {DENSITY_OPTIONS.map((opt) => {
+                  const active = floatingBarDensity === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      className={`prefs-fb-density-card ${active ? 'is-active' : ''}`}
+                      onClick={() => setFloatingBarDensity(opt.value)}
+                    >
+                      <span className="prefs-fb-density-card-head">
+                        <span className="prefs-fb-density-card-name">{opt.label}</span>
+                      </span>
+                      <span className="prefs-fb-density-card-desc">{opt.desc}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
             <div className="sb-setting-block">
               <div className="cust-target-header">
                 <span className="sb-field-lbl">目标对象</span>
-                <div className="cust-target-tabs" role="tablist" aria-label="切换要编辑悬浮条的目标对象">
+                <div className="cust-target-tabs" role="tablist" aria-label="切换要编辑浮动条的目标对象">
                   {TARGET_OPTIONS.map((opt) => {
                     const active = target === opt.key;
                     return (
@@ -533,36 +818,16 @@ export const CustomizePanel: React.FC<CustomizePanelProps> = ({
                           setDragOver(null);
                         }}
                       >
-                        {opt.label}
+                        <span
+                          className="cust-target-dot"
+                          style={{ backgroundColor: opt.accent }}
+                          aria-hidden="true"
+                        />
+                        <span>{opt.label}</span>
                       </button>
                     );
                   })}
                 </div>
-              </div>
-            </div>
-
-            <div className="sb-setting-block">
-              <span className="sb-field-lbl">实时预览</span>
-              <div className="cust-preview-wrap" aria-label="悬浮工具栏预览">
-                {visibleItems.length > 0 ? (
-                  <div className="cust-preview-bar">
-                    {visibleItems.map((item) => (
-                      <span
-                        key={item.id}
-                        className={
-                          FIELD_ITEM_IDS.has(item.id) ? 'cust-preview-field' : 'cust-preview-pill'
-                        }
-                        title={item.label}
-                      >
-                        {item.previewLabel}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <span className="sb-hint" style={{ margin: 0 }}>
-                    当前对象不显示悬浮条
-                  </span>
-                )}
               </div>
             </div>
 
@@ -575,17 +840,116 @@ export const CustomizePanel: React.FC<CustomizePanelProps> = ({
                   gap: 6
                 }}
               >
-                <span className="sb-field-lbl">按钮与排序</span>
+                <span className="sb-field-lbl">实时预览</span>
                 <span className="sb-hint" style={{ margin: 0 }}>
-                  {visibleItems.length} / {orderedItems.length} 显示
+                  {hiddenCount > 0
+                    ? `隐藏的 ${hiddenCount} 项已自动归入右侧「…」菜单`
+                    : '全部常用项已展开于主行'}
                 </span>
+              </div>
+              <div className="cust-preview-wrap" aria-label="浮动工具栏实时预览">
+                <div
+                  className={`fb-arch fb-obj-${target} ${isCompactDensity ? 'is-compact' : ''} cust-preview-arch`}
+                >
+                  <div className="fb-arch-head">
+                    <div className="fb-arch-head-left">
+                      <span className="fb-arch-drag" aria-hidden="true">
+                        <DragGripIcon size={11} />
+                      </span>
+                      <span className="fb-arch-kind">{activeTargetMeta.sampleKind}</span>
+                      <span className="fb-arch-ctx">{activeTargetMeta.sampleCtx}</span>
+                      <span className="fb-arch-time-trigger">
+                        <span>{activeTargetMeta.sampleTime}</span>
+                        <ChevronIcon size={9} />
+                      </span>
+                    </div>
+                    <div className="fb-arch-head-right">
+                      <span className="fb-arch-util-btn" aria-hidden="true">
+                        <UiIcon name="inspector" size={11} />
+                      </span>
+                      <span className="fb-arch-util-btn" aria-hidden="true">
+                        <CollapseIcon />
+                      </span>
+                    </div>
+                  </div>
+                  <div className="fb-arch-body">
+                    {renderPreviewInlineFields()}
+                    {visibleItems.map((item) => renderPreviewActionItem(item))}
+                    {visibleItems.length > 0 && <span className="fb-arch-sep" />}
+                    <span
+                      className="fb-arch-btn is-icon cust-preview-more-badge"
+                      title={
+                        hiddenCount > 0
+                          ? `更多操作（含 ${hiddenCount} 项已隐藏动作）`
+                          : '更多操作'
+                      }
+                    >
+                      <MoreDotsIcon />
+                      {hiddenCount > 0 && (
+                        <span className="cust-preview-more-count">{hiddenCount}</span>
+                      )}
+                    </span>
+                    {target === 'multi' && (
+                      <span className="fb-arch-btn is-icon" aria-hidden="true">
+                        <CloseIcon size={11} />
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="sb-setting-block">
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 6
+                }}
+              >
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <span className="sb-field-lbl">按钮与排序</span>
+                  <span className="sb-hint" style={{ margin: 0 }}>
+                    {visibleItems.length} / {orderedItems.length} 显示
+                  </span>
+                </div>
+                <div className="cust-quick-bar">
+                  <div className="cust-quick-seg" role="group" aria-label="快速套用按钮组合">
+                    {PRESET_OPTIONS.map((preset) => (
+                      <button
+                        key={preset.key}
+                        type="button"
+                        className={matchesPreset(floatingBarConfig, preset.key) ? 'active' : ''}
+                        title={preset.title}
+                        onClick={() => applyFloatingBarPreset(preset.key)}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="compact"
+                    style={{ height: 22, padding: '0 7px', fontSize: 11 }}
+                    title="重置所有对象的按钮显隐、顺序与默认显示样式"
+                    onClick={() => {
+                      resetFloatingBarConfig();
+                      setFloatingBarDensity('standard');
+                    }}
+                  >
+                    <UiIcon name="reset" size={11} />
+                    <span>恢复默认</span>
+                  </button>
+                </div>
               </div>
 
               <div
                 ref={itemListRef}
                 className="cust-item-list"
                 role="list"
-                aria-label="悬浮工具栏条目列表"
+                aria-label="浮动工具栏按钮列表"
               >
                 {orderedItems.map((item) => {
                   const isHidden = hiddenSet.has(item.id);
@@ -638,13 +1002,14 @@ export const CustomizePanel: React.FC<CustomizePanelProps> = ({
                         )}
                         <span className="cust-item-label">{item.label}</span>
                       </label>
+                      {isHidden && <span className="cust-item-overflow-tag">收纳至「…」</span>}
                     </div>
                   );
                 })}
               </div>
 
               <div className="sb-hint">
-                拖拽条目可调整按钮顺序；时间框支持按住鼠标上下拖动连续微调。
+                拖拽条目可自由调整画布浮动工具栏上的按钮顺序；取消勾选的动作会自动归入右侧「…」菜单，不会丢失功能。
               </div>
             </div>
           </div>

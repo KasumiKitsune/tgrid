@@ -9,12 +9,14 @@ import type {
   ContourBox,
   ContourPath,
   CorpusDirScanResult,
+  DroppedPathInfo,
   EngineInfo,
   IpaCandidate,
   IpaConvertResult,
   IpaSymbolInfo,
   LinearSeg,
   NativeFileFilter,
+  NativeFileStat,
   NativeOpenedFile,
   ParsedDocument,
   PlatformBridge,
@@ -327,6 +329,16 @@ export class TauriBridge implements PlatformBridge {
     if (!hasTauriInternals()) return null;
     const raw = await invoke<number[] | null>('read_local_file_if_exists', { path });
     return raw ? new Uint8Array(raw) : null;
+  }
+
+  async statNativeFile(path: string): Promise<NativeFileStat | null> {
+    if (!hasTauriInternals()) return null;
+    return invoke<NativeFileStat>('stat_local_file', { path });
+  }
+
+  async inspectDroppedPaths(paths: string[]): Promise<DroppedPathInfo[] | null> {
+    if (!hasTauriInternals()) return null;
+    return invoke<DroppedPathInfo[]>('inspect_dropped_paths', { paths });
   }
 
   async writeNativeFile(path: string, bytes: Uint8Array): Promise<boolean> {

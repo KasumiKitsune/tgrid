@@ -67,7 +67,7 @@ export interface MouseGestureTip {
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     id: 'playback-nav',
-    title: '播放与二维导航',
+    title: '播放与跳转导航',
     subtitle: '只读 & 编辑双模式通用',
     entries: [
       {
@@ -270,22 +270,22 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   },
   {
     id: 'editing-delete',
-    title: '文本编辑、删除语义与音标',
-    subtitle: '编辑模式 · 首次删内容，再按或加 Shift 删结构',
+    title: '文本编辑、删除与音标',
+    subtitle: '编辑模式 · 首次清空文本，再按或按住 Shift 删除边界或标点',
     entries: [
       {
         id: 'inline-edit',
         keys: ['Enter', 'F2'],
         label: '打开原地编辑（区间 / 标点 / 层名）',
-        description: '只读态按 Enter 直接播放当前选中项',
+        description: '只读模式按 Enter 直接播放当前选中项',
         icon: 'edit',
         scope: 'all'
       },
       {
         id: 'delete-gentle',
         keys: ['Backspace', 'Delete'],
-        label: '温和删除（有字先清空；空区间删左/右界）',
-        description: '边界：删本层边界；标点：删点并选前/后一点；整层：安全忽略',
+        label: '删除文本或边界（有字先清空；空区间删左/右边界）',
+        description: '选中边界时删本层边界；选中标点时删点并选相邻点；选中整层时不触发',
         icon: 'clear',
         scope: 'edit',
         rebindable: false
@@ -293,8 +293,8 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       {
         id: 'delete-structural',
         keys: ['Shift+Backspace', 'Shift+Delete'],
-        label: '强力删除（清字并删左/右界；跨层删界）',
-        description: '边界/时间列：跨层删除全部对齐边界；整层 Shift+Delete：删除整层（可撤销）',
+        label: '直接删除（清空并删左/右边界；跨层删边界）',
+        description: '选中边界或时间列时跨层删除全部对齐边界；选中整层按 Shift+Delete 删除整层（支持撤销）',
         icon: 'trash',
         scope: 'edit',
         rebindable: false
@@ -480,8 +480,8 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   },
   {
     id: 'file-tabs-help',
-    title: '文件、标签页、帮助与逐层 Esc',
-    subtitle: '文档流转与安全退栈',
+    title: '文件、标签页、帮助与取消',
+    subtitle: '文件管理与逐级取消',
     entries: [
       {
         id: 'open-files',
@@ -511,6 +511,14 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         label: '另存为 TextGrid',
         description: '输入框内触发时自动先提交当前文本',
         icon: 'saveAs',
+        scope: 'input'
+      },
+      {
+        id: 'corpus-save-all',
+        keys: ['Mod+Alt+S'],
+        label: '保存全部未保存词条',
+        description: '词表模式下批量将全部待保存词条与项目索引写回文件夹',
+        icon: 'save',
         scope: 'input'
       },
       {
@@ -560,8 +568,8 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       {
         id: 'layered-escape',
         keys: ['Esc'],
-        label: '逐层退栈取消',
-        description: '音标候选 → 取消拖拽 → 顶层弹窗/菜单 → 输入框失焦 → 清选区 → 清选中项',
+        label: '逐级取消或关闭',
+        description: '依次关闭音标候选、取消拖拽、关闭弹窗或菜单、退出输入、清空选区与选中项',
         icon: 'CloseIcon',
         scope: 'all',
         rebindable: false
@@ -577,7 +585,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         id: 'corpus-done-next',
         keys: ['Alt+Enter'],
         label: '标记已完成并下一条',
-        description: '保存当前词条、标记为已完成并跳到下一条（音标候选窗未打开时也支持 Mod+Enter）',
+        description: '标记当前词条为已完成并跳到下一条（音标候选窗未打开时也支持 Mod+Enter）',
         icon: 'check',
         scope: 'input'
       },
@@ -585,7 +593,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         id: 'corpus-doubt-next',
         keys: ['Alt+M'],
         label: '标记存疑并下一条',
-        description: '保存当前词条、标记为存疑并跳到下一条',
+        description: '标记当前词条为存疑并跳到下一条',
         icon: 'warning',
         scope: 'input'
       },
@@ -593,7 +601,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         id: 'corpus-trash-next',
         keys: ['Alt+X'],
         label: '标记需重录并下一条',
-        description: '保存当前词条、标记为需重录并跳到下一条',
+        description: '标记当前词条为需重录并跳到下一条',
         icon: 'trash',
         scope: 'input'
       },
@@ -609,7 +617,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         id: 'corpus-prev',
         keys: ['Alt+['],
         label: '上一条词条',
-        description: '保存当前词条并切换到上一条',
+        description: '暂存当前修改并切换到上一条词条',
         icon: 'seekBack',
         scope: 'input'
       },
@@ -617,7 +625,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
         id: 'corpus-next',
         keys: ['Alt+]'],
         label: '下一条词条',
-        description: '保存当前词条并切换到下一条',
+        description: '暂存当前修改并切换到下一条词条',
         icon: 'seekForward',
         scope: 'input'
       }
@@ -630,21 +638,21 @@ export const MOUSE_GESTURE_TIPS: MouseGestureTip[] = [
     id: 'drag-empty-create',
     gesture: '拖拽空白区间',
     label: '划选新建区间',
-    description: '悬停与拖拽全程实时跨层磁吸，双端琥珀贯通线标明对齐来源层',
+    description: '悬停与拖拽时自动对齐其他层边界，并用橙色参考线标明对齐来源层',
     scope: 'edit'
   },
   {
     id: 'shift-click-split',
     gesture: 'Shift + 单击区间',
-    label: '磁吸切分区间',
-    description: '自动吸附跨层边界或选区线，保持 IEEE-754 浮点精确一致',
+    label: '吸附切分区间',
+    description: '自动吸附其他层边界或选区线，保证边界时间完全一致',
     scope: 'edit'
   },
   {
     id: 'alt-bypass-snap',
     gesture: '按住 Alt 拖拽',
-    label: '临时禁用磁吸自由定位',
-    description: '同时关闭跨层磁吸与端贴吸附',
+    label: '临时关闭对齐自由定位',
+    description: '临时关闭跨层对齐和边缘吸附',
     scope: 'edit'
   },
   {
@@ -665,34 +673,34 @@ export const MOUSE_GESTURE_TIPS: MouseGestureTip[] = [
     id: 'mod-click-multi-select',
     gesture: 'Mod + 单击区间',
     label: '复选多个区间（支持同层 / 跨层）',
-    description: '轻点切换复选状态，按所选拓扑自动提供合并、批量清空、边界对齐或同步移动；按 Esc 退出复选',
+    description: '单击可加入或取消复选，按所选位置自动提供合并、批量清空、边界对齐或同步移动；按 Esc 退出复选',
     scope: 'edit'
   },
   {
     id: 'mod-drag-block-move',
     gesture: 'Mod + 拖拽非空区间',
     label: '跨层整块平移对齐区间与子层',
-    description: '连同对齐层、嵌套子区间及区间内标点同步平移，遇相邻非空区间自动硬停',
+    description: '连同对齐层、子区间及区间内标点同步平移，碰到相邻有字区间时自动停止',
     scope: 'edit'
   },
   {
     id: 'mod-drag-block-resize',
     gesture: 'Mod + 拖拽边界',
-    label: '跨层弹性缩放（子边界按比例跟随）',
-    description: '固定对侧边界拉伸或压缩整块（含贴首尾边界向内收缩），内部嵌套子边界按比例重排',
+    label: '跨层按比例缩放（子边界同步跟随）',
+    description: '固定另一侧边界拉伸或压缩整块，内部子边界按比例同步调整',
     scope: 'edit'
   },
   {
     id: 'alt-click-audition',
     gesture: 'Alt + 单击 / 中键单击',
-    label: '编辑态零切换直接试听',
+    label: '编辑模式下直接试听',
     description: '无需切回只读模式即可听辨任意区间',
     scope: 'edit'
   },
   {
     id: 'mod-wheel-zoom',
     gesture: 'Mod + 滚轮',
-    label: '以指针为锚点缩放画布（50%–200%）',
+    label: '以指针为中心缩放画布（50%–200%）',
     description: '与底部状态栏画布缩放同步，不破坏折行排版；按住 Alt + 滚轮可横向拉伸或收窄时间轴宽度',
     scope: 'all'
   },
@@ -712,14 +720,14 @@ export const MOUSE_GESTURE_TIPS: MouseGestureTip[] = [
   {
     id: 'alt-click-eye-solo',
     gesture: 'Alt + 单击层级眼睛图标',
-    label: '独显（Solo）当前层 / 恢复全部显示',
+    label: '仅显示当前层 / 恢复全部显示',
     scope: 'all'
   },
   {
     id: 'context-menu-actions',
     gesture: '右键区间 / 边界 / 语谱图',
-    label: '打开专属上下文菜单',
-    description: '支持等分为 N 段、边界/区间跨层投射、过零吸附与选区导出',
+    label: '打开右键操作菜单',
+    description: '支持等分为 N 段、边界或区间复制到其他层、过零点吸附与选区导出',
     scope: 'all'
   }
 ];

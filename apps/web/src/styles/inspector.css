@@ -1,0 +1,1704 @@
+/* ============================================================================
+   T-Grid Precision Right Inspector & Visual Widgets
+   Paper / Ink architectural language · Zero border-radius · 260-340px safe
+   ============================================================================ */
+
+.insp-root {
+  --insp-accent: var(--accent-blue);
+  --insp-accent-soft: var(--accent-blue-soft);
+  --insp-purple: #7C3AED;
+  --insp-purple-soft: #F5F3FF;
+  --insp-teal: #0D9488;
+  --insp-teal-soft: #F0FDFA;
+  --insp-amber: #D97706;
+  --insp-amber-soft: #FFFBEB;
+
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  min-width: 0;
+  width: 100%;
+  background: var(--bg-bar);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.38;
+}
+
+.insp-root *,
+.insp-root *::before,
+.insp-root *::after {
+  min-width: 0;
+}
+
+/* ============================================================================
+   1. Object Header & Stepper (Sticky Top Context Bar)
+   ============================================================================ */
+
+.insp-id-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 8px 13px;
+  background: var(--bg-sheet);
+  border: 1px solid var(--rule);
+  min-width: 0;
+}
+
+.insp-id-accent {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--insp-accent);
+}
+
+.insp-id-head.accent-interval { --insp-accent: #1D4ED8; }
+.insp-id-head.accent-boundary { --insp-accent: #D97706; }
+.insp-id-head.accent-spine    { --insp-accent: #D97706; }
+.insp-id-head.accent-point    { --insp-accent: #0D9488; }
+.insp-id-head.accent-multi    { --insp-accent: #1D4ED8; }
+.insp-id-head.accent-tier     { --insp-accent: #7C3AED; }
+.insp-id-head.accent-range    { --insp-accent: #1D4ED8; }
+.insp-id-head.accent-doc      { --insp-accent: #57544D; }
+
+.insp-id-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.insp-id-top {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.insp-id-type {
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--insp-accent);
+  background: var(--bg-subtle);
+  border: 1px solid var(--rule);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.insp-id-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insp-id-sub {
+  font-size: 11px;
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Prev / Next Stepper */
+.insp-stepper {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  border: 1px solid var(--rule);
+  background: var(--bg-bar);
+  height: 24px;
+}
+
+.insp-stepper button {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 13px;
+  line-height: 1;
+  transform: none;
+}
+
+.insp-stepper button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--ink);
+  border: none;
+}
+
+.insp-stepper button:active:not(:disabled) {
+  background: var(--bg-active);
+  transform: none;
+}
+
+.insp-stepper button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.insp-stepper-count {
+  padding: 0 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-muted);
+  border-left: 1px solid var(--rule);
+  border-right: 1px solid var(--rule);
+  line-height: 22px;
+  white-space: nowrap;
+}
+
+/* ============================================================================
+   2. Inline Issue / Diagnostic Notice Bar
+   ============================================================================ */
+
+.insp-issue-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 9px;
+  background: var(--insp-amber-soft);
+  border: 1px solid #F59E0B;
+  border-left: 3px solid var(--insp-amber);
+  color: #92400E;
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.insp-issue-bar.is-error {
+  background: var(--accent-red-soft);
+  border-color: #FCA5A5;
+  border-left-color: var(--accent-red);
+  color: var(--accent-red);
+}
+
+.insp-issue-bar.is-info {
+  background: var(--accent-blue-soft);
+  border-color: #93C5FD;
+  border-left-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.insp-issue-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.insp-issue-bar .insp-btn {
+  flex-shrink: 0;
+  height: 22px;
+  padding: 0 7px;
+  font-size: 11px;
+  background: var(--bg-sheet);
+  border-color: currentColor;
+  color: inherit;
+}
+
+/* ============================================================================
+   3. Card Shell (Office / Figma Crisp Framed Section)
+   ============================================================================ */
+
+.insp-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-sheet);
+  border: 1px solid var(--rule);
+  min-width: 0;
+}
+
+.insp-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 9px;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--rule);
+}
+
+.insp-card.is-collapsed .insp-card-head {
+  border-bottom-color: transparent;
+}
+
+.insp-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insp-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.insp-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px;
+  min-width: 0;
+}
+
+.insp-card-body.is-tight {
+  padding: 7px 9px;
+  gap: 6px;
+}
+
+/* ============================================================================
+   4. Shared Controls Inside Inspector (Buttons, Segmented Controls, Badges)
+   ============================================================================ */
+
+.insp-root .insp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 25px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--bg-bar);
+  border: 1px solid var(--rule);
+  white-space: nowrap;
+  transform: none;
+  transition: background-color 120ms var(--ease), border-color 120ms var(--ease), color 120ms var(--ease);
+}
+
+.insp-root .insp-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--rule-hover);
+  color: var(--ink);
+}
+
+.insp-root .insp-btn:active:not(:disabled) {
+  background: var(--bg-active);
+  transform: none;
+}
+
+.insp-root .insp-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.insp-root .insp-btn.is-xs {
+  height: 22px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.insp-root .insp-btn.is-full {
+  width: 100%;
+}
+
+.insp-root .insp-btn-primary {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+.insp-root .insp-btn-primary:hover:not(:disabled) {
+  background: #1E40AF;
+  border-color: #1E40AF;
+  color: #FFFFFF;
+}
+
+.insp-root .insp-btn-primary:active:not(:disabled) {
+  background: #1E3A8A;
+  border-color: #1E3A8A;
+}
+
+.insp-root .insp-btn-soft {
+  background: var(--accent-blue-soft);
+  border-color: #93C5FD;
+  color: var(--accent-blue);
+}
+
+.insp-root .insp-btn-soft:hover:not(:disabled) {
+  background: #E1EBFF;
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.insp-root .insp-btn-danger {
+  color: var(--accent-red);
+  background: var(--bg-sheet);
+  border-color: #FCA5A5;
+}
+
+.insp-root .insp-btn-danger:hover:not(:disabled) {
+  background: var(--accent-red-soft);
+  border-color: var(--accent-red);
+  color: var(--accent-red);
+}
+
+.insp-root .insp-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 11px;
+  transform: none;
+  flex-shrink: 0;
+}
+
+.insp-root .insp-icon-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--rule);
+  color: var(--ink);
+}
+
+.insp-root .insp-icon-btn:active:not(:disabled) {
+  background: var(--bg-active);
+  transform: none;
+}
+
+.insp-root .insp-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Badges & Pills */
+.insp-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  background: var(--bg-subtle);
+  border: 1px solid var(--rule);
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.insp-badge.is-blue {
+  color: var(--accent-blue);
+  background: var(--accent-blue-soft);
+  border-color: #BFDBFE;
+}
+
+.insp-badge.is-amber {
+  color: #B45309;
+  background: var(--insp-amber-soft);
+  border-color: #FDE68A;
+}
+
+.insp-badge.is-teal {
+  color: var(--insp-teal);
+  background: var(--insp-teal-soft);
+  border-color: #99F6E4;
+}
+
+.insp-badge.is-purple {
+  color: var(--insp-purple);
+  background: var(--insp-purple-soft);
+  border-color: #DDD6FE;
+}
+
+.insp-badge.is-red {
+  color: var(--accent-red);
+  background: var(--accent-red-soft);
+  border-color: #FECACA;
+}
+
+/* Soft-blue segmented controls (anchor lock, mode switches, etc.) */
+.insp-anchor-group,
+.insp-seg {
+  display: flex;
+  width: 100%;
+  border: 1px solid var(--rule);
+  background: var(--bg-subtle);
+}
+
+.insp-anchor-group button,
+.insp-seg button {
+  appearance: none;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: none;
+  background: var(--bg-sheet);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform: none;
+}
+
+.insp-anchor-group button + button,
+.insp-seg button + button {
+  border-left: 1px solid var(--rule);
+}
+
+.insp-anchor-group button:hover:not(:disabled):not(.active):not(.is-active),
+.insp-seg button:hover:not(:disabled):not(.active):not(.is-active) {
+  background: var(--bg-hover);
+  color: var(--ink);
+  border-color: var(--rule);
+}
+
+.insp-anchor-group button.active,
+.insp-anchor-group button.is-active,
+.insp-seg button.active,
+.insp-seg button.is-active {
+  background: var(--accent-blue-soft);
+  color: var(--accent-blue);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px #93C5FD;
+  z-index: 2;
+}
+
+.insp-anchor-group button:disabled,
+.insp-seg button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+   5. Textarea, Neighbor Context Strip & Time / Nudge Grids
+   ============================================================================ */
+
+.insp-textarea-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.insp-textarea {
+  width: 100%;
+  min-height: 62px;
+  max-height: 160px;
+  padding: 7px 8px;
+  border: 1px solid var(--rule);
+  background: var(--bg-sheet);
+  color: var(--ink);
+  font-family: var(--font-ipa);
+  font-size: 13px;
+  line-height: 1.45;
+  resize: vertical;
+  outline: none;
+  transition: border-color 120ms var(--ease);
+}
+
+.insp-textarea:hover:not(:disabled) {
+  border-color: var(--rule-hover);
+}
+
+.insp-textarea:focus {
+  border-color: var(--accent-blue);
+}
+
+.insp-textarea:disabled {
+  background: var(--bg-subtle);
+  color: var(--ink-muted);
+}
+
+.insp-praat-preview {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 7px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--rule);
+  font-size: 11.5px;
+  min-width: 0;
+}
+
+.insp-praat-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-faint);
+  flex-shrink: 0;
+}
+
+.insp-praat-val {
+  font-family: var(--font-ipa);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Prev / Current / Next Neighbor Strip */
+.insp-neighbor-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  border: 1px solid var(--rule);
+  background: var(--bg-bar);
+  min-width: 0;
+}
+
+.insp-neighbor-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 11px;
+  min-width: 0;
+  overflow: hidden;
+  transform: none;
+}
+
+.insp-neighbor-btn.is-right {
+  justify-content: flex-end;
+}
+
+.insp-neighbor-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--ink);
+  border: none;
+}
+
+.insp-neighbor-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.insp-neighbor-text {
+  font-family: var(--font-ipa);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insp-neighbor-dur {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.insp-neighbor-cur {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border-left: 1px solid var(--rule);
+  border-right: 1px solid var(--rule);
+  background: var(--accent-blue-soft);
+  color: var(--accent-blue);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Time & Duration Grid (260-340px adaptive) */
+.insp-time-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.insp-time-grid.is-3col {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.insp-time-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.insp-time-cell.is-span-2 {
+  grid-column: 1 / -1;
+}
+
+.insp-time-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.insp-field-label {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.insp-time-input-row {
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  min-width: 0;
+}
+
+.insp-time-input-row > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Compact Single-Row Nudge Controls */
+.insp-nudge-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: var(--bg-bar);
+  border: 1px solid var(--rule);
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.insp-nudge-group {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--rule);
+  background: var(--bg-sheet);
+  flex-shrink: 0;
+}
+
+.insp-nudge-group button {
+  appearance: none;
+  height: 22px;
+  padding: 0 5px;
+  border: none;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: none;
+}
+
+.insp-nudge-group button + button {
+  border-left: 1px solid var(--rule);
+}
+
+.insp-nudge-group button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--ink);
+  border-color: var(--rule);
+}
+
+.insp-nudge-group button.active,
+.insp-nudge-group button.is-active {
+  background: var(--accent-blue-soft);
+  color: var(--accent-blue);
+  font-weight: 600;
+}
+
+.insp-nudge-step-btns {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.insp-nudge-step-btns button {
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--bg-sheet);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  transform: none;
+}
+
+.insp-nudge-step-btns button:hover:not(:disabled) {
+  border-color: var(--accent-blue);
+  background: var(--accent-blue-soft);
+  color: var(--accent-blue);
+}
+
+/* Tight Trio Playback Buttons */
+.insp-play-trio {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--rule);
+  background: var(--bg-bar);
+}
+
+.insp-play-trio button {
+  height: 25px;
+  padding: 0 4px;
+  border: none;
+  background: var(--bg-sheet);
+  color: var(--ink);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform: none;
+}
+
+.insp-play-trio button + button {
+  border-left: 1px solid var(--rule);
+}
+
+.insp-play-trio button:hover:not(:disabled) {
+  background: var(--accent-blue-soft);
+  color: var(--accent-blue);
+  border-color: var(--rule);
+}
+
+/* ============================================================================
+   6. Lists: Cross-Tier List, Multi-Selection List, Progress Rows
+   ============================================================================ */
+
+.insp-tier-list,
+.insp-multi-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.insp-multi-list {
+  max-height: 180px;
+  overflow-y: auto;
+  padding-right: 1px;
+}
+
+.insp-tier-row,
+.insp-multi-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 7px;
+  background: var(--bg-bar);
+  border: 1px solid var(--rule);
+  min-width: 0;
+  transition: background-color 110ms var(--ease), border-color 110ms var(--ease);
+}
+
+.insp-tier-row.is-clickable,
+.insp-multi-row.is-clickable {
+  cursor: pointer;
+}
+
+.insp-tier-row.is-clickable:hover,
+.insp-multi-row.is-clickable:hover {
+  background: var(--bg-hover);
+  border-color: var(--rule-hover);
+}
+
+.insp-multi-row.is-primary {
+  background: var(--accent-blue-soft);
+  border-color: #93C5FD;
+}
+
+.insp-tier-row-main,
+.insp-multi-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.insp-tier-row-name,
+.insp-multi-row-text {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink);
+  font-family: var(--font-ipa);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insp-tier-row-meta,
+.insp-multi-row-meta {
+  font-size: 10.5px;
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insp-multi-group-head {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink-muted);
+  padding: 3px 2px 1px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+/* Progress Row (Tier fill rate, point position in tier, formants, etc.) */
+.insp-progress-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 5px 7px;
+  background: var(--bg-bar);
+  border: 1px solid var(--rule);
+  min-width: 0;
+}
+
+.insp-progress-row.is-clickable {
+  cursor: pointer;
+}
+
+.insp-progress-row.is-clickable:hover {
+  background: var(--bg-hover);
+  border-color: var(--rule-hover);
+}
+
+.insp-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  min-width: 0;
+}
+
+.insp-progress-label {
+  color: var(--ink);
+  font-weight: 500;
+  font-family: var(--font-ipa);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insp-progress-val {
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.insp-progress-track {
+  position: relative;
+  height: 5px;
+  width: 100%;
+  background: var(--bg-active);
+  overflow: hidden;
+}
+
+.insp-progress-fill {
+  height: 100%;
+  background: var(--accent-blue);
+  transition: width 160ms var(--ease);
+}
+
+.insp-progress-marker {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  background: var(--insp-teal);
+  transform: translateX(-1px);
+}
+
+/* ============================================================================
+   7. Layout Helpers (Rows, Key-Value Grid, QA List)
+   ============================================================================ */
+
+.insp-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.insp-row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
+.insp-row-wrap {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.insp-divider {
+  height: 1px;
+  background: var(--rule);
+  margin: 1px 0;
+}
+
+.insp-kv-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.insp-kv-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 7px;
+  background: var(--bg-bar);
+  border: 1px solid var(--rule);
+  min-width: 0;
+}
+
+.insp-kv-item.is-wide {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.insp-kv-label {
+  font-size: 10px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.insp-kv-val {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.insp-empty-hint {
+  padding: 8px 6px;
+  font-size: 11px;
+  color: var(--ink-faint);
+  text-align: center;
+  background: var(--bg-bar);
+  border: 1px dashed var(--rule);
+}
+
+/* ============================================================================
+   8. Visual Widget 1: BoundaryMicroWave (±30ms Local Waveform Box)
+   ============================================================================ */
+
+.insp-wave-box {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--rule);
+  background: var(--bg-bar);
+  min-width: 0;
+}
+
+.insp-wave-canvas-wrap {
+  position: relative;
+  width: 100%;
+  height: 56px;
+  background: #FAF9F6;
+  overflow: hidden;
+}
+
+.insp-wave-canvas {
+  display: block;
+  width: 100%;
+  height: 56px;
+}
+
+.insp-wave-tag {
+  position: absolute;
+  top: 3px;
+  left: 5px;
+  padding: 0 4px;
+  height: 15px;
+  line-height: 15px;
+  font-size: 9.5px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  background: rgba(250, 249, 246, 0.88);
+  border: 1px solid rgba(211, 207, 197, 0.85);
+  pointer-events: none;
+}
+
+.insp-wave-scale {
+  position: absolute;
+  bottom: 2px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
+  padding: 0 3px;
+  background: rgba(250, 249, 246, 0.82);
+  pointer-events: none;
+}
+
+.insp-wave-scale.is-left { left: 3px; }
+.insp-wave-scale.is-right { right: 3px; }
+
+.insp-wave-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 7px;
+  border-top: 1px solid var(--rule);
+  background: var(--bg-sheet);
+  min-height: 30px;
+}
+
+.insp-wave-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insp-wave-status.is-aligned {
+  color: var(--insp-teal);
+  font-weight: 500;
+}
+
+.insp-wave-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--accent-blue);
+  flex-shrink: 0;
+}
+
+.insp-wave-dot.is-aligned {
+  background: var(--insp-teal);
+}
+
+.insp-wave-delta {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.insp-wave-snap-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 7px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent-blue);
+  background: var(--accent-blue-soft);
+  border: 1px solid #93C5FD;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transform: none;
+}
+
+.insp-wave-snap-btn:hover:not(:disabled) {
+  background: #E1EBFF;
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.insp-wave-snap-btn:active:not(:disabled) {
+  background: #D4E2FF;
+  transform: none;
+}
+
+.insp-wave-snap-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+   9. Visual Widget 2: IntervalF0Sparkline (F0 Curve + Metrics + Formants)
+   ============================================================================ */
+
+.insp-f0-box {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+.insp-f0-chart-wrap {
+  position: relative;
+  border: 1px solid var(--rule);
+  background: #FAF9F6;
+  height: 44px;
+  overflow: hidden;
+}
+
+.insp-f0-svg {
+  display: block;
+  width: 100%;
+  height: 42px;
+}
+
+.insp-f0-chart-label {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  padding: 0 4px;
+  height: 14px;
+  line-height: 14px;
+  font-size: 9.5px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  background: rgba(250, 249, 246, 0.86);
+  pointer-events: none;
+}
+
+.insp-f0-voiced-badge {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  padding: 0 4px;
+  height: 15px;
+  line-height: 15px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-blue);
+  background: rgba(238, 243, 255, 0.94);
+  border: 1px solid #BFDBFE;
+  pointer-events: none;
+}
+
+.insp-f0-empty-msg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+
+.insp-f0-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.insp-f0-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 7px;
+  background: var(--bg-bar);
+  border: 1px solid var(--rule);
+  min-width: 0;
+}
+
+.insp-f0-metric.is-span-2 {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.insp-f0-metric-k {
+  font-size: 10px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.insp-f0-metric-v {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.insp-f0-metric-sub {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--accent-blue);
+  margin-left: 4px;
+}
+
+/* Formant Bars (F1 / F2 / F3) */
+.insp-formant-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 7px;
+  background: var(--bg-bar);
+  border: 1px solid var(--rule);
+}
+
+.insp-formant-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 54px;
+  align-items: center;
+  gap: 6px;
+}
+
+.insp-formant-name {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+.insp-formant-track {
+  position: relative;
+  height: 6px;
+  background: var(--bg-active);
+  overflow: hidden;
+}
+
+.insp-formant-fill {
+  height: 100%;
+  transition: width 160ms var(--ease);
+}
+
+.insp-formant-fill.is-f1 { background: #1D4ED8; }
+.insp-formant-fill.is-f2 { background: #0D9488; }
+.insp-formant-fill.is-f3 { background: #7C3AED; }
+
+.insp-formant-val {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.insp-f0-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ============================================================================
+   10. Visual Widget 3: BoundaryBalanceBar (Left / Right Neighbor Ratio)
+   ============================================================================ */
+
+.insp-balance-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.insp-balance-cells {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2px minmax(0, 1fr);
+  border: 1px solid var(--rule);
+  background: var(--bg-bar);
+}
+
+.insp-balance-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  height: auto;
+  padding: 5px 7px;
+  border: none;
+  background: var(--bg-sheet);
+  color: var(--ink);
+  text-align: left;
+  min-width: 0;
+  transform: none;
+}
+
+.insp-balance-cell.is-right {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.insp-balance-cell:hover:not(:disabled) {
+  background: var(--accent-blue-soft);
+  color: var(--accent-blue);
+  border: none;
+}
+
+.insp-balance-cell:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.insp-balance-divider {
+  width: 2px;
+  background: #D97706;
+  align-self: stretch;
+}
+
+.insp-balance-side {
+  font-size: 9.5px;
+  color: var(--ink-faint);
+  line-height: 1.1;
+}
+
+.insp-balance-cell:hover:not(:disabled) .insp-balance-side {
+  color: var(--accent-blue);
+}
+
+.insp-balance-main {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.insp-balance-cell.is-right .insp-balance-main {
+  flex-direction: row-reverse;
+}
+
+.insp-balance-text {
+  font-family: var(--font-ipa);
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insp-balance-text.is-empty {
+  color: var(--ink-faint);
+  font-weight: 400;
+}
+
+.insp-balance-dur {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.insp-balance-ratio {
+  display: flex;
+  align-items: stretch;
+  height: 7px;
+  border: 1px solid var(--rule);
+  background: var(--bg-subtle);
+  overflow: hidden;
+}
+
+.insp-balance-seg {
+  height: 100%;
+  transition: width 150ms var(--ease), background-color 120ms var(--ease);
+}
+
+.insp-balance-seg.is-left {
+  background: #BFDBFE;
+}
+
+.insp-balance-seg.is-right {
+  background: #E2DFD7;
+}
+
+.insp-balance-seg.is-clickable {
+  cursor: pointer;
+}
+
+.insp-balance-seg.is-left.is-clickable:hover {
+  background: #93C5FD;
+}
+
+.insp-balance-seg.is-right.is-clickable:hover {
+  background: #CFCAC0;
+}
+
+.insp-balance-spine {
+  width: 2px;
+  background: #D97706;
+  flex-shrink: 0;
+}
+
+/* ============================================================================
+   11. Visual Widget 4: SmartSplitInlineCard (Collapsible Split Preview Card)
+   ============================================================================ */
+
+.insp-split-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-sheet);
+  border: 1px solid var(--rule);
+  min-width: 0;
+}
+
+.insp-split-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--bg-subtle);
+  min-width: 0;
+}
+
+.insp-split-card.is-expanded .insp-split-head {
+  border-bottom: 1px solid var(--rule);
+}
+
+.insp-split-summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1 1 auto;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.insp-split-summary.is-static {
+  cursor: default;
+}
+
+.insp-split-tag {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-blue);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.insp-split-tag.is-muted {
+  color: var(--ink-muted);
+}
+
+.insp-split-suggest {
+  font-size: 11px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insp-split-toggle-btn {
+  height: 21px;
+  padding: 0 7px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  background: var(--bg-sheet);
+  border: 1px solid var(--rule);
+  flex-shrink: 0;
+  white-space: nowrap;
+  transform: none;
+}
+
+.insp-split-toggle-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--rule-hover);
+  color: var(--ink);
+}
+
+.insp-split-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  min-width: 0;
+}
+
+/* Strategy Pills */
+.insp-split-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.insp-split-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  background: var(--bg-bar);
+  border: 1px solid var(--rule);
+  max-width: 100%;
+  transform: none;
+}
+
+.insp-split-pill:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--rule-hover);
+  color: var(--ink);
+}
+
+.insp-split-pill.is-active {
+  background: var(--accent-blue-soft);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+  font-weight: 600;
+}
+
+.insp-split-pill-rec {
+  font-size: 9.5px;
+  padding: 0 3px;
+  line-height: 14px;
+  background: var(--accent-blue);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+.insp-split-pill-cnt {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  opacity: 0.78;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Proportional Colored Segment Preview Bar */
+.insp-split-bar {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  height: 28px;
+  border: 1px solid var(--rule);
+  background: var(--bg-subtle);
+  overflow: hidden;
+}
+
+.insp-split-seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  min-width: 18px;
+  overflow: hidden;
+  border-right: 1px solid rgba(20, 20, 19, 0.16);
+}
+
+.insp-split-seg:last-child {
+  border-right: none;
+}
+
+.insp-split-seg.cls-vowel        { background: #DBEAFE; color: #1E3A8A; }
+.insp-split-seg.cls-voiceless-obs { background: #E7E5DF; color: #292524; }
+.insp-split-seg.cls-voiced-obs   { background: #EDE9FE; color: #4C1D95; }
+.insp-split-seg.cls-nasal-liquid { background: #CCFBF1; color: #115E59; }
+.insp-split-seg.cls-syllable     { background: #EEF3FF; color: #1D4ED8; }
+.insp-split-seg.cls-other        { background: #F5F3EE; color: #44403C; }
+.insp-split-seg.is-alt-tint      { filter: brightness(0.96); }
+.insp-split-seg.is-ellipsis      { background: var(--bg-subtle); color: var(--ink-faint); flex: 0 0 22px !important; }
+
+.insp-split-seg-tok {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-ipa);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.insp-split-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--ink-muted);
+}
+
+.insp-split-reason {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insp-split-avg {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.insp-split-acoustic {
+  padding: 4px 6px;
+  background: var(--bg-bar);
+  border: 1px solid var(--rule);
+}
+
+.insp-split-acoustic .tg-switch {
+  width: 100%;
+  justify-content: space-between;
+}
+
+.insp-split-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.insp-split-actions .insp-btn-primary {
+  flex: 1 1 auto;
+}
+
+.insp-split-actions .insp-btn {
+  flex-shrink: 0;
+}

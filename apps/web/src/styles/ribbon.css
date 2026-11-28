@@ -115,10 +115,12 @@
   color: var(--ink-muted);
   background: transparent;
   border: none;
+  border-top: 2.5px solid transparent;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   font-weight: 500;
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .ribbon-bar button.ribbon-tab:hover:not(:disabled) {
@@ -139,6 +141,15 @@
   border-bottom-color: var(--accent-blue);
 }
 
+.ribbon-tab-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--rule);
+  align-self: center;
+  margin: 0 5px;
+  flex-shrink: 0;
+}
+
 .ribbon-bar button.ribbon-tab.is-contextual {
   color: var(--accent-blue);
   font-weight: 600;
@@ -157,6 +168,68 @@
   background: var(--accent-blue-soft);
   border-bottom-color: var(--accent-blue);
   color: var(--accent-blue);
+}
+
+/* Office-style Contextual Object Tabs (top color accent bar + 6% tint, zero layout shift) */
+.ribbon-bar button.ribbon-tab.is-contextual-obj {
+  --ctx-color: #2563EB;
+  --ctx-tint: rgba(37, 99, 235, 0.06);
+  --ctx-tint-hover: rgba(37, 99, 235, 0.11);
+  --ctx-tint-active: rgba(37, 99, 235, 0.13);
+  border-top: 2.5px solid var(--ctx-color);
+  background: var(--ctx-tint);
+  color: var(--ctx-color);
+  font-weight: 600;
+  padding: 0 11px;
+}
+
+.ribbon-bar button.ribbon-tab.is-contextual-obj[data-ctx-kind="multi"] {
+  --ctx-color: #4F46E5;
+  --ctx-tint: rgba(79, 70, 229, 0.06);
+  --ctx-tint-hover: rgba(79, 70, 229, 0.11);
+  --ctx-tint-active: rgba(79, 70, 229, 0.13);
+}
+
+.ribbon-bar button.ribbon-tab.is-contextual-obj[data-ctx-kind="interval"] {
+  --ctx-color: #2563EB;
+  --ctx-tint: rgba(37, 99, 235, 0.06);
+  --ctx-tint-hover: rgba(37, 99, 235, 0.11);
+  --ctx-tint-active: rgba(37, 99, 235, 0.13);
+}
+
+.ribbon-bar button.ribbon-tab.is-contextual-obj[data-ctx-kind="boundary"] {
+  --ctx-color: #D97706;
+  --ctx-tint: rgba(217, 119, 6, 0.06);
+  --ctx-tint-hover: rgba(217, 119, 6, 0.11);
+  --ctx-tint-active: rgba(217, 119, 6, 0.13);
+}
+
+.ribbon-bar button.ribbon-tab.is-contextual-obj[data-ctx-kind="point"] {
+  --ctx-color: #0D9488;
+  --ctx-tint: rgba(13, 148, 136, 0.06);
+  --ctx-tint-hover: rgba(13, 148, 136, 0.11);
+  --ctx-tint-active: rgba(13, 148, 136, 0.13);
+}
+
+.ribbon-bar button.ribbon-tab.is-contextual-obj[data-ctx-kind="tier"] {
+  --ctx-color: #475569;
+  --ctx-tint: rgba(71, 85, 105, 0.06);
+  --ctx-tint-hover: rgba(71, 85, 105, 0.11);
+  --ctx-tint-active: rgba(71, 85, 105, 0.13);
+}
+
+.ribbon-bar button.ribbon-tab.is-contextual-obj:hover:not(:disabled) {
+  background: var(--ctx-tint-hover);
+  color: var(--ctx-color);
+  border-top-color: var(--ctx-color);
+}
+
+.ribbon-bar button.ribbon-tab.is-contextual-obj.is-active,
+.ribbon-bar button.ribbon-tab.is-contextual-obj.is-active:hover:not(:disabled) {
+  background: var(--ctx-tint-active);
+  color: var(--ctx-color);
+  border-top-color: var(--ctx-color);
+  border-bottom-color: var(--ctx-color);
 }
 
 /* Right Pinned Quick Access Area */
@@ -368,6 +441,96 @@
   height: 22px;
 }
 
+.ribbon-big-label-caret {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.ribbon-bar button.ribbon-big-btn .ribbon-big-label-caret .chev,
+.ribbon-bar button.ribbon-split-caret .chev {
+  width: 9px;
+  height: 9px;
+  transition: transform 160ms var(--ease);
+}
+
+.ribbon-bar button.ribbon-big-btn.is-menu-open {
+  background: var(--bg-hover);
+  border-color: var(--rule);
+}
+
+.ribbon-bar button.ribbon-big-btn.is-menu-open .ribbon-big-label-caret .chev,
+.ribbon-split-big.is-menu-open .ribbon-split-caret .chev {
+  transform: rotate(180deg);
+}
+
+/* Split Big Button (Primary Action + Dropdown Caret) */
+.ribbon-split-big {
+  display: inline-flex;
+  align-items: stretch;
+  height: 52px;
+  flex-shrink: 0;
+  border: 1px solid transparent;
+  transition: border-color 130ms var(--ease);
+}
+
+.ribbon-split-big:hover:not(.is-disabled),
+.ribbon-split-big.is-menu-open {
+  border-color: var(--rule);
+}
+
+.ribbon-bar .ribbon-split-big button.ribbon-split-main {
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  height: 100%;
+  min-width: 50px;
+  padding: 4px 6px;
+  font-size: 11px;
+  line-height: 1.15;
+  border: none;
+}
+
+.ribbon-bar .ribbon-split-big button.ribbon-split-main .tgi {
+  width: 22px;
+  height: 22px;
+}
+
+.ribbon-bar .ribbon-split-big button.ribbon-split-caret {
+  height: 100%;
+  width: 18px;
+  padding: 0;
+  justify-content: center;
+  border: none;
+  border-left: 1px solid transparent;
+  color: var(--ink-muted);
+}
+
+.ribbon-split-big:hover:not(.is-disabled) button.ribbon-split-caret,
+.ribbon-split-big.is-menu-open button.ribbon-split-caret {
+  border-left-color: var(--rule);
+}
+
+.ribbon-split-big.is-menu-open button.ribbon-split-caret {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+
+/* Subtle Danger Action Hover (Destructive Commands inside Contextual Tabs) */
+.ribbon-bar button.is-danger:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.08);
+  color: #B91C1C;
+  --tgi-stroke: #B91C1C;
+  --tgi-stroke-muted: #B91C1C;
+  --tgi-stroke-hover: #B91C1C;
+}
+
+.ribbon-bar button.is-danger:active:not(:disabled) {
+  background: rgba(220, 38, 38, 0.14);
+  color: #991B1B;
+}
+
 /* Right Two-Row Compact Stack */
 .ribbon-stack {
   display: flex;
@@ -555,7 +718,10 @@
 /* Detached Popout Menu (for triggers inside horizontally-scrollable .ribbon-panel) */
 .ribbon-popout-menu {
   position: absolute;
-  min-width: 214px;
+  min-width: 224px;
+  max-width: 310px;
+  max-height: 360px;
+  overflow-y: auto;
   background: var(--bg-sheet);
   border: 1px solid var(--ink);
   box-shadow: 0 6px 18px rgba(20, 20, 19, 0.14);
@@ -564,6 +730,96 @@
   flex-direction: column;
   padding: 3px 0;
   animation: ribbonMenuDrop 140ms var(--ease);
+}
+
+.ribbon-menu-heading {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink-faint);
+  padding: 5px 12px 3px;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.ribbon-menu-empty {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  padding: 8px 12px;
+}
+
+.ribbon-menu-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-muted);
+  background: var(--bg-subtle);
+  border: 1px solid var(--rule);
+  padding: 0 5px;
+  line-height: 16px;
+  margin-left: 10px;
+  flex-shrink: 0;
+}
+
+.ribbon-menu-badge.is-primary {
+  color: var(--accent-blue);
+  background: var(--accent-blue-soft);
+  border-color: #93B4F5;
+}
+
+.ribbon-menu-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  color: #15803D;
+  margin-left: 10px;
+  flex-shrink: 0;
+}
+
+.ribbon-menu-tier-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 8px 3px 12px;
+  min-height: 29px;
+}
+
+.ribbon-menu-tier-row:hover {
+  background: var(--bg-hover);
+}
+
+.ribbon-menu-tier-name {
+  font-size: 12px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.ribbon-menu-tier-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.ribbon-bar .ribbon-popout-menu .ribbon-menu-tier-actions button {
+  width: auto;
+  height: 22px;
+  padding: 0 7px;
+  font-size: 11px;
+  border: 1px solid var(--rule);
+  background: var(--bg-subtle);
+  color: var(--ink);
+  justify-content: center;
+}
+
+.ribbon-bar .ribbon-popout-menu .ribbon-menu-tier-actions button:hover:not(:disabled) {
+  background: var(--accent-blue-soft);
+  border-color: #93B4F5;
+  color: var(--accent-blue);
 }
 
 @keyframes ribbonMenuDrop {

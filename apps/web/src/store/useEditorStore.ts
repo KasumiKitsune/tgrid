@@ -93,13 +93,15 @@ export type EditInspectorMode = 'sidebar' | 'floating';
 export type ExportRangePreset = 'all' | 'view' | 'selection' | 'custom';
 export type RibbonTabId = 'file' | 'annotate' | 'tiers' | 'view' | 'tools' | 'corpus';
 
-export type FloatingBarTarget = 'interval' | 'point' | 'boundary' | 'tier';
+export type FloatingBarTarget = 'interval' | 'multi' | 'boundary' | 'point' | 'tier';
 export type FloatingBarPresetKey = 'full' | 'compact' | 'minimal';
+export type FloatingBarDensity = 'compact' | 'standard' | 'numeric';
 
 export interface FloatingBarItemMeta {
   id: string;
   label: string;
   previewLabel: string;
+  compactLabel?: string;
   defaultVisible: boolean;
 }
 
@@ -110,41 +112,55 @@ export interface FloatingBarSectionConfig {
 
 export type FloatingBarConfig = Record<FloatingBarTarget, FloatingBarSectionConfig>;
 
-const FLOATING_BAR_TARGETS: FloatingBarTarget[] = ['interval', 'point', 'boundary', 'tier'];
+const FLOATING_BAR_TARGETS: FloatingBarTarget[] = ['interval', 'multi', 'boundary', 'point', 'tier'];
 
 export const FLOATING_BAR_CATALOG: Record<FloatingBarTarget, FloatingBarItemMeta[]> = {
   interval: [
-    { id: 'iv-times', label: '起止时间框（可拖拽调值）', previewLabel: '起 / 止', defaultVisible: true },
-    { id: 'iv-dur', label: '区间时长 (ms)', previewLabel: '240 ms', defaultVisible: true },
-    { id: 'iv-edit', label: '改字', previewLabel: '改字', defaultVisible: true },
-    { id: 'iv-clear', label: '清空文本', previewLabel: '清空', defaultVisible: true },
-    { id: 'iv-split', label: '正中切分', previewLabel: '切分', defaultVisible: true },
-    { id: 'iv-split-equal', label: '等分为 2 段', previewLabel: '等分', defaultVisible: false },
-    { id: 'iv-merge-left', label: '向左合并', previewLabel: '合左', defaultVisible: true },
-    { id: 'iv-merge-right', label: '向右合并', previewLabel: '合右', defaultVisible: true },
-    { id: 'iv-play', label: '播放区间', previewLabel: '播放', defaultVisible: true },
-    { id: 'iv-play-ctx', label: '语境播放 (±250ms)', previewLabel: '±250ms', defaultVisible: false },
-    { id: 'iv-zoom', label: '放大 / 全长', previewLabel: '放大', defaultVisible: true },
-    { id: 'iv-copy-text', label: '复制文本', previewLabel: '复制', defaultVisible: false }
+    { id: 'iv-play', label: '播放区间', previewLabel: '播放', compactLabel: '播放', defaultVisible: true },
+    { id: 'iv-play-ctx', label: '前后试听 (±250ms)', previewLabel: '前后试听', compactLabel: '试听', defaultVisible: true },
+    { id: 'iv-edit', label: '改字', previewLabel: '改字', compactLabel: '改字', defaultVisible: true },
+    { id: 'iv-split', label: '智能拆分（含切分 / 等分）', previewLabel: '智能拆分', compactLabel: '拆分', defaultVisible: true },
+    { id: 'iv-merge-left', label: '向左合并', previewLabel: '向左合并', compactLabel: '合左', defaultVisible: true },
+    { id: 'iv-merge-right', label: '向右合并', previewLabel: '向右合并', compactLabel: '合右', defaultVisible: true },
+    { id: 'iv-zoom', label: '放大 / 恢复全长', previewLabel: '放大', compactLabel: '放大', defaultVisible: true },
+    { id: 'iv-copy-to-tier', label: '复制到层', previewLabel: '复制到层', compactLabel: '复制层', defaultVisible: false },
+    { id: 'iv-copy-text', label: '复制文本', previewLabel: '复制文本', compactLabel: '复制', defaultVisible: false },
+    { id: 'iv-clear', label: '清空文本', previewLabel: '清空', compactLabel: '清空', defaultVisible: false }
   ],
-  point: [
-    { id: 'pt-time', label: '标点时间框（可拖拽调值）', previewLabel: '时间', defaultVisible: true },
-    { id: 'pt-edit', label: '改字', previewLabel: '改字', defaultVisible: true },
-    { id: 'pt-play-ctx', label: '语境播放 (±250ms)', previewLabel: '±250ms', defaultVisible: true },
-    { id: 'pt-play', label: '从此处播放', previewLabel: '播放', defaultVisible: true },
-    { id: 'pt-delete', label: '删除标点', previewLabel: '删除', defaultVisible: true }
+  multi: [
+    { id: 'ml-merge', label: '合并所选区间', previewLabel: '合并 3 段', compactLabel: '合并', defaultVisible: true },
+    { id: 'ml-align', label: '对齐边界（主选 / 合并 / 选区）', previewLabel: '对齐边界', compactLabel: '对齐', defaultVisible: true },
+    { id: 'ml-play', label: '播放合并范围', previewLabel: '播放范围', compactLabel: '播放', defaultVisible: true },
+    { id: 'ml-nudge', label: '整体左移 / 右移 5ms', previewLabel: '±5ms', compactLabel: '±5ms', defaultVisible: true },
+    { id: 'ml-clear', label: '批量清空文本', previewLabel: '清空 (3)', compactLabel: '清空', defaultVisible: true },
+    { id: 'ml-zoom', label: '放大查看范围', previewLabel: '放大', compactLabel: '放大', defaultVisible: false }
   ],
   boundary: [
-    { id: 'bnd-time', label: '边界时间框（可拖拽调值）', previewLabel: '边界', defaultVisible: true },
-    { id: 'bnd-zero', label: '吸附过零点', previewLabel: '过零', defaultVisible: false },
-    { id: 'bnd-audition', label: '试听 ±200ms', previewLabel: '试听', defaultVisible: true },
-    { id: 'bnd-delete', label: '删除边界', previewLabel: '删除边界', defaultVisible: true }
+    { id: 'bnd-zero', label: '吸附过零点', previewLabel: '吸附过零', compactLabel: '过零', defaultVisible: true },
+    { id: 'bnd-link', label: '仅本层 / 联动对齐层', previewLabel: '仅本层 | 联动对齐层', compactLabel: '本层 | 联动', defaultVisible: true },
+    { id: 'bnd-audition', label: '跨界试听 (±200ms)', previewLabel: '试听 ±200ms', compactLabel: '试听', defaultVisible: true },
+    { id: 'bnd-project', label: '复制到其他层（含微偏对齐）', previewLabel: '复制到其他层', compactLabel: '复制层', defaultVisible: true },
+    { id: 'bnd-delete', label: '删除边界', previewLabel: '删除边界', compactLabel: '删除', defaultVisible: true },
+    { id: 'bnd-copy-time', label: '复制边界时刻', previewLabel: '复制时刻', compactLabel: '时刻', defaultVisible: false }
+  ],
+  point: [
+    { id: 'pt-edit', label: '改字', previewLabel: '改字', compactLabel: '改字', defaultVisible: true },
+    { id: 'pt-align', label: '对齐吸附（过零 / 边界 / 中点）', previewLabel: '对齐吸附', compactLabel: '吸附', defaultVisible: true },
+    { id: 'pt-play-ctx', label: '前后试听 (±250ms)', previewLabel: '试听 ±250ms', compactLabel: '试听', defaultVisible: true },
+    { id: 'pt-nudge', label: '微调时刻 (±5ms)', previewLabel: '±5ms', compactLabel: '±5ms', defaultVisible: true },
+    { id: 'pt-delete', label: '删除标点', previewLabel: '删除', compactLabel: '删除', defaultVisible: true },
+    { id: 'pt-snap-boundary', label: '对齐附近边界', previewLabel: '对齐边界', compactLabel: '对界', defaultVisible: false },
+    { id: 'pt-move-mid', label: '移到区间中点', previewLabel: '区间中点', compactLabel: '中点', defaultVisible: false },
+    { id: 'pt-play', label: '从此处向后播放', previewLabel: '向后播放', compactLabel: '播放', defaultVisible: false }
   ],
   tier: [
-    { id: 'tier-name', label: '层名称框', previewLabel: '层名', defaultVisible: true },
-    { id: 'tier-bounds', label: '层起止时间框', previewLabel: '起 / 止', defaultVisible: true },
-    { id: 'tier-move', label: '上移 / 下移', previewLabel: '上/下移', defaultVisible: true },
-    { id: 'tier-delete', label: '删除层级', previewLabel: '删除', defaultVisible: true }
+    { id: 'tier-name', label: '层名快编', previewLabel: '层名快编', compactLabel: '改名', defaultVisible: true },
+    { id: 'tier-visibility', label: '隐藏 / 显示此层', previewLabel: '隐藏', compactLabel: '隐藏', defaultVisible: true },
+    { id: 'tier-solo', label: '仅看此层 / 显示全部', previewLabel: '仅看此层', compactLabel: '仅看', defaultVisible: true },
+    { id: 'tier-duplicate', label: '复制层（整层 / 仅边界）', previewLabel: '复制层', compactLabel: '复制', defaultVisible: true },
+    { id: 'tier-move', label: '上移 / 下移', previewLabel: '上/下移', compactLabel: '移层', defaultVisible: true },
+    { id: 'tier-clear', label: '清空整层文本', previewLabel: '清空文本', compactLabel: '清空', defaultVisible: false },
+    { id: 'tier-delete', label: '删除层级', previewLabel: '删除层级', compactLabel: '删除', defaultVisible: false }
   ]
 };
 
@@ -165,13 +181,17 @@ export const DEFAULT_FLOATING_BAR_CONFIG: FloatingBarConfig = {
     order: FLOATING_BAR_CATALOG.interval.map((item) => item.id),
     hidden: FLOATING_BAR_CATALOG.interval.filter((item) => !item.defaultVisible).map((item) => item.id)
   },
-  point: {
-    order: FLOATING_BAR_CATALOG.point.map((item) => item.id),
-    hidden: FLOATING_BAR_CATALOG.point.filter((item) => !item.defaultVisible).map((item) => item.id)
+  multi: {
+    order: FLOATING_BAR_CATALOG.multi.map((item) => item.id),
+    hidden: FLOATING_BAR_CATALOG.multi.filter((item) => !item.defaultVisible).map((item) => item.id)
   },
   boundary: {
     order: FLOATING_BAR_CATALOG.boundary.map((item) => item.id),
     hidden: FLOATING_BAR_CATALOG.boundary.filter((item) => !item.defaultVisible).map((item) => item.id)
+  },
+  point: {
+    order: FLOATING_BAR_CATALOG.point.map((item) => item.id),
+    hidden: FLOATING_BAR_CATALOG.point.filter((item) => !item.defaultVisible).map((item) => item.id)
   },
   tier: {
     order: FLOATING_BAR_CATALOG.tier.map((item) => item.id),
@@ -181,57 +201,55 @@ export const DEFAULT_FLOATING_BAR_CONFIG: FloatingBarConfig = {
 
 export const FLOATING_BAR_PRESETS: Record<FloatingBarPresetKey, FloatingBarConfig> = {
   full: {
-    interval: buildFloatingBarSectionFromVisible('interval', [
-      'iv-times',
-      'iv-dur',
-      'iv-edit',
-      'iv-clear',
-      'iv-split',
-      'iv-merge-left',
-      'iv-merge-right',
-      'iv-play',
-      'iv-zoom'
-    ]),
-    point: buildFloatingBarSectionFromVisible('point', [
-      'pt-time',
-      'pt-edit',
-      'pt-play-ctx',
-      'pt-play',
-      'pt-delete'
-    ]),
-    boundary: buildFloatingBarSectionFromVisible('boundary', [
-      'bnd-time',
-      'bnd-zero',
-      'bnd-audition',
-      'bnd-delete'
-    ]),
-    tier: buildFloatingBarSectionFromVisible('tier', [
-      'tier-name',
-      'tier-bounds',
-      'tier-move',
-      'tier-delete'
-    ])
+    interval: buildFloatingBarSectionFromVisible(
+      'interval',
+      FLOATING_BAR_CATALOG.interval.map((item) => item.id)
+    ),
+    multi: buildFloatingBarSectionFromVisible(
+      'multi',
+      FLOATING_BAR_CATALOG.multi.map((item) => item.id)
+    ),
+    boundary: buildFloatingBarSectionFromVisible(
+      'boundary',
+      FLOATING_BAR_CATALOG.boundary.map((item) => item.id)
+    ),
+    point: buildFloatingBarSectionFromVisible(
+      'point',
+      FLOATING_BAR_CATALOG.point.map((item) => item.id)
+    ),
+    tier: buildFloatingBarSectionFromVisible(
+      'tier',
+      FLOATING_BAR_CATALOG.tier.map((item) => item.id)
+    )
   },
   compact: {
-    interval: buildFloatingBarSectionFromVisible('interval', [
-      'iv-dur',
-      'iv-edit',
-      'iv-clear',
-      'iv-split',
-      'iv-merge-left',
-      'iv-merge-right',
-      'iv-play',
-      'iv-zoom'
-    ]),
-    point: buildFloatingBarSectionFromVisible('point', ['pt-edit', 'pt-play-ctx', 'pt-play', 'pt-delete']),
-    boundary: buildFloatingBarSectionFromVisible('boundary', ['bnd-audition', 'bnd-delete']),
-    tier: buildFloatingBarSectionFromVisible('tier', ['tier-name', 'tier-move', 'tier-delete'])
+    interval: buildFloatingBarSectionFromVisible(
+      'interval',
+      FLOATING_BAR_CATALOG.interval.filter((i) => i.defaultVisible).map((i) => i.id)
+    ),
+    multi: buildFloatingBarSectionFromVisible(
+      'multi',
+      FLOATING_BAR_CATALOG.multi.filter((i) => i.defaultVisible).map((i) => i.id)
+    ),
+    boundary: buildFloatingBarSectionFromVisible(
+      'boundary',
+      FLOATING_BAR_CATALOG.boundary.filter((i) => i.defaultVisible).map((i) => i.id)
+    ),
+    point: buildFloatingBarSectionFromVisible(
+      'point',
+      FLOATING_BAR_CATALOG.point.filter((i) => i.defaultVisible).map((i) => i.id)
+    ),
+    tier: buildFloatingBarSectionFromVisible(
+      'tier',
+      FLOATING_BAR_CATALOG.tier.filter((i) => i.defaultVisible).map((i) => i.id)
+    )
   },
   minimal: {
-    interval: buildFloatingBarSectionFromVisible('interval', ['iv-edit', 'iv-split', 'iv-play']),
-    point: buildFloatingBarSectionFromVisible('point', ['pt-edit', 'pt-play-ctx', 'pt-play']),
-    boundary: buildFloatingBarSectionFromVisible('boundary', ['bnd-audition', 'bnd-delete']),
-    tier: buildFloatingBarSectionFromVisible('tier', ['tier-name', 'tier-delete'])
+    interval: buildFloatingBarSectionFromVisible('interval', ['iv-play', 'iv-edit', 'iv-split']),
+    multi: buildFloatingBarSectionFromVisible('multi', ['ml-merge', 'ml-align', 'ml-play']),
+    boundary: buildFloatingBarSectionFromVisible('boundary', ['bnd-zero', 'bnd-link', 'bnd-delete']),
+    point: buildFloatingBarSectionFromVisible('point', ['pt-edit', 'pt-align', 'pt-delete']),
+    tier: buildFloatingBarSectionFromVisible('tier', ['tier-name', 'tier-visibility', 'tier-move'])
   }
 };
 
@@ -241,8 +259,9 @@ const CUSTOM_SHORTCUTS_STORAGE_KEY = 'tg_custom_shortcuts';
 function cloneFloatingBarConfig(cfg: FloatingBarConfig): FloatingBarConfig {
   return {
     interval: { order: [...cfg.interval.order], hidden: [...cfg.interval.hidden] },
-    point: { order: [...cfg.point.order], hidden: [...cfg.point.hidden] },
+    multi: { order: [...cfg.multi.order], hidden: [...cfg.multi.hidden] },
     boundary: { order: [...cfg.boundary.order], hidden: [...cfg.boundary.hidden] },
+    point: { order: [...cfg.point.order], hidden: [...cfg.point.hidden] },
     tier: { order: [...cfg.tier.order], hidden: [...cfg.tier.hidden] }
   };
 }
@@ -543,10 +562,33 @@ export interface ActivateCorpusEntryPayload {
   itemPatch?: Partial<
     Pick<
       CorpusItemRecord,
-      'status' | 'hasTextGrid' | 'ipaPreview' | 'duration' | 'note' | 'updatedAt' | 'label' | 'missing'
+      | 'status'
+      | 'hasTextGrid'
+      | 'ipaPreview'
+      | 'duration'
+      | 'note'
+      | 'updatedAt'
+      | 'label'
+      | 'missing'
+      | 'parseError'
+      | 'baseFingerprint'
     >
   >;
   pendingAutoEditTarget?: PendingAutoEditTarget | null;
+  /** 强制抛弃缓存历史并重建干净基线（如单条还原为磁盘原文件时） */
+  resetHistory?: boolean;
+  /** 当草稿已存在但内存历史已被淘汰时，将新基线标记为未保存态 */
+  initialDirty?: boolean;
+}
+
+export interface CorpusUnsavedStatePatch {
+  unsavedItemIds?: string[];
+  projectIndexDirty?: boolean;
+  dirtyCount?: number;
+  recoveryDegraded?: boolean;
+  pendingRecoveryCount?: number;
+  saveStatus?: CorpusProjectState['saveStatus'];
+  lastSaveError?: string | null;
 }
 
 export interface TabRecord {
@@ -572,6 +614,7 @@ export interface TabRecord {
   currentTime: number;
   audioName: string;
   audioLoading: boolean;
+  corpusSwitching: boolean;
   audioOffset: number;
   audioDuration: number;
   audioSampleRate: number;
@@ -598,6 +641,14 @@ export interface CloseTabResult {
   removedCorpusProjectId: string | null;
   removedTabId: string;
   nextActiveTabId: string;
+}
+
+export interface CloseTabsResult {
+  removedTabIds: string[];
+  removedSessionIds: number[];
+  removedCorpusProjectIds: string[];
+  nextActiveTabId: string;
+  activeTabChanged: boolean;
 }
 
 export interface EditorState {
@@ -646,6 +697,7 @@ export interface EditorState {
   // Audio & Acoustic (per-tab mirrored)
   audioName: string;
   audioLoading: boolean;
+  corpusSwitching: boolean;
   audioOffset: number;
   audioDuration: number;
   audioSampleRate: number;
@@ -666,8 +718,10 @@ export interface EditorState {
   // Classic Tiered Ribbon State
   ribbonTab: RibbonTabId;
   ribbonCollapsed: boolean;
+  autoSwitchContextualRibbon: boolean;
   restoreSessionOnStartup: boolean;
   smartSplitUseAcoustic: boolean;
+  corpusAutoSave: boolean;
 
   // Office-Style Right Sidebar & Edit Inspector Preferences
   sidebarOpen: boolean;
@@ -682,6 +736,7 @@ export interface EditorState {
 
   // Customization State (Floating Bar & Rebindable Shortcuts)
   floatingBarConfig: FloatingBarConfig;
+  floatingBarDensity: FloatingBarDensity;
   customShortcuts: Record<string, string[]>;
 
   // Modals & Layout ref
@@ -702,6 +757,7 @@ export interface EditorState {
   createNewTab: (opts?: CreateTabOptions) => string;
   switchTab: (tabId: string) => void;
   closeTabImmediate: (tabId: string) => CloseTabResult;
+  closeTabsImmediate: (tabIds: string[], preferredActiveTabId?: string) => CloseTabsResult;
   getDirtyTabs: () => TabRecord[];
   findTabByPath: (filePath: string) => TabRecord | null;
   findCorpusTabByRootKey: (rootKey: string) => TabRecord | null;
@@ -712,7 +768,16 @@ export interface EditorState {
     patch: Partial<
       Pick<
         CorpusItemRecord,
-        'status' | 'hasTextGrid' | 'ipaPreview' | 'duration' | 'note' | 'updatedAt' | 'label' | 'missing'
+        | 'status'
+        | 'hasTextGrid'
+        | 'ipaPreview'
+        | 'duration'
+        | 'note'
+        | 'updatedAt'
+        | 'label'
+        | 'missing'
+        | 'parseError'
+        | 'baseFingerprint'
       >
     >,
     tabId?: string
@@ -727,6 +792,9 @@ export interface EditorState {
     >,
     tabId?: string
   ) => void;
+  syncCorpusUnsavedState: (patch: CorpusUnsavedStatePatch, tabId?: string) => void;
+  clearCorpusEntryHistory: (itemId: string, tabId?: string) => void;
+  markCorpusEntryHistorySaved: (itemId: string, tabId?: string) => void;
   setPendingAutoEditTarget: (target: PendingAutoEditTarget | null) => void;
   clearPendingAutoEditTarget: () => void;
   markTabSaved: (
@@ -749,6 +817,7 @@ export interface EditorState {
     }
   ) => void;
   setAudioLoadingForTab: (tabId: string, loading: boolean) => void;
+  setCorpusSwitchingForTab: (tabId: string, switching: boolean) => void;
 
   // Active document actions
   setDocument: (
@@ -793,6 +862,8 @@ export interface EditorState {
   setSelection: (sel: EditorSelection) => void;
   toggleMultiSelectInterval: (tierIndex: number, itemIndex: number, bandIndex?: number) => void;
   setMultiSelection: (items: IntervalRef[], primary?: IntervalRef | null, bandIndex?: number) => void;
+  setMultiSelectionPrimary: (ref: { tierIndex: number; itemIndex: number }) => void;
+  removeFromMultiSelection: (ref: { tierIndex: number; itemIndex: number }) => void;
   clearMultiSelection: () => void;
   clearMultiSelectionText: () => boolean;
   mergeMultiSelection: () => boolean;
@@ -836,8 +907,11 @@ export interface EditorState {
   setRibbonTab: (tab: RibbonTabId) => void;
   setRibbonCollapsed: (collapsed: boolean) => void;
   toggleRibbonCollapsed: () => void;
+  setAutoSwitchContextualRibbon: (v: boolean) => void;
   setRestoreSessionOnStartup: (enabled: boolean) => void;
   setSmartSplitUseAcoustic: (enabled: boolean) => void;
+  setCorpusAutoSave: (enabled: boolean) => void;
+  setFloatingBarDensity: (density: FloatingBarDensity) => void;
   setSidebarOpen: (open: boolean) => void;
   setSidebarTab: (tab: SidebarTab) => void;
   toggleSidebarTab: (tab: SidebarTab) => void;
@@ -881,6 +955,20 @@ export interface EditorState {
   deleteBoundaryAt: (tierIndex: number, time: number) => void;
   deleteBoundaryAcrossAllTiers: (time: number) => boolean;
   addPointAt: (tierIndex: number, time: number, opts?: { exact?: boolean }) => number | null;
+  movePointToTime: (
+    tierIndex: number,
+    pointIndex: number,
+    targetTime: number,
+    label?: string
+  ) => boolean;
+  updateIntervalBoundsWithAnchor: (
+    tierIndex: number,
+    itemIndex: number,
+    patch: { xmin?: number; xmax?: number; duration?: number },
+    anchor: 'start' | 'duration' | 'end',
+    linkNeighbors?: boolean
+  ) => boolean;
+  convertSelectionIpa: (direction: 'to-unicode' | 'to-praat') => Promise<boolean>;
   insertTierAt: (index: number, kind: TierKind) => void;
   duplicateTier: (tierIndex: number, opts: { copyText: boolean; insertAt?: number }) => number;
   derivePointTierFromIntervals: (tierIndex: number, anchor: 'start' | 'mid' | 'end') => number;
@@ -975,21 +1063,47 @@ function generateTabId(): string {
   return `tab-${nextTabSeq++}`;
 }
 
-const CORPUS_HISTORY_CACHE_MAX = 6;
+const CORPUS_HISTORY_CACHE_MAX = 20;
 const corpusHistoryCache = new Map<string, HistoryTimeline>();
 
 function getCorpusHistoryCacheKey(tabId: string, itemId: string): string {
   return `${tabId}::${itemId}`;
 }
 
-function cacheCorpusEntryHistory(tabId: string, itemId: string, timeline: HistoryTimeline): void {
+function cacheCorpusEntryHistory(
+  tabId: string,
+  itemId: string,
+  timeline: HistoryTimeline,
+  protectedUnsavedIds?: readonly string[]
+): void {
   const key = getCorpusHistoryCacheKey(tabId, itemId);
   corpusHistoryCache.delete(key);
   corpusHistoryCache.set(key, sealTimelineCoalesce(timeline));
+  const protectedKeys = new Set<string>();
+  if (protectedUnsavedIds && protectedUnsavedIds.length > 0) {
+    for (const uid of protectedUnsavedIds) {
+      protectedKeys.add(getCorpusHistoryCacheKey(tabId, uid));
+    }
+  }
   while (corpusHistoryCache.size > CORPUS_HISTORY_CACHE_MAX) {
-    const oldestKey = corpusHistoryCache.keys().next().value;
-    if (oldestKey === undefined) break;
-    corpusHistoryCache.delete(oldestKey);
+    let victimKey: string | undefined;
+    for (const [candidateKey, candidateTl] of corpusHistoryCache.entries()) {
+      if (candidateKey === key) continue;
+      if (!isTimelineDirty(candidateTl) && !protectedKeys.has(candidateKey)) {
+        victimKey = candidateKey;
+        break;
+      }
+    }
+    if (victimKey === undefined) {
+      for (const candidateKey of corpusHistoryCache.keys()) {
+        if (candidateKey !== key) {
+          victimKey = candidateKey;
+          break;
+        }
+      }
+    }
+    if (victimKey === undefined) break;
+    corpusHistoryCache.delete(victimKey);
   }
 }
 
@@ -1000,6 +1114,17 @@ function getCachedCorpusEntryHistory(tabId: string, itemId: string): HistoryTime
   corpusHistoryCache.delete(key);
   corpusHistoryCache.set(key, found);
   return found;
+}
+
+function deleteCachedCorpusEntryHistory(tabId: string, itemId: string): void {
+  corpusHistoryCache.delete(getCorpusHistoryCacheKey(tabId, itemId));
+}
+
+function markCachedCorpusEntryHistorySaved(tabId: string, itemId: string): void {
+  const key = getCorpusHistoryCacheKey(tabId, itemId);
+  const found = corpusHistoryCache.get(key);
+  if (!found) return;
+  corpusHistoryCache.set(key, markTimelineSaved(found));
 }
 
 function clearCorpusHistoryCacheForTab(tabId: string): void {
@@ -1071,6 +1196,7 @@ function createTabRecord(opts?: CreateTabOptions, historyLimit = loadSavedHistor
     currentTime: Number.isFinite(tg.xmin) ? tg.xmin : 0,
     audioName: '',
     audioLoading: false,
+    corpusSwitching: false,
     audioOffset: 0,
     audioDuration: 0,
     audioSampleRate: 0,
@@ -1102,6 +1228,7 @@ function fieldsFromTab(tab: TabRecord) {
     currentTime: tab.currentTime,
     audioName: tab.audioName,
     audioLoading: tab.audioLoading,
+    corpusSwitching: tab.corpusSwitching,
     audioOffset: tab.audioOffset,
     audioDuration: tab.audioDuration,
     audioSampleRate: tab.audioSampleRate,
@@ -1217,6 +1344,61 @@ function saveRibbonCollapsed(collapsed: boolean): void {
 const RESTORE_SESSION_STORAGE_KEY = 'tg_restore_session_v1';
 const HAS_OPENED_STORAGE_KEY = 'tg_has_opened_v1';
 const SMART_SPLIT_ACOUSTIC_STORAGE_KEY = 'tg_smart_split_acoustic_v1';
+const AUTO_SWITCH_CTX_RIBBON_STORAGE_KEY = 'tg_auto_ctx_ribbon_v1';
+const CORPUS_AUTO_SAVE_STORAGE_KEY = 'tg_corpus_auto_save_v1';
+const FLOATING_BAR_DENSITY_STORAGE_KEY = 'tg_floating_bar_density_v1';
+
+function loadCorpusAutoSave(): boolean {
+  try {
+    return localStorage.getItem(CORPUS_AUTO_SAVE_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function saveCorpusAutoSave(enabled: boolean): void {
+  try {
+    localStorage.setItem(CORPUS_AUTO_SAVE_STORAGE_KEY, enabled ? '1' : '0');
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function loadFloatingBarDensity(): FloatingBarDensity {
+  try {
+    const raw = localStorage.getItem(FLOATING_BAR_DENSITY_STORAGE_KEY);
+    if (raw === 'compact' || raw === 'standard' || raw === 'numeric') {
+      return raw;
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return 'standard';
+}
+
+function saveFloatingBarDensity(density: FloatingBarDensity): void {
+  try {
+    localStorage.setItem(FLOATING_BAR_DENSITY_STORAGE_KEY, density);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function loadAutoSwitchContextualRibbon(): boolean {
+  try {
+    return localStorage.getItem(AUTO_SWITCH_CTX_RIBBON_STORAGE_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+function saveAutoSwitchContextualRibbon(enabled: boolean): void {
+  try {
+    localStorage.setItem(AUTO_SWITCH_CTX_RIBBON_STORAGE_KEY, enabled ? '1' : '0');
+  } catch {
+    // ignore storage errors
+  }
+}
 
 function loadRestoreSessionOnStartup(): boolean {
   try {
@@ -1475,8 +1657,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   ribbonTab: 'annotate',
   ribbonCollapsed: loadRibbonCollapsed(),
+  autoSwitchContextualRibbon: loadAutoSwitchContextualRibbon(),
   restoreSessionOnStartup: loadRestoreSessionOnStartup(),
   smartSplitUseAcoustic: loadSmartSplitUseAcoustic(),
+  corpusAutoSave: loadCorpusAutoSave(),
 
   sidebarOpen: initialSidebarPrefs.sidebarOpen,
   sidebarTab: initialSidebarPrefs.sidebarTab,
@@ -1489,6 +1673,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   canvasScale: loadSavedCanvasScale(),
 
   floatingBarConfig: loadFloatingBarConfig(),
+  floatingBarDensity: loadFloatingBarDensity(),
   customShortcuts: loadCustomShortcuts(),
 
   exportOpen: false,
@@ -1622,7 +1807,129 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     };
   },
 
-  getDirtyTabs: () => get().tabs.filter((t) => t.isDirty),
+  closeTabsImmediate: (tabIds, preferredActiveTabId) => {
+    const cur = get();
+    const removeSet = new Set(tabIds);
+    const toRemove = cur.tabs.filter((t) => removeSet.has(t.id));
+    if (toRemove.length === 0) {
+      return {
+        removedTabIds: [],
+        removedSessionIds: [],
+        removedCorpusProjectIds: [],
+        nextActiveTabId: cur.activeTabId,
+        activeTabChanged: false
+      };
+    }
+
+    const removedTabIds: string[] = [];
+    const removedSessionIds: number[] = [];
+    const removedCorpusProjectIds: string[] = [];
+    for (const target of toRemove) {
+      removedTabIds.push(target.id);
+      if (target.analysis?.sessionId !== undefined && target.analysis?.sessionId !== null) {
+        removedSessionIds.push(target.analysis.sessionId);
+      }
+      if (target.kind === 'corpus' && target.corpus?.projectId) {
+        removedCorpusProjectIds.push(target.corpus.projectId);
+      }
+      clearCorpusHistoryCacheForTab(target.id);
+    }
+
+    const remaining = cur.tabs.filter((t) => !removeSet.has(t.id));
+    if (remaining.length === 0) {
+      const fresh = createTabRecord({ isBlankPlaceholder: true }, cur.historyLimit);
+      set((s) => ({
+        tabs: [fresh],
+        ...fieldsFromTab(fresh),
+        ...(s.ribbonTab === 'corpus' ? { ribbonTab: 'annotate' as RibbonTabId } : {}),
+        pendingAutoEditTarget: null,
+        showPlayhead: false,
+        playing: false,
+        docVersion: s.docVersion + 1
+      }));
+      return {
+        removedTabIds,
+        removedSessionIds,
+        removedCorpusProjectIds,
+        nextActiveTabId: fresh.id,
+        activeTabChanged: true
+      };
+    }
+
+    const preferredTab = preferredActiveTabId
+      ? remaining.find((t) => t.id === preferredActiveTabId) ?? null
+      : null;
+    const activeStillPresent = remaining.some((t) => t.id === cur.activeTabId);
+
+    if (!preferredTab && activeStillPresent) {
+      set({ tabs: remaining });
+      return {
+        removedTabIds,
+        removedSessionIds,
+        removedCorpusProjectIds,
+        nextActiveTabId: cur.activeTabId,
+        activeTabChanged: false
+      };
+    }
+
+    const oldActiveIdx = cur.tabs.findIndex((t) => t.id === cur.activeTabId);
+    const nextActive =
+      preferredTab ?? remaining[Math.min(Math.max(0, oldActiveIdx), remaining.length - 1)];
+    const activeTabChanged = nextActive.id !== cur.activeTabId;
+
+    if (!activeTabChanged) {
+      set({ tabs: remaining });
+      return {
+        removedTabIds,
+        removedSessionIds,
+        removedCorpusProjectIds,
+        nextActiveTabId: nextActive.id,
+        activeTabChanged: false
+      };
+    }
+
+    set((s) => {
+      const smartMaxFreq =
+        !s.maxFreqUserSet && nextActive.audioSampleRate > 0
+          ? ((nextActive.audioSampleRate >= 16000 ? 8000 : 5000) as 5000 | 8000 | 10000)
+          : s.maxFreq;
+      return {
+        tabs: remaining,
+        ...fieldsFromTab(nextActive),
+        ...(nextActive.kind !== 'corpus' && s.ribbonTab === 'corpus'
+          ? { ribbonTab: 'annotate' as RibbonTabId }
+          : {}),
+        pendingAutoEditTarget: null,
+        maxFreq: smartMaxFreq,
+        showPlayhead: false,
+        playing: false,
+        docVersion: s.docVersion + 1
+      };
+    });
+
+    return {
+      removedTabIds,
+      removedSessionIds,
+      removedCorpusProjectIds,
+      nextActiveTabId: nextActive.id,
+      activeTabChanged: true
+    };
+  },
+
+  getDirtyTabs: () =>
+    get().tabs.filter((t) => {
+      if (t.isDirty) return true;
+      if (t.kind === 'corpus' && t.corpus) {
+        const ext = t.corpus as CorpusProjectState & {
+          unsavedItemIds?: string[];
+          projectIndexDirty?: boolean;
+        };
+        if ((ext.unsavedItemIds?.length ?? 0) > 0 || Boolean(ext.projectIndexDirty)) {
+          return true;
+        }
+      }
+      return false;
+    }),
 
   findTabByPath: (filePath) => {
     if (!filePath) return null;
@@ -1697,9 +2004,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (!target || target.kind !== 'corpus' || !target.corpus) return s;
 
       const prevActiveId = target.corpus.activeItemId;
+      const unsavedIds = (
+        target.corpus as CorpusProjectState & { unsavedItemIds?: string[] }
+      ).unsavedItemIds;
       if (prevActiveId && prevActiveId !== payload.itemId) {
         const prevHistory = target.id === s.activeTabId ? s.history : target.history;
-        cacheCorpusEntryHistory(target.id, prevActiveId, prevHistory);
+        cacheCorpusEntryHistory(target.id, prevActiveId, prevHistory, unsavedIds);
       }
 
       const nextSelection = validateSelectionForTg(payload.tg, payload.selection ?? null);
@@ -1714,11 +2024,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         selTierIdx !== null ? clampTierIndex(selTierIdx, payload.tg.tiers.length) : 0;
 
       let nextHistory: HistoryTimeline | null = null;
-      const cachedHistory = getCachedCorpusEntryHistory(target.id, payload.itemId);
-      if (cachedHistory) {
-        const cachedSnap = getCurrentSnapshot(cachedHistory);
-        if (JSON.stringify(cachedSnap.tg) === JSON.stringify(payload.tg)) {
-          nextHistory = sealTimelineCoalesce(cachedHistory);
+      if (payload.resetHistory) {
+        deleteCachedCorpusEntryHistory(target.id, payload.itemId);
+      } else {
+        const cachedHistory = getCachedCorpusEntryHistory(target.id, payload.itemId);
+        if (cachedHistory) {
+          const cachedSnap = getCurrentSnapshot(cachedHistory);
+          if (JSON.stringify(cachedSnap.tg) === JSON.stringify(payload.tg)) {
+            nextHistory = sealTimelineCoalesce(cachedHistory);
+          }
         }
       }
       if (!nextHistory) {
@@ -1733,6 +2047,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           },
           s.historyLimit
         );
+        if (payload.initialDirty) {
+          nextHistory = { ...nextHistory, savedEntryId: null };
+        }
       }
 
       let nextItems = target.corpus.items;
@@ -1773,6 +2090,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         currentTime: temporal.currentTime,
         audioName: payload.audioName,
         audioLoading: false,
+        corpusSwitching: false,
         audioOffset: payload.audioOffset ?? 0,
         audioDuration: payload.audioDuration,
         audioSampleRate: payload.audioSampleRate,
@@ -1899,6 +2217,30 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
     }),
 
+  syncCorpusUnsavedState: (patch, tabId) =>
+    set((s) => {
+      const targetTabId = tabId ?? s.activeTabId;
+      const target = s.tabs.find((t) => t.id === targetTabId);
+      if (!target || target.kind !== 'corpus' || !target.corpus) return s;
+      const nextCorpus = {
+        ...target.corpus,
+        ...patch
+      } as CorpusProjectState;
+      return {
+        tabs: s.tabs.map((t) => (t.id === targetTabId ? { ...t, corpus: nextCorpus } : t))
+      };
+    }),
+
+  clearCorpusEntryHistory: (itemId, tabId) => {
+    const targetTabId = tabId ?? get().activeTabId;
+    deleteCachedCorpusEntryHistory(targetTabId, itemId);
+  },
+
+  markCorpusEntryHistorySaved: (itemId, tabId) => {
+    const targetTabId = tabId ?? get().activeTabId;
+    markCachedCorpusEntryHistorySaved(targetTabId, itemId);
+  },
+
   setPendingAutoEditTarget: (pendingAutoEditTarget) => set({ pendingAutoEditTarget }),
   clearPendingAutoEditTarget: () => set({ pendingAutoEditTarget: null }),
 
@@ -1983,6 +2325,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const nextTabs = s.tabs.map((t) => (t.id === tabId ? { ...t, audioLoading: loading } : t));
       if (tabId === s.activeTabId) {
         return { tabs: nextTabs, audioLoading: loading };
+      }
+      return { tabs: nextTabs };
+    }),
+
+  setCorpusSwitchingForTab: (tabId, switching) =>
+    set((s) => {
+      const target = s.tabs.find((t) => t.id === tabId);
+      if (!target || target.corpusSwitching === switching) return s;
+      const nextTabs = s.tabs.map((t) => (t.id === tabId ? { ...t, corpusSwitching: switching } : t));
+      if (tabId === s.activeTabId) {
+        return { tabs: nextTabs, corpusSwitching: switching };
       }
       return { tabs: nextTabs };
     }),
@@ -2570,6 +2923,74 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       });
     }),
 
+  setMultiSelectionPrimary: (ref) =>
+    set((s) => {
+      const clean = sanitizeIntervalRefs(s.tg, s.multiSelection);
+      if (clean.length < 2) return s;
+      const found = clean.find(
+        (it) => it.tierIndex === ref.tierIndex && it.itemIndex === ref.itemIndex
+      );
+      if (!found) return s;
+      const nextBand = s.selection?.bandIndex ?? 0;
+      return syncActivePatch(s, {
+        selection: {
+          kind: 'interval',
+          tierIndex: found.tierIndex,
+          itemIndex: found.itemIndex,
+          bandIndex: nextBand
+        },
+        multiSelection: clean,
+        lastActiveTierIndex: clampTierIndex(found.tierIndex, s.tg.tiers.length)
+      });
+    }),
+
+  removeFromMultiSelection: (ref) =>
+    set((s) => {
+      const clean = sanitizeIntervalRefs(s.tg, s.multiSelection);
+      if (clean.length === 0) return s;
+      const remaining = clean.filter(
+        (it) => !(it.tierIndex === ref.tierIndex && it.itemIndex === ref.itemIndex)
+      );
+      if (remaining.length === clean.length) return s;
+      const nextBand = s.selection?.bandIndex ?? 0;
+      if (remaining.length <= 1) {
+        const only = remaining[0];
+        return syncActivePatch(s, {
+          selection: only
+            ? {
+                kind: 'interval',
+                tierIndex: only.tierIndex,
+                itemIndex: only.itemIndex,
+                bandIndex: nextBand
+              }
+            : null,
+          multiSelection: [],
+          lastActiveTierIndex: only
+            ? clampTierIndex(only.tierIndex, s.tg.tiers.length)
+            : s.lastActiveTierIndex
+        });
+      }
+      const wasPrimary =
+        s.selection?.kind === 'interval' &&
+        s.selection.tierIndex === ref.tierIndex &&
+        s.selection.itemIndex === ref.itemIndex;
+      const nextPrimary = wasPrimary ? remaining[remaining.length - 1] : null;
+      return syncActivePatch(s, {
+        selection: nextPrimary
+          ? {
+              kind: 'interval',
+              tierIndex: nextPrimary.tierIndex,
+              itemIndex: nextPrimary.itemIndex,
+              bandIndex: nextBand
+            }
+          : s.selection,
+        multiSelection: remaining,
+        lastActiveTierIndex: nextPrimary
+          ? clampTierIndex(nextPrimary.tierIndex, s.tg.tiers.length)
+          : s.lastActiveTierIndex
+      });
+    }),
+
   clearMultiSelection: () =>
     set((s) => (s.multiSelection.length === 0 ? s : syncActivePatch(s, { multiSelection: [] }))),
 
@@ -2676,7 +3097,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ? '重映射所选区间到选区'
         : mode === 'to-primary'
           ? '对齐所选区间至主选边界'
-          : '对齐所选区间至外包范围';
+          : '对齐所选区间至整体范围';
     const bandIndex = st.selection?.bandIndex ?? 0;
 
     const committed = st.commitTgMutation(
@@ -2894,6 +3315,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       saveRibbonCollapsed(next);
       return { ribbonCollapsed: next };
     }),
+  setAutoSwitchContextualRibbon: (autoSwitchContextualRibbon) => {
+    saveAutoSwitchContextualRibbon(autoSwitchContextualRibbon);
+    set({ autoSwitchContextualRibbon });
+  },
   setRestoreSessionOnStartup: (restoreSessionOnStartup) => {
     saveRestoreSessionOnStartup(restoreSessionOnStartup);
     set({ restoreSessionOnStartup });
@@ -2901,6 +3326,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setSmartSplitUseAcoustic: (smartSplitUseAcoustic) => {
     saveSmartSplitUseAcoustic(smartSplitUseAcoustic);
     set({ smartSplitUseAcoustic });
+  },
+  setCorpusAutoSave: (corpusAutoSave) => {
+    saveCorpusAutoSave(corpusAutoSave);
+    set({ corpusAutoSave });
+  },
+  setFloatingBarDensity: (floatingBarDensity) => {
+    saveFloatingBarDensity(floatingBarDensity);
+    set({ floatingBarDensity });
   },
   setSidebarOpen: (sidebarOpen) =>
     set((s) => {
@@ -3284,6 +3717,442 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
     );
     return ok ? insertedIdx : null;
+  },
+
+  movePointToTime: (tierIndex, pointIndex, targetTime, label) => {
+    const st = get();
+    const tier = st.tg.tiers[tierIndex];
+    if (!tier || tier.kind !== 'textTier') return false;
+    const pt = tier.points[pointIndex];
+    if (!pt || !Number.isFinite(targetTime)) return false;
+
+    const eps = 1e-9;
+    if (targetTime < tier.xmin - eps || targetTime > tier.xmax + eps) {
+      st.showToast('标点时刻不能超出当前层级范围', true);
+      return false;
+    }
+    const clampedT = Math.min(tier.xmax, Math.max(tier.xmin, targetTime));
+    if (Math.abs(clampedT - pt.number) <= 1e-12) return false;
+
+    if (tier.points.some((p, i) => i !== pointIndex && Math.abs(p.number - clampedT) <= eps)) {
+      st.showToast('目标时刻已存在标点', true);
+      return false;
+    }
+
+    const oldT = pt.number;
+    const tierName = formatTierLabel(tier.name, tierIndex);
+    const isZeroSnap = Boolean(label && label.includes('过零'));
+    const bandIndex = st.selection?.bandIndex ?? 0;
+
+    return st.commitTgMutation(
+      (_draft, ctx) => {
+        const dTier = ctx.editTier(tierIndex);
+        if (!dTier || dTier.kind !== 'textTier') return false;
+        const targetPt = dTier.points[pointIndex];
+        if (!targetPt) return false;
+        targetPt.number = clampedT;
+        dTier.points.sort((a, b) => a.number - b.number);
+        const nextIdx = dTier.points.indexOf(targetPt);
+        ctx.setNextSelection({
+          kind: 'point',
+          tierIndex,
+          itemIndex: Math.max(0, nextIdx),
+          bandIndex
+        });
+      },
+      undefined,
+      {
+        type: isZeroSnap ? 'snap-zero-crossing' : 'move-point',
+        title: label || '移动标注点',
+        detail: `${tierName} · ${formatTimeSec(oldT)} → ${formatTimeSec(clampedT)} (${formatDeltaTime(clampedT - oldT)})`,
+        icon: isZeroSnap ? 'zeroCross' : 'nudgeFine',
+        tierName,
+        focusTime: clampedT,
+        coalesce: label
+          ? undefined
+          : {
+              key: `move-point:${tierIndex}`,
+              originValue: oldT,
+              latestValue: clampedT,
+              chainPrevLatest: oldT,
+              formatMergedDetail: (orig, latest, count) => {
+                const o = Number(orig);
+                const l = Number(latest);
+                return `${tierName} · ${formatTimeSec(o)} → ${formatTimeSec(l)} (${formatDeltaTime(l - o)}${count > 1 ? ` · ${count}次` : ''})`;
+              }
+            }
+      }
+    );
+  },
+
+  updateIntervalBoundsWithAnchor: (tierIndex, itemIndex, patch, anchor, linkNeighbors = true) => {
+    const st = get();
+    const tier = st.tg.tiers[tierIndex];
+    if (!tier || tier.kind !== 'intervalTier') return false;
+    const iv = tier.intervals[itemIndex];
+    if (!iv || !Number.isFinite(iv.xmin) || !Number.isFinite(iv.xmax)) return false;
+
+    const oldXmin = iv.xmin;
+    const oldXmax = iv.xmax;
+    const oldDur = oldXmax - oldXmin;
+    const hasXmin = patch.xmin !== undefined;
+    const hasXmax = patch.xmax !== undefined;
+    const hasDur = patch.duration !== undefined;
+    if (!hasXmin && !hasXmax && !hasDur) return false;
+
+    if (
+      (hasXmin && !Number.isFinite(patch.xmin!)) ||
+      (hasXmax && !Number.isFinite(patch.xmax!)) ||
+      (hasDur && !Number.isFinite(patch.duration!))
+    ) {
+      return false;
+    }
+
+    const eps = 1e-9;
+    const minGap = 1e-6;
+    if (hasDur && patch.duration! <= minGap) {
+      st.showToast('区间时长必须大于 0', true);
+      return false;
+    }
+
+    let nextXmin = oldXmin;
+    let nextXmax = oldXmax;
+
+    if (hasDur) {
+      if (anchor === 'end') {
+        nextXmax = hasXmax ? patch.xmax! : oldXmax;
+        nextXmin = nextXmax - patch.duration!;
+      } else {
+        nextXmin = hasXmin ? patch.xmin! : oldXmin;
+        nextXmax = nextXmin + patch.duration!;
+      }
+    } else if (hasXmin && hasXmax) {
+      nextXmin = patch.xmin!;
+      nextXmax = patch.xmax!;
+    } else if (hasXmin) {
+      nextXmin = patch.xmin!;
+      nextXmax = anchor === 'duration' ? nextXmin + oldDur : oldXmax;
+    } else if (hasXmax) {
+      nextXmax = patch.xmax!;
+      nextXmin = anchor === 'duration' ? nextXmax - oldDur : oldXmin;
+    }
+
+    if (Math.abs(nextXmin - tier.xmin) <= 1e-12) nextXmin = tier.xmin;
+    if (Math.abs(nextXmax - tier.xmax) <= 1e-12) nextXmax = tier.xmax;
+
+    if (!Number.isFinite(nextXmin) || !Number.isFinite(nextXmax) || nextXmax <= nextXmin + minGap) {
+      st.showToast('区间终点必须严格大于起点', true);
+      return false;
+    }
+
+    if (Math.abs(nextXmin - oldXmin) <= 1e-12 && Math.abs(nextXmax - oldXmax) <= 1e-12) {
+      return false;
+    }
+
+    if (nextXmin < tier.xmin - eps || nextXmax > tier.xmax + eps) {
+      st.showToast('区间起止不能超出当前层级范围', true);
+      return false;
+    }
+    nextXmin = Math.max(tier.xmin, nextXmin);
+    nextXmax = Math.min(tier.xmax, nextXmax);
+
+    const link = linkNeighbors !== false;
+    const prev = itemIndex > 0 ? tier.intervals[itemIndex - 1] : null;
+    const next = itemIndex + 1 < tier.intervals.length ? tier.intervals[itemIndex + 1] : null;
+    const hasContigPrev = Boolean(prev && Math.abs(prev.xmax - oldXmin) <= eps);
+    const hasContigNext = Boolean(next && Math.abs(next.xmin - oldXmax) <= eps);
+    const movedLeft = Math.abs(nextXmin - oldXmin) > 1e-12;
+    const movedRight = Math.abs(nextXmax - oldXmax) > 1e-12;
+
+    if (prev && movedLeft) {
+      if (link && hasContigPrev) {
+        if (nextXmin <= prev.xmin + minGap) {
+          st.showToast('起点不能越过左侧相邻区间', true);
+          return false;
+        }
+      } else if (nextXmin < prev.xmax - eps) {
+        st.showToast('起点不能与左侧相邻区间重叠', true);
+        return false;
+      }
+    }
+
+    if (next && movedRight) {
+      if (link && hasContigNext) {
+        if (nextXmax >= next.xmax - minGap) {
+          st.showToast('终点不能越过右侧相邻区间', true);
+          return false;
+        }
+      } else if (nextXmax > next.xmin + eps) {
+        st.showToast('终点不能与右侧相邻区间重叠', true);
+        return false;
+      }
+    }
+
+    const insertLeadEmpty =
+      link && !prev && movedLeft && Math.abs(oldXmin - tier.xmin) <= eps && nextXmin > tier.xmin + eps;
+    const insertTailEmpty =
+      link && !next && movedRight && Math.abs(oldXmax - tier.xmax) <= eps && nextXmax < tier.xmax - eps;
+
+    const isSlide = anchor === 'duration' && movedLeft && movedRight;
+    const tierName = formatTierLabel(tier.name, tierIndex);
+    const bandIndex = st.selection?.bandIndex ?? 0;
+    const nextItemIndex = insertLeadEmpty ? itemIndex + 1 : itemIndex;
+
+    const title = isSlide
+      ? '平移区间'
+      : movedLeft && movedRight
+        ? '调整区间起止'
+        : movedLeft
+          ? '调整区间起点'
+          : '调整区间终点';
+    const detail = isSlide
+      ? `${tierName} · ${formatTimeSpan(oldXmin, oldXmax)} → ${formatTimeSpan(nextXmin, nextXmax)} (${formatDeltaTime(nextXmin - oldXmin)})`
+      : movedLeft && !movedRight
+        ? `${tierName} · 起点 ${formatTimeSec(oldXmin)} → ${formatTimeSec(nextXmin)} (${formatDeltaTime(nextXmin - oldXmin)})`
+        : !movedLeft && movedRight
+          ? `${tierName} · 终点 ${formatTimeSec(oldXmax)} → ${formatTimeSec(nextXmax)} (${formatDeltaTime(nextXmax - oldXmax)})`
+          : `${tierName} · ${formatTimeSpan(nextXmin, nextXmax)} (${formatDurationLabel(nextXmax - nextXmin)})`;
+
+    const coalesceOrigin = movedLeft ? oldXmin : oldXmax;
+    const coalesceLatest = movedLeft ? nextXmin : nextXmax;
+
+    return st.commitTgMutation(
+      (_draft, ctx) => {
+        const dTier = ctx.editTier(tierIndex);
+        if (!dTier || dTier.kind !== 'intervalTier') return false;
+        const cur = dTier.intervals[itemIndex];
+        if (!cur) return false;
+        const dPrev = itemIndex > 0 ? dTier.intervals[itemIndex - 1] : null;
+        const dNext = itemIndex + 1 < dTier.intervals.length ? dTier.intervals[itemIndex + 1] : null;
+
+        if (link && hasContigPrev && movedLeft && dPrev) {
+          dPrev.xmax = nextXmin;
+        }
+        if (link && hasContigNext && movedRight && dNext) {
+          dNext.xmin = nextXmax;
+        }
+        cur.xmin = nextXmin;
+        cur.xmax = nextXmax;
+
+        if (insertTailEmpty) {
+          dTier.intervals.push({ xmin: nextXmax, xmax: dTier.xmax, text: '' });
+        }
+        if (insertLeadEmpty) {
+          dTier.intervals.unshift({ xmin: dTier.xmin, xmax: nextXmin, text: '' });
+        }
+
+        ctx.setNextSelection({
+          kind: 'interval',
+          tierIndex,
+          itemIndex: nextItemIndex,
+          bandIndex
+        });
+        ctx.setNextPlayRange({ start: nextXmin, end: nextXmax });
+      },
+      undefined,
+      {
+        type: isSlide ? 'slide-interval' : 'edit-interval-edge',
+        title,
+        detail,
+        icon: isSlide ? 'navHorizontal' : 'nudgeFine',
+        tierName,
+        focusTime: movedLeft ? nextXmin : nextXmax,
+        coalesce:
+          insertLeadEmpty || insertTailEmpty
+            ? undefined
+            : {
+                key: isSlide
+                  ? `slide-iv:${tierIndex}:${itemIndex}`
+                  : `edge:${tierIndex}:${itemIndex}:${anchor}:${movedLeft ? 'L' : ''}${movedRight ? 'R' : ''}`,
+                originValue: coalesceOrigin,
+                latestValue: coalesceLatest,
+                chainPrevLatest: coalesceOrigin,
+                formatMergedDetail: (orig, latest, count) => {
+                  const o = Number(orig);
+                  const l = Number(latest);
+                  const edgeLabel = isSlide
+                    ? '平移'
+                    : movedLeft && !movedRight
+                      ? '起点'
+                      : !movedLeft && movedRight
+                        ? '终点'
+                        : '起止';
+                  return `${tierName} · ${edgeLabel} ${formatTimeSec(o)} → ${formatTimeSec(l)} (${formatDeltaTime(l - o)}${count > 1 ? ` · ${count}次` : ''})`;
+                }
+              }
+      }
+    );
+  },
+
+  convertSelectionIpa: async (direction) => {
+    const st = get();
+    const bridge = getPlatformBridge();
+    const activeTabIdAtStart = st.activeTabId;
+    const convertText = (text: string) =>
+      direction === 'to-unicode'
+        ? bridge.decodePraatTrigraphs(text)
+        : bridge.encodePraatTrigraphs(text);
+    const actionTitle = direction === 'to-unicode' ? '转为 Unicode 音标' : '转为 Praat 转义';
+    const doneLabel = direction === 'to-unicode' ? 'Unicode 音标' : 'Praat 转义';
+
+    const cleanMulti = sanitizeIntervalRefs(st.tg, st.multiSelection);
+    if (cleanMulti.length >= 2) {
+      const snapshotItems = cleanMulti
+        .map((ref) => {
+          const t = st.tg.tiers[ref.tierIndex];
+          const iv = t?.kind === 'intervalTier' ? t.intervals[ref.itemIndex] : null;
+          return iv ? { ...ref, oldText: iv.text } : null;
+        })
+        .filter((x): x is { tierIndex: number; itemIndex: number; oldText: string } => x !== null);
+
+      const converted = await Promise.all(
+        snapshotItems.map(async (item) => {
+          if (!item.oldText) return { ...item, newText: item.oldText, changed: false };
+          const res = await convertText(item.oldText);
+          const changed = res.changed && res.text !== item.oldText;
+          if (changed && direction === 'to-praat') {
+            await primeTrigraphString(res.text, bridge);
+          }
+          return { ...item, newText: changed ? res.text : item.oldText, changed };
+        })
+      );
+
+      const updates = converted.filter((item) => item.changed);
+      const cur = get();
+      if (cur.activeTabId !== activeTabIdAtStart) return false;
+      if (updates.length === 0) {
+        cur.showToast('当前内容无需转换');
+        return false;
+      }
+
+      const primarySel = cur.selection;
+      let appliedCount = 0;
+      const committed = cur.commitTgMutation(
+        (_draft, ctx) => {
+          for (const u of updates) {
+            const dTier = ctx.editTier(u.tierIndex);
+            if (!dTier || dTier.kind !== 'intervalTier') continue;
+            const dIv = dTier.intervals[u.itemIndex];
+            if (!dIv || dIv.text !== u.oldText) continue;
+            dIv.text = u.newText;
+            appliedCount++;
+          }
+          if (appliedCount === 0) return false;
+        },
+        primarySel,
+        {
+          type: 'convert-ipa',
+          title: actionTitle,
+          detail: `批量转换 ${updates.length} 项区间`,
+          icon: 'ipaMode'
+        }
+      );
+
+      if (!committed) {
+        get().showToast('当前内容无需转换');
+        return false;
+      }
+
+      const primaryRef =
+        primarySel?.kind === 'interval'
+          ? { tierIndex: primarySel.tierIndex, itemIndex: primarySel.itemIndex }
+          : null;
+      get().setMultiSelection(cleanMulti, primaryRef, primarySel?.bandIndex);
+      get().showToast(`已将 ${appliedCount} 项转为 ${doneLabel}`);
+      return true;
+    }
+
+    const sel = st.selection;
+    if (sel?.kind === 'interval') {
+      const tier = st.tg.tiers[sel.tierIndex];
+      const iv = tier?.kind === 'intervalTier' ? tier.intervals[sel.itemIndex] : null;
+      if (!tier || !iv) return false;
+      if (!iv.text) {
+        st.showToast('当前内容无需转换');
+        return false;
+      }
+      const oldText = iv.text;
+      const res = await convertText(oldText);
+      const cur = get();
+      if (cur.activeTabId !== activeTabIdAtStart) return false;
+      if (!res.changed || res.text === oldText) {
+        cur.showToast('当前内容无需转换');
+        return false;
+      }
+      if (direction === 'to-praat') {
+        await primeTrigraphString(res.text, bridge);
+      }
+      const tierName = formatTierLabel(tier.name, sel.tierIndex);
+      const committed = get().commitTgMutation(
+        (_draft, ctx) => {
+          const dTier = ctx.editTier(sel.tierIndex);
+          if (!dTier || dTier.kind !== 'intervalTier') return false;
+          const dIv = dTier.intervals[sel.itemIndex];
+          if (!dIv || dIv.text !== oldText) return false;
+          dIv.text = res.text;
+        },
+        sel,
+        {
+          type: 'convert-ipa',
+          title: actionTitle,
+          detail: `${tierName} · ${formatQuote(oldText)} → ${formatQuote(res.text)}`,
+          icon: 'ipaMode',
+          tierName,
+          focusTime: iv.xmin
+        }
+      );
+      if (committed) {
+        get().showToast(`已转为 ${doneLabel}`);
+      }
+      return committed;
+    }
+
+    if (sel?.kind === 'point') {
+      const tier = st.tg.tiers[sel.tierIndex];
+      const pt = tier?.kind === 'textTier' ? tier.points[sel.itemIndex] : null;
+      if (!tier || !pt) return false;
+      if (!pt.mark) {
+        st.showToast('当前内容无需转换');
+        return false;
+      }
+      const oldMark = pt.mark;
+      const res = await convertText(oldMark);
+      const cur = get();
+      if (cur.activeTabId !== activeTabIdAtStart) return false;
+      if (!res.changed || res.text === oldMark) {
+        cur.showToast('当前内容无需转换');
+        return false;
+      }
+      if (direction === 'to-praat') {
+        await primeTrigraphString(res.text, bridge);
+      }
+      const tierName = formatTierLabel(tier.name, sel.tierIndex);
+      const committed = get().commitTgMutation(
+        (_draft, ctx) => {
+          const dTier = ctx.editTier(sel.tierIndex);
+          if (!dTier || dTier.kind !== 'textTier') return false;
+          const dPt = dTier.points[sel.itemIndex];
+          if (!dPt || dPt.mark !== oldMark) return false;
+          dPt.mark = res.text;
+        },
+        sel,
+        {
+          type: 'convert-ipa',
+          title: actionTitle,
+          detail: `${tierName} · ${formatQuote(oldMark)} → ${formatQuote(res.text)}`,
+          icon: 'ipaMode',
+          tierName,
+          focusTime: pt.number
+        }
+      );
+      if (committed) {
+        get().showToast(`已转为 ${doneLabel}`);
+      }
+      return committed;
+    }
+
+    st.showToast('请先选中区间或标点');
+    return false;
   },
 
   insertTierAt: (index, kind) => {

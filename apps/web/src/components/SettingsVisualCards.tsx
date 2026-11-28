@@ -365,14 +365,25 @@ export const EditModeVisualCards: React.FC<{
           <line x1="6" y1="13" x2="214" y2="13" stroke="#D3CFC5" strokeWidth="0.9" />
           <rect x="12" y="31" width="196" height="14" fill="#FFFFFF" stroke="#D3CFC5" strokeWidth="0.9" />
           {/* Selected interval */}
-          <rect x="74" y="31" width="60" height="14" fill={isFloating ? hiFill : '#ECE9E1'} stroke={isFloating ? hiStroke : '#8C887F'} strokeWidth="1.1" />
-          {/* Hovering dark charcoal floating bar matching real .floating-bar */}
-          <rect x="52" y="15" width="104" height="12" fill={isFloating ? '#1C1B18' : '#57544D'} stroke="#141413" strokeWidth="1" />
-          <rect x="57" y="18" width="22" height="6" fill="#2A2925" stroke="#57544D" strokeWidth="0.7" />
-          <rect x="83" y="18" width="18" height="6" fill={isFloating ? '#1D4ED8' : '#767269'} />
-          <rect x="105" y="18" width="20" height="6" fill="#2A2925" stroke="#57544D" strokeWidth="0.7" />
-          <rect x="129" y="18" width="22" height="6" fill="#2A2925" stroke="#57544D" strokeWidth="0.7" />
-          <line x1="104" y1="27" x2="104" y2="31" stroke={isFloating ? hiStroke : '#8C887F'} strokeWidth="1.1" />
+          <rect x="74" y="32" width="60" height="13" fill={isFloating ? hiFill : '#ECE9E1'} stroke={isFloating ? hiStroke : '#8C887F'} strokeWidth="1.1" />
+          {/* Warm Paper Architectural Double-Layer floating bar matching .fb-arch */}
+          <rect x="48" y="10" width="112" height="18" fill="#FAF9F6" stroke="#C6C2B8" strokeWidth="1" />
+          {/* Left 3px semantic accent bar */}
+          <rect x="48" y="10" width="3" height="18" fill={isFloating ? '#2563EB' : '#8C887F'} />
+          {/* Row 1: status header + time capsule */}
+          <rect x="51" y="10.5" width="108.5" height="6.5" fill="#F3F1EA" />
+          <line x1="51" y1="17" x2="159.5" y2="17" stroke="#DFDCD3" strokeWidth="0.7" />
+          <rect x="55" y="12.5" width="14" height="2.6" fill={isFloating ? '#2563EB' : '#8C887F'} opacity="0.8" />
+          <rect x="73" y="12" width="34" height="3.8" fill="#FFFFFF" stroke="#DFDCD3" strokeWidth="0.6" />
+          {/* Row 2: frameless action row with soft-blue primary button */}
+          <rect x="55" y="19.5" width="22" height="6" fill={isFloating ? '#EFF6FF' : '#ECE9E1'} stroke={isFloating ? '#BFDBFE' : '#D3CFC5'} strokeWidth="0.7" />
+          <line x1="60" y1="22.5" x2="72" y2="22.5" stroke={isFloating ? '#2563EB' : '#767269'} strokeWidth="1.2" />
+          <line x1="83" y1="22.5" x2="97" y2="22.5" stroke="#57544D" strokeWidth="1.2" />
+          <line x1="104" y1="22.5" x2="122" y2="22.5" stroke="#57544D" strokeWidth="1.2" />
+          <line x1="129" y1="22.5" x2="142" y2="22.5" stroke="#8C887F" strokeWidth="1.2" />
+          <circle cx="151" cy="22.5" r="0.9" fill="#8C887F" />
+          <circle cx="154" cy="22.5" r="0.9" fill="#8C887F" />
+          <line x1="104" y1="28" x2="104" y2="32" stroke={isFloating ? hiStroke : '#8C887F'} strokeWidth="1.1" />
         </svg>
         <div className="pvc-card-hd">
           <span>画布浮动条</span>
