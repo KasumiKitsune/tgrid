@@ -18,6 +18,7 @@ export interface BoundaryMicroWaveProps {
   accentColor?: string;
   disabled?: boolean;
   onSnapZero?: () => void;
+  onSnapAcoustic?: () => void;
 }
 
 const WAVE_HALF_WIN_SEC = 0.03; // ±30 ms
@@ -30,7 +31,8 @@ export const BoundaryMicroWave: React.FC<BoundaryMicroWaveProps> = ({
   nearestZeroSec = null,
   accentColor = '#D97706',
   disabled = false,
-  onSnapZero
+  onSnapZero,
+  onSnapAcoustic
 }) => {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -283,30 +285,41 @@ export const BoundaryMicroWave: React.FC<BoundaryMicroWaveProps> = ({
             <span>已对齐过零点</span>
           </span>
         ) : deltaMs !== null ? (
-          <>
-            <span
-              className="insp-wave-status"
-              title={`距最近过零点 ${formattedDelta}`}
-            >
-              <span className="insp-wave-dot" aria-hidden="true" />
-              <span>距最近过零点</span>
-              <span className="insp-wave-delta">{formattedDelta}</span>
-            </span>
-            {onSnapZero && (
-              <button
-                type="button"
-                className="insp-wave-snap-btn"
-                disabled={disabled}
-                onClick={onSnapZero}
-                title="将当前位置吸附到最近过零点"
-              >
-                吸附过零点
-              </button>
-            )}
-          </>
+          <span
+            className="insp-wave-status"
+            title={`距最近过零点 ${formattedDelta}`}
+          >
+            <span className="insp-wave-dot" aria-hidden="true" />
+            <span>距过零</span>
+            <span className="insp-wave-delta">{formattedDelta}</span>
+          </span>
         ) : (
           <span className="insp-wave-status">附近波形（±30 ms）</span>
         )}
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+          {onSnapAcoustic && (
+            <button
+              type="button"
+              className="insp-wave-snap-btn"
+              disabled={disabled}
+              onClick={onSnapAcoustic}
+              title="将当前位置吸附至附近音素或音节声学边界（AcouSeg 1.0）"
+            >
+              吸附声学边界
+            </button>
+          )}
+          {!isAlignedZero && deltaMs !== null && onSnapZero && (
+            <button
+              type="button"
+              className="insp-wave-snap-btn"
+              disabled={disabled}
+              onClick={onSnapZero}
+              title="将当前位置吸附到最近过零点"
+            >
+              吸附过零点
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

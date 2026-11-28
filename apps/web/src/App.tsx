@@ -332,18 +332,25 @@ export function App() {
 
   const activeCorpusNav = useMemo(() => {
     if (!activeCorpus) return null;
+    const effectiveStatus = showCorpusStatusMarks ? activeCorpus.filter.status : 'all';
+    const hasActiveFilter = Boolean(activeCorpus.filter.query.trim()) || effectiveStatus !== 'all';
     const filtered = filterCorpusItems(
       activeCorpus.items,
       activeCorpus.filter,
       !showCorpusStatusMarks
     );
-    const list = filtered.length > 0 ? filtered : activeCorpus.items;
+    const filteredCount = filtered.length;
+    const list = hasActiveFilter ? filtered : activeCorpus.items;
     const idx = activeCorpus.activeItemId
       ? list.findIndex((it) => it.id === activeCorpus.activeItemId)
       : -1;
+    const isOutsideFilter = hasActiveFilter && filteredCount > 0 && idx === -1;
     return {
       currentIndex: idx,
       totalCount: list.length,
+      filteredCount,
+      hasActiveFilter,
+      isOutsideFilter,
       canPrev: idx > 0,
       canNext: list.length > 0 && (idx === -1 || idx < list.length - 1)
     };
@@ -630,6 +637,7 @@ export function App() {
         forceStage?: boolean;
         statusOverride?: CorpusItemStatus;
         flushRecoveryNow?: boolean;
+        markProjectIndexDirty?: boolean;
       }
     ): CorpusItemDraft | null => {
       syncActiveCorpusStyleToProject(tabId);
@@ -664,6 +672,10 @@ export function App() {
           },
           tabId
         );
+      }
+
+      if (opts?.markProjectIndexDirty) {
+        corpusDraftManager.setProjectIndexDirty(projectId, true);
       }
 
       if (!isTgDirty && !hasMetaOverride) {
@@ -2551,9 +2563,16 @@ export function App() {
       const tab = st.tabs.find((t) => t.id === st.activeTabId);
       if (!tab || tab.kind !== 'corpus' || !tab.corpus) return;
       const corpus = tab.corpus;
+      const effectiveStatus = st.showCorpusStatusMarks ? corpus.filter.status : 'all';
+      const hasActiveFilter = Boolean(corpus.filter.query.trim()) || effectiveStatus !== 'all';
       const filtered = filterCorpusItems(corpus.items, corpus.filter, !st.showCorpusStatusMarks);
-      const navList = filtered.length > 0 ? filtered : corpus.items;
-      if (navList.length === 0) return;
+      const navList = hasActiveFilter ? filtered : corpus.items;
+      if (navList.length === 0) {
+        if (hasActiveFilter) {
+          showToast('当前筛选结果为空');
+        }
+        return;
+      }
 
       const curIdx = corpus.activeItemId
         ? navList.findIndex((it) => it.id === corpus.activeItemId)
@@ -2603,10 +2622,9 @@ export function App() {
       const staged = stageCorpusItem(tab.id, {
         forceStage: status === 'done' || status !== activeItem.status,
         statusOverride: status,
-        flushRecoveryNow: true
+        flushRecoveryNow: true,
+        markProjectIndexDirty: true
       });
-      corpusDraftManager.setProjectIndexDirty(corpus.projectId, true);
-      syncCorpusUnsavedToStore(tab.id);
 
       if (useEditorStore.getState().corpusAutoSave && corpus.writable && staged) {
         const outcome = await writeCorpusItemToDisk(tab.id, {
@@ -2664,10 +2682,9 @@ export function App() {
       const staged = stageCorpusItem(tab.id, {
         forceStage: status === 'done' || status !== activeItem.status,
         statusOverride: status,
-        flushRecoveryNow: true
+        flushRecoveryNow: true,
+        markProjectIndexDirty: true
       });
-      corpusDraftManager.setProjectIndexDirty(corpus.projectId, true);
-      syncCorpusUnsavedToStore(tab.id);
 
       if (useEditorStore.getState().corpusAutoSave && corpus.writable && staged) {
         await writeCorpusItemToDisk(tab.id, {
@@ -6430,6 +6447,9 @@ export function App() {
                       showStatusMarks={showCorpusStatusMarks}
                       currentIndex={activeCorpusNav?.currentIndex}
                       totalCount={activeCorpusNav?.totalCount}
+                      filteredCount={activeCorpusNav?.filteredCount}
+                      hasActiveFilter={activeCorpusNav?.hasActiveFilter}
+                      isOutsideFilter={activeCorpusNav?.isOutsideFilter}
                       canPrev={activeCorpusNav?.canPrev}
                       canNext={activeCorpusNav?.canNext}
                       onToggleSidebar={() => useEditorStore.getState().toggleCorpusSidebar()}

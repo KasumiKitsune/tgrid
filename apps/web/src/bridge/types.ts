@@ -165,6 +165,7 @@ export interface AcousticSplitParams {
   durationWeights: number[];
   acousticClasses: AcousticSplitSegmentClass[];
   f0Frames?: AcousticSplitF0Frame[];
+  useNn?: boolean;
 }
 
 export interface AcousticSplitResult {
@@ -172,6 +173,36 @@ export interface AcousticSplitResult {
   confidence: number;
   fallbackToEqual: boolean;
   speechSpan: [number, number];
+}
+
+export interface VadParams {
+  frameMs?: number;
+  hopMs?: number;
+  minSpeechMs?: number;
+  mergeGapMs?: number;
+  splitGapMs?: number;
+  padMs?: number;
+  snapZeroCrossing?: boolean;
+}
+
+export interface VadSegmentResult {
+  start: number;
+  end: number;
+}
+
+export type AcousticSnapKind = 'phone' | 'syllable' | 'none';
+
+export interface AcousticSnapPeak {
+  timeSec: number;
+  strength: number;
+  kind: AcousticSnapKind;
+}
+
+export interface AcousticSnapResult {
+  found: boolean;
+  snappedTimeSec: number;
+  confidence: number;
+  kind: AcousticSnapKind;
 }
 
 export interface IpaCandidate {
@@ -322,6 +353,25 @@ export interface PlatformBridge {
     samples: Float32Array,
     params: AcousticSplitParams
   ): Promise<AcousticSplitResult>;
+  detectSpeechSegmentsNn(
+    samples: Float32Array,
+    sampleRate: number,
+    params?: VadParams
+  ): Promise<VadSegmentResult[]>;
+  extractAcousticSnapPeaks(
+    samples: Float32Array,
+    sampleRate: number,
+    samplesOriginSec: number,
+    xmin: number,
+    xmax: number
+  ): Promise<AcousticSnapPeak[]>;
+  snapAcousticBoundary(
+    samples: Float32Array,
+    sampleRate: number,
+    samplesOriginSec: number,
+    targetTimeSec: number,
+    windowSec?: number
+  ): Promise<AcousticSnapResult>;
 
   // Native Desktop File I/O (Web/WASM returns null / false gracefully)
   openNativeFileDialog(

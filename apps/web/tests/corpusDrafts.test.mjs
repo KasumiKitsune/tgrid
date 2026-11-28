@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CorpusDraftManager,
+  getCorpusUnsavedSummary,
   hasExternalFileConflict,
   mergeItemWithDraft
 } from '../src/corpus/draftManager.ts';
@@ -288,4 +289,69 @@ test('recoveryStore: degrades silently when IndexedDB is unavailable and skips s
   assert.equal(stats.totalBytes, 0);
   assert.equal(stats.draftCount, 0);
   assert.equal(stats.snapshotCount, 0);
+});
+
+test('getCorpusUnsavedSummary: unifies unsaved count across staged items, active dirty item, index dirty, and readonly mode', () => {
+  // Active dirty item not yet in unsavedItemIds merges as a set union (1 + 1 = 2, not Math.max = 1)
+  const twoDirty = getCorpusUnsavedSummary(
+    {
+      activeItemId: '003_听',
+      writable: true,
+      dirtyCount: 1,
+      unsavedItemIds: ['001_东'],
+      projectIndexDirty: false
+    },
+    true
+  );
+  assert.equal(twoDirty.unsavedCount, 2);
+  assert.equal(twoDirty.hasPendingSave, true);
+  assert.equal(twoDirty.hasAnyUnsaved, true);
+  assert.equal(twoDirty.isCurrentUnsaved, true);
+  assert.equal(twoDirty.otherUnsavedCount, 1);
+
+  // Active item already present in unsavedItemIds deduplicates cleanly to 1
+  const deduped = getCorpusUnsavedSummary(
+    {
+      activeItemId: '003_听',
+      writable: true,
+      dirtyCount: 1,
+      unsavedItemIds: ['003_听'],
+      projectIndexDirty: false
+    },
+    true
+  );
+  assert.equal(deduped.unsavedCount, 1);
+  assert.equal(deduped.otherUnsavedCount, 0);
+
+  // Project index dirty alone still enables save-all without inflating item count
+  const indexOnly = getCorpusUnsavedSummary(
+    {
+      activeItemId: '003_听',
+      writable: true,
+      dirtyCount: 0,
+      unsavedItemIds: [],
+      projectIndexDirty: true
+    },
+    false
+  );
+  assert.equal(indexOnly.unsavedCount, 0);
+  assert.equal(indexOnly.projectIndexDirty, true);
+  assert.equal(indexOnly.hasPendingSave, true);
+  assert.equal(indexOnly.hasAnyUnsaved, true);
+
+  // Read-only fallback pending export count reflects in readonlyPendingCount and hasAnyUnsaved
+  const readonlyPending = getCorpusUnsavedSummary(
+    {
+      activeItemId: '003_听',
+      writable: false,
+      dirtyCount: 3,
+      unsavedItemIds: [],
+      projectIndexDirty: false
+    },
+    false
+  );
+  assert.equal(readonlyPending.unsavedCount, 0);
+  assert.equal(readonlyPending.hasPendingSave, false);
+  assert.equal(readonlyPending.readonlyPendingCount, 3);
+  assert.equal(readonlyPending.hasAnyUnsaved, true);
 });

@@ -38,6 +38,7 @@ export type HistoryActionType =
   | 'multi-transform'
   | 'move-point'
   | 'snap-zero-crossing'
+  | 'snap-acoustic-edge'
   // 4. 删除与合并
   | 'merge-interval'
   | 'delete-boundary'

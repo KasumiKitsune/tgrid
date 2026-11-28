@@ -1,4 +1,6 @@
+import { getPlatformBridge } from '../bridge/PlatformBridge';
 import type { VadSegment } from '../corpus/types';
+import { useEditorStore } from '../store/useEditorStore';
 
 export interface VadOptions {
   /** 分析帧长（毫秒），默认 20ms */
@@ -20,6 +22,8 @@ export interface VadOptions {
 export interface AsyncVadOptions extends Omit<VadOptions, 'snapZeroCrossing'> {
   /** 可选同步或异步过零点对齐回调（例如 bridge.findZeroCrossing） */
   snapZeroCrossing?: (t: number) => number | Promise<number>;
+  /** 覆盖声学辅助引擎模式（默认读取全局偏好设置） */
+  engineMode?: 'neural' | 'classic';
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -166,15 +170,119 @@ export function detectSpeechSegments(
     .filter((seg) => seg.end - seg.start > 0.005);
 }
 
+function finalizeSegments(
+  raw: VadSegment[],
+  duration: number,
+  options?: Omit<VadOptions, 'snapZeroCrossing'>
+): VadSegment[] {
+  const minSpeechSec = (options?.minSpeechMs ?? 60) / 1000;
+  const splitGapSec = (options?.splitGapMs ?? 250) / 1000;
+  const mergeGapSec = Math.min((options?.mergeGapMs ?? 180) / 1000, splitGapSec);
+  const padSec = (options?.padMs ?? 25) / 1000;
+
+  const sorted = [...raw].sort((a, b) => a.start - b.start || a.end - b.end);
+  const merged: VadSegment[] = [];
+  for (const seg of sorted) {
+    if (!Number.isFinite(seg.start) || !Number.isFinite(seg.end) || seg.end <= seg.start) continue;
+    const prev = merged[merged.length - 1];
+    if (prev && seg.start - prev.end < mergeGapSec) {
+      prev.end = Math.max(prev.end, seg.end);
+    } else {
+      merged.push({ start: seg.start, end: seg.end });
+    }
+  }
+
+  const padded: VadSegment[] = [];
+  for (const seg of merged) {
+    if (seg.end - seg.start < minSpeechSec) continue;
+    const start = clamp(seg.start - padSec, 0, duration);
+    const end = clamp(seg.end + padSec, 0, duration);
+    if (end <= start) continue;
+    const prev = padded[padded.length - 1];
+    if (prev && start <= prev.end) {
+      const mid = 0.5 * (prev.end + start);
+      prev.end = mid;
+      padded.push({ start: mid, end });
+    } else {
+      padded.push({ start, end });
+    }
+  }
+  return padded;
+}
+
+async function detectNeuralSegmentsChunked(
+  mono: Float32Array,
+  sampleRate: number,
+  options?: AsyncVadOptions
+): Promise<VadSegment[]> {
+  if (mono.length === 0 || !Number.isFinite(sampleRate) || sampleRate <= 0) return [];
+  const duration = mono.length / sampleRate;
+  const bridge = getPlatformBridge();
+
+  const chunkSec = 30.0;
+  const overlapSec = 0.5;
+  const collected: VadSegment[] = [];
+
+  let chunkIdx = 0;
+  for (let tStart = 0; tStart < duration - 1e-6; tStart += chunkSec) {
+    if (chunkIdx > 0) {
+      // Yield between 30 s chunks so long recordings never block the UI thread
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+    chunkIdx++;
+
+    const tEnd = Math.min(duration, tStart + chunkSec);
+    const padL = Math.max(0, tStart - overlapSec);
+    const padR = Math.min(duration, tEnd + overlapSec);
+    const sLo = Math.max(0, Math.floor(padL * sampleRate));
+    const sHi = Math.min(mono.length, Math.ceil(padR * sampleRate));
+    if (sHi <= sLo + 16) break;
+
+    const slice = mono.subarray(sLo, sHi);
+    const sliceOrigin = sLo / sampleRate;
+    const chunkSegs = await bridge.detectSpeechSegmentsNn(slice, Math.round(sampleRate), {
+      frameMs: options?.frameMs ?? 20,
+      hopMs: options?.hopMs ?? 10,
+      minSpeechMs: 20,
+      mergeGapMs: options?.mergeGapMs ?? 180,
+      splitGapMs: options?.splitGapMs ?? 250,
+      padMs: 0,
+      snapZeroCrossing: false
+    });
+
+    for (const seg of chunkSegs) {
+      const gStart = Math.max(tStart, seg.start + sliceOrigin);
+      const gEnd = Math.min(tEnd, seg.end + sliceOrigin);
+      if (gEnd > gStart + 1e-4) {
+        collected.push({ start: gStart, end: gEnd });
+      }
+    }
+  }
+
+  return finalizeSegments(collected, duration, options);
+}
+
 /**
- * 异步双门限静音切分，支持传入异步过零点对齐回调（如 bridge.findZeroCrossing）。
+ * 异步语音端点检测：默认启用 AcouSeg 1.0 分块推理（30 s 分块 + 0.5 s 重叠），
+ * 经典模式或推理异常时无缝回退至纯规则双门限，并支持异步过零点对齐回调。
  */
 export async function detectSpeechSegmentsAsync(
   mono: Float32Array,
   sampleRate: number,
   options?: AsyncVadOptions
 ): Promise<VadSegment[]> {
-  const segs = detectRawSegments(mono, sampleRate, options);
+  const mode = options?.engineMode ?? useEditorStore.getState().acousticEngineMode;
+  let segs: VadSegment[] | null = null;
+  if (mode === 'neural') {
+    try {
+      segs = await detectNeuralSegmentsChunked(mono, sampleRate, options);
+    } catch {
+      segs = null;
+    }
+  }
+  if (segs === null) {
+    segs = detectRawSegments(mono, sampleRate, options);
+  }
   const snap = options?.snapZeroCrossing;
   if (!snap || segs.length === 0) return segs;
   const duration = mono.length / sampleRate;

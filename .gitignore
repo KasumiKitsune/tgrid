@@ -11,3 +11,33 @@
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Local evaluation samples (kept locally, not distributed on GitHub)
+/samples/
+
+# TGrid-AcouSeg training artifacts, datasets, caches & intermediate weights
+# Note: Official release weights in crates/tg-core/src/nn/weights/*.tgnn remain tracked.
+/tools/microseg-train/artifacts/
+/tools/microseg-train/data/
+/tools/microseg-train/cache/
+/tools/microseg-train/checkpoints/
+/tools/microseg-train/tmp/
+/tools/microseg-train/runs/
+/tools/microseg-train/feat-dump-cli/feat_dump_cli
+/tools/microseg-train/feat-dump-cli/feat_dump_cli.exe
+/tools/microseg-train/**/*.pt
+/tools/microseg-train/**/*.pth
+/tools/microseg-train/**/*.npz
+/tools/microseg-train/**/*.f16
+/tools/microseg-train/**/*.f32
+/tools/microseg-train/**/*.wav
+/tools/microseg-train/**/*.tar.gz
+/tools/microseg-train/**/*.tgz
+/tools/microseg-train/**/*.zip
+/tools/microseg-train/**/.colab*
+
+# Python bytecode & local virtual environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/

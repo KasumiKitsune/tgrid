@@ -24,10 +24,15 @@ import {
   compute_band_contours_json,
   compute_waveform_path,
   find_zero_crossing,
-  align_split_boundaries_json
+  align_split_boundaries_json,
+  detect_speech_segments_nn_json,
+  extract_acoustic_snap_peaks_json,
+  snap_acoustic_boundary_json
 } from '../wasm-pkg/tg_wasm';
 import wasmUrl from '../wasm-pkg/tg_wasm_bg.wasm?url';
 import type {
+  AcousticSnapPeak,
+  AcousticSnapResult,
   AcousticSplitParams,
   AcousticSplitResult,
   AudioAnalysisSummary,
@@ -54,6 +59,8 @@ import type {
   TextGrid,
   TextGridFormat,
   TierDiagnostics,
+  VadParams,
+  VadSegmentResult,
   YunlongStepResult,
   ZipEntryInput
 } from './types';
@@ -311,6 +318,43 @@ export class WebWasmBridge implements PlatformBridge {
     return JSON.parse(
       align_split_boundaries_json(samples, JSON.stringify(params))
     ) as AcousticSplitResult;
+  }
+
+  async detectSpeechSegmentsNn(
+    samples: Float32Array,
+    sampleRate: number,
+    params?: VadParams
+  ): Promise<VadSegmentResult[]> {
+    await this.init();
+    return JSON.parse(
+      detect_speech_segments_nn_json(samples, sampleRate, JSON.stringify(params ?? {}))
+    ) as VadSegmentResult[];
+  }
+
+  async extractAcousticSnapPeaks(
+    samples: Float32Array,
+    sampleRate: number,
+    samplesOriginSec: number,
+    xmin: number,
+    xmax: number
+  ): Promise<AcousticSnapPeak[]> {
+    await this.init();
+    return JSON.parse(
+      extract_acoustic_snap_peaks_json(samples, sampleRate, samplesOriginSec, xmin, xmax)
+    ) as AcousticSnapPeak[];
+  }
+
+  async snapAcousticBoundary(
+    samples: Float32Array,
+    sampleRate: number,
+    samplesOriginSec: number,
+    targetTimeSec: number,
+    windowSec = 0.045
+  ): Promise<AcousticSnapResult> {
+    await this.init();
+    return JSON.parse(
+      snap_acoustic_boundary_json(samples, sampleRate, samplesOriginSec, targetTimeSec, windowSec)
+    ) as AcousticSnapResult;
   }
 
   async openNativeFileDialog(

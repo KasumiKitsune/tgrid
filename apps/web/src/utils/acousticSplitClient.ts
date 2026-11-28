@@ -1,4 +1,5 @@
 import { getPlatformBridge } from '../bridge/PlatformBridge';
+import { useEditorStore } from '../store/useEditorStore';
 import type { AcousticSegmentClass, SmartSplitGranularity } from './smartSplit';
 
 export interface AcousticSplitRequest {
@@ -8,6 +9,7 @@ export interface AcousticSplitRequest {
   granularity: SmartSplitGranularity;
   durationWeights: readonly number[];
   acousticClasses: readonly AcousticSegmentClass[];
+  useNn?: boolean;
 }
 
 export interface AcousticSplitResponse {
@@ -17,7 +19,8 @@ export interface AcousticSplitResponse {
   usedAcoustic: boolean;
 }
 
-const SLICE_PAD_SEC = 0.05;
+// 0.50 s context padding each side matches TGrid-AcouSeg 1.0's ~0.67 s TCN receptive field
+const SLICE_PAD_SEC = 0.5;
 
 export async function alignSplitBoundariesAcoustically(
   req: AcousticSplitRequest
@@ -70,6 +73,11 @@ export async function alignSplitBoundariesAcoustically(
     }
   }
 
+  const useNn =
+    req.useNn !== undefined
+      ? req.useNn
+      : useEditorStore.getState().acousticEngineMode === 'neural';
+
   const bridge = getPlatformBridge();
   const res = await bridge.alignSplitBoundaries(mono, {
     sampleRate: Math.round(sampleRate),
@@ -78,7 +86,8 @@ export async function alignSplitBoundariesAcoustically(
     xmax,
     granularity,
     durationWeights: Array.from(durationWeights),
-    acousticClasses: Array.from(acousticClasses)
+    acousticClasses: Array.from(acousticClasses),
+    useNn
   });
 
   return {

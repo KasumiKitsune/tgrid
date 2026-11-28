@@ -13,6 +13,7 @@ import {
   CorpusSidebarToggleIcon,
   CorpusStatusIcon
 } from '../corpus/corpusIcons';
+import { getCorpusUnsavedSummary } from '../corpus/draftManager';
 import type {
   CorpusFilterState,
   CorpusItemRecord,
@@ -190,22 +191,25 @@ export const CorpusSidebar: React.FC<CorpusSidebarProps> = ({
   const ctxMenuRef = useRef<HTMLDivElement>(null);
 
   const corpusExt = corpus as CorpusProjectState & {
-    unsavedItemIds?: string[];
-    projectIndexDirty?: boolean;
     recoveryDegraded?: boolean;
   };
-  const resolvedUnsavedIds = unsavedItemIds ?? corpusExt.unsavedItemIds ?? [];
-  const resolvedIndexDirty = projectIndexDirty || Boolean(corpusExt.projectIndexDirty);
   const resolvedDegraded = recoveryDegraded || Boolean(corpusExt.recoveryDegraded);
 
-  const unsavedSet = useMemo(() => {
-    const s = new Set<string>(resolvedUnsavedIds);
-    if (isDirty && activeItemId) s.add(activeItemId);
-    return s;
-  }, [resolvedUnsavedIds, isDirty, activeItemId]);
-
-  const unsavedCount = unsavedSet.size;
-  const hasPendingSave = unsavedCount > 0 || resolvedIndexDirty;
+  const unsavedSummary = useMemo(
+    () =>
+      getCorpusUnsavedSummary(corpus, isDirty, {
+        unsavedItemIds,
+        projectIndexDirty
+      }),
+    [corpus, isDirty, unsavedItemIds, projectIndexDirty]
+  );
+  const {
+    unsavedSet,
+    unsavedCount,
+    projectIndexDirty: resolvedIndexDirty,
+    hasPendingSave,
+    readonlyPendingCount
+  } = unsavedSummary;
   const isSaving = corpus.saveStatus === 'saving';
 
   const counts = useMemo(() => {
@@ -475,8 +479,6 @@ export const CorpusSidebar: React.FC<CorpusSidebarProps> = ({
   const headBadgeTitle = showStatusMarks
     ? `已完成 ${counts.done} 条，共 ${counts.all} 条`
     : `共 ${counts.all} 条词条`;
-
-  const readonlyPendingCount = Math.max(unsavedCount, corpus.dirtyCount);
 
   return (
     <aside

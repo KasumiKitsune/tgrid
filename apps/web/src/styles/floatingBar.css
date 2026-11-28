@@ -8,7 +8,7 @@
   position: absolute;
   z-index: 150;
   width: max-content;
-  max-width: min(calc(var(--vw) - 24px), calc(100% - 12px));
+  max-width: min(calc(var(--vw) - 24px), calc(100% - 24px));
   user-select: none;
   opacity: 0;
   visibility: hidden;
@@ -35,9 +35,13 @@
     visibility 0s linear 0s;
 }
 
+.fb-arch-host.has-open-popover {
+  z-index: 230;
+}
+
 .fb-arch-host.is-dragging {
   transition: none !important;
-  z-index: 185;
+  z-index: 235;
 }
 
 /* Object Semantic Accent Tokens (aligned with Ribbon & Inspector) */
@@ -142,6 +146,10 @@
 .fb-arch-drag:active {
   cursor: grabbing;
   color: var(--ink);
+}
+
+.fb-arch-drag.is-pinned {
+  color: var(--fb-accent, #2563EB);
 }
 
 .fb-arch-kind {
@@ -515,6 +523,8 @@
   left: 0;
   min-width: 214px;
   max-width: 310px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   z-index: 260;
   background: #FAF9F6;
   color: var(--ink);
@@ -523,6 +533,7 @@
     0 10px 26px rgba(20, 20, 19, 0.14),
     0 2px 5px rgba(20, 20, 19, 0.08);
   padding: 4px 0;
+  transform-origin: top center;
   animation: fb-pop-in 120ms var(--ease);
 }
 

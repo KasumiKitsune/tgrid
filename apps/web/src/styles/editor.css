@@ -1350,7 +1350,7 @@ button.tg-select-trigger.is-open .chev {
 }
 
 /* Center-Column Narrow Split Adaptation (Both Sidebars Open) */
-@container transportbar (max-width: 780px) {
+@container transportbar (max-width: 840px) {
   .transportbar .scale-kbd {
     display: none;
   }
@@ -1365,7 +1365,10 @@ button.tg-select-trigger.is-open .chev {
   }
 }
 
-@container transportbar (max-width: 630px) {
+@container transportbar (max-width: 780px) {
+  .transportbar .transport-range-tag {
+    display: none;
+  }
   .transportbar .transport-btn-label {
     display: none;
   }
@@ -1376,10 +1379,35 @@ button.tg-select-trigger.is-open .chev {
     gap: 2px;
   }
   .transportbar .audio-file-group {
-    max-width: 96px;
+    max-width: 108px;
   }
-  .transportbar .transport-range-tag {
+  .transportbar .vol-track {
+    width: 44px;
+  }
+}
+
+@container transportbar (max-width: 580px) {
+  .transportbar .transport-audio-empty-text {
     display: none;
+  }
+  .transportbar .transport-audio-empty-btn {
+    width: 26px;
+    padding: 0;
+    justify-content: center;
+  }
+  .transportbar .audio-file-group {
+    max-width: 88px;
+  }
+}
+
+@container transportbar (max-width: 470px) {
+  .transportbar .time-readout .dim {
+    display: none;
+  }
+  .transportbar .transport-play-btn {
+    min-width: 52px;
+    padding: 0 7px;
+    gap: 4px;
   }
 }
 
@@ -2222,13 +2250,13 @@ button.tg-select-trigger.is-open .chev {
   border-color: #FAF9F6;
 }
 
-/* Animated Architectural Modals */
+/* Animated Architectural Modals (Soft Enter, Crisp Fast Exit) */
 .modal-backdrop {
   position: fixed;
   inset: 0;
   z-index: 440;
   background: rgba(20, 20, 19, 0.34);
-  backdrop-filter: blur(2px);
+  backdrop-filter: none;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2237,16 +2265,17 @@ button.tg-select-trigger.is-open .chev {
   visibility: hidden;
   pointer-events: none;
   transition:
-    opacity 180ms var(--ease),
-    visibility 0s linear 180ms;
+    opacity 75ms ease-out,
+    visibility 0s linear 75ms;
 }
 
 .modal-backdrop.open {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
+  backdrop-filter: blur(2px);
   transition:
-    opacity 180ms var(--ease),
+    opacity 150ms var(--ease),
     visibility 0s linear 0s;
 }
 
@@ -2260,15 +2289,28 @@ button.tg-select-trigger.is-open .chev {
   overflow: hidden;
   user-select: none;
   opacity: 0;
-  transform: translateY(8px) scale(0.98);
+  transform: translateY(4px) scale(0.99);
   transition:
-    opacity 200ms var(--ease),
-    transform 200ms var(--ease);
+    opacity 75ms ease-out,
+    transform 75ms ease-out;
 }
 
 .modal-backdrop.open .modal-card {
   opacity: 1;
   transform: translateY(0) scale(1);
+  transition:
+    opacity 150ms var(--ease),
+    transform 160ms var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop,
+  .modal-backdrop.open,
+  .modal-card,
+  .modal-backdrop.open .modal-card {
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+  }
 }
 
 .modal-head {
@@ -5019,9 +5061,7 @@ a.about-link-btn:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  min-width: 0;
-  flex: 0 1 auto;
-  overflow: hidden;
+  flex: 0 0 auto;
   cursor: pointer;
   transform: none;
   transition:

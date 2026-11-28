@@ -22,6 +22,7 @@
 - **完整兼容 Praat 标注文件**：直接读写标准长文本、短文本、二进制、按时间排序 `.TextGrid`、独立单层及 `.Collection` 文件；自动标出空隙、重叠、零时长、层域不一致与极短音段，支持一键整理边界。
 - **短音段不挤字、语谱图不变形**：上方波形与宽带语谱图保持 1:1 真实物理时间，下方标注层按文字宽度自动舒展并自动折叠长静默，支持均衡多行折行与跨行续接，也可随时切回 1:1 线性对齐。
 - **看谱听辨与精细切音**：载入 WAV 音频即可对照波形、语谱图、基频（F₀）与共振峰（F₁–F₃）参考曲线听辨；拖动边界时随行弹出 ±40 ms 放大镜，支持跨层磁吸对齐（`Alt` 临时跳过、`Z` 吸附过零点）与 ±1 ms / ±10 ms 键盘微调。
+- **轻量声学边界模型（`TGrid-AcouSeg 1.0`）**：内置 204 KB 纯 Rust 零外部依赖声学边界模型，本地离线运行，支持跨语种/跨方言智能拆分、抗噪词表自动切词（VAD）与声学边界吸附（拖拽自动吸附默认关闭，可在偏好设置中按需开启），并严格保留经典的物理基频与共振峰测量算法。
 - **国际音标输入与批转换**：内置云龙国际音标（含五度声调）与 Praat 反斜杠音标（如 `\sh`、`\ng`、`\^h`）直接输入、对照显示与整文档互转，配有虚拟音标键盘；支持多标签页切换与只读防误改模式。
 - **论文插图直接导出**：支持按层与时段筛选，内置论文单栏、通栏、幻灯片版幅与纯黑白印刷配色，导出矢量 SVG（可选纯矢量轮廓、图文分离包等）与高清 PNG，可按需附带中英双语图例与统一小数位刻度。
 
@@ -44,6 +45,7 @@
 | **[双尺折行标注图：核心设计规范（精简版）](docs/TEXTGRID_VISUALIZATION_SPEC_LITE.md)** | 5 分钟看懂「上方 1:1 真实时间声学视图 → 对齐连线区 → 下方按字宽舒展标注层」的核心规则与视觉底线，同时为其他开发者保留充足的实现自由度。 |
 | **[双尺折行标注图：完整可视化与交互编辑规范](docs/TEXTGRID_VISUALIZATION_AND_EDITOR_SPEC.md)** | 完整工程蓝图，涵盖就近借宽算法、多行均衡折行、声学计算基准、音频硬件时钟同步、三层独立缩放、交互细节与逐项核验清单。 |
 | **[Praat `.TextGrid` 与 `.Collection` 文件格式规范](docs/PRAAT_TEXTGRID_AND_COLLECTION_SPEC.md)** | 对照 Praat 源码核验的完整读写参考，涵盖标准长文本、短文本、二进制、按时间排序文本、独立单层及 `.Collection` 的解析规则、边界约束与测试用例，便于编写兼容 Praat 的读写库。 |
+| **[`TGrid-AcouSeg 1.0` 轻量声学边界模型规范](docs/ACOUSEG_MODEL_SPEC.md)** | 完整公开 204 KB 跨语种/跨方言声学边界模型的 32 维零漂移特征前端、18 层 ConvNeXt-1D 架构、`.tgnn` 二进制协议、真人未见说话人评测基准，以及复现训练与本地 CPU 方言微调指南。 |
 
 本项目全部代码（包括核心读写库、声学分析模块与图标库）均以 **MIT 协议**开源，欢迎直接复用或二次开发。
 
@@ -64,10 +66,13 @@ tgrid/
 │   ├── web/                  # React 19 + TypeScript + Vite 界面
 │   └── desktop/              # Tauri v2 桌面端外壳（Windows NSIS / macOS DMG）
 ├── docs/
+│   ├── ACOUSEG_MODEL_SPEC.md
 │   ├── PRAAT_TEXTGRID_AND_COLLECTION_SPEC.md
 │   ├── TEXTGRID_VISUALIZATION_SPEC_LITE.md
 │   ├── TEXTGRID_VISUALIZATION_AND_EDITOR_SPEC.md
 │   └── pictures/             # README 下载与文档入口矢量按钮
+├── tools/
+│   └── microseg-train/       # TGrid-AcouSeg 1.0 训练、INT8 QAT 导出与本地 CPU 方言微调脚手架
 └── .github/workflows/
     ├── pages.yml             # 自动发布在线演示
     └── release.yml           # 推送 v* 标签自动打包 macOS (Apple Silicon / Intel) 与 Windows 安装包
@@ -101,7 +106,7 @@ npm run build:desktop-exe
 
 - **Desktop Installers (Windows x64 / ARM64 & macOS Apple Silicon / Intel)**: [GitHub Releases](https://github.com/KasumiKitsune/tgrid/releases/latest)
 - **Try in Browser**: [kasumikitsune.github.io/tgrid](https://kasumikitsune.github.io/tgrid/) *(runs locally in your browser; files are never uploaded)*
-- **Open Specifications**: Platform-agnostic Dual-Scale Wrapped Score specs ([Lite Core Spec](docs/TEXTGRID_VISUALIZATION_SPEC_LITE.md) / [Full Engineering Spec](docs/TEXTGRID_VISUALIZATION_AND_EDITOR_SPEC.md)) and [Praat TextGrid & Collection Format Spec](docs/PRAAT_TEXTGRID_AND_COLLECTION_SPEC.md)
+- **Open Specifications**: Platform-agnostic Dual-Scale Wrapped Score specs ([Lite Core Spec](docs/TEXTGRID_VISUALIZATION_SPEC_LITE.md) / [Full Engineering Spec](docs/TEXTGRID_VISUALIZATION_AND_EDITOR_SPEC.md)), [Praat TextGrid & Collection Format Spec](docs/PRAAT_TEXTGRID_AND_COLLECTION_SPEC.md), and [TGrid-AcouSeg 1.0 Acoustic Boundary Model Spec](docs/ACOUSEG_MODEL_SPEC.md)
 
 ## License
 

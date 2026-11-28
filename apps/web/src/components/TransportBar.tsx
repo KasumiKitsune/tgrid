@@ -123,6 +123,7 @@ export const TransportBar: React.FC<TransportBarProps> = ({
           type="button"
           className={loop ? 'active' : ''}
           aria-pressed={loop}
+          aria-label="循环播放当前范围"
           title="循环播放当前范围 (L)"
           onClick={() => setLoop(!loop)}
         >
@@ -134,6 +135,7 @@ export const TransportBar: React.FC<TransportBarProps> = ({
           type="button"
           className={followPlayhead ? 'active' : ''}
           aria-pressed={followPlayhead}
+          aria-label="播放时自动跟随播放头"
           title="播放时自动跟随播放头滚动"
           onClick={() => setFollowPlayhead(!followPlayhead)}
         >
@@ -195,6 +197,7 @@ export const TransportBar: React.FC<TransportBarProps> = ({
           <button
             type="button"
             className="compact"
+            aria-label="放大选区"
             title="将视图放大至当前选定时间区间"
             onClick={() => setViewDomain({ min: zoomableRange!.start, max: zoomableRange!.end })}
           >
@@ -207,6 +210,7 @@ export const TransportBar: React.FC<TransportBarProps> = ({
           <button
             type="button"
             className="compact active"
+            aria-label="显示全长"
             title="退出局部放大，恢复显示完整时间轴"
             onClick={() => setViewDomain(null)}
           >
@@ -265,6 +269,7 @@ export const TransportBar: React.FC<TransportBarProps> = ({
               type="button"
               className="transport-audio-empty-btn is-loading"
               disabled
+              aria-label="正在载入录音"
               title="正在下载并解析配套录音…"
             >
               <UiIcon name="waveform" size={13} />
@@ -274,7 +279,8 @@ export const TransportBar: React.FC<TransportBarProps> = ({
             <button
               type="button"
               className="transport-audio-empty-btn"
-              title={`点击载入配套录音 (${formatKeyCombo('Mod+Shift+O')})`}
+              aria-label="未载入录音，点击载入配套录音"
+              title={`未载入录音 — 点击载入配套录音 (${formatKeyCombo('Mod+Shift+O')})`}
               onClick={onOpenAudio}
             >
               <UiIcon name="waveform" size={13} />

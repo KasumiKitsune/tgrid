@@ -794,6 +794,47 @@ button:hover:not(:disabled) .tgi.tgi-corpusSidebarToggle.is-collapsed .cst-chev,
   flex-shrink: 0;
 }
 
+.corpus-nav-pos.is-outside-filter {
+  font-family: var(--font-sans);
+  color: var(--accent-amber);
+  background: var(--accent-amber-soft);
+  border: 1px solid #FCD34D;
+  line-height: 17px;
+  font-weight: 500;
+}
+
+.corpus-nav-pos.is-filter-empty {
+  font-family: var(--font-sans);
+  color: var(--ink-muted);
+  background: var(--bg-subtle);
+  border: 1px solid var(--rule);
+  line-height: 17px;
+}
+
+.corpus-navbar .corpus-nav-jump-btn {
+  height: 20px;
+  padding: 0 6px;
+  font-size: 11px;
+  color: var(--accent-blue);
+  background: var(--accent-blue-soft);
+  border: 1px solid #BFDBFE;
+  flex-shrink: 0;
+  transform: none;
+}
+
+.corpus-navbar .corpus-nav-jump-btn:hover:not(:disabled) {
+  background: #E0EAFF;
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.corpus-navbar .corpus-nav-jump-btn:active:not(:disabled) {
+  background: #D4E2FF;
+  border-color: var(--accent-blue);
+  color: #1E40AF;
+  transform: none;
+}
+
 .corpus-nav-name {
   font-family: var(--font-sans);
   font-size: 12px;
@@ -1053,6 +1094,10 @@ html[data-ui-short="1"] .corpus-navbar-right {
   justify-content: center;
   height: 26px;
   font-size: 11.5px;
+  transition:
+    background-color 60ms ease,
+    border-color 60ms ease,
+    color 60ms ease;
 }
 
 .corpus-autosave-toggle {

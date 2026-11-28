@@ -34,6 +34,10 @@ import {
 import { useEditorStore } from '../../store/useEditorStore';
 import { alignSplitBoundariesAcoustically } from '../../utils/acousticSplitClient';
 import {
+  formatAcousticSnapToast,
+  snapBoundaryAcoustically
+} from '../../utils/acousticSnapClient';
+import {
   BLOCK_ALIGN_EPS,
   computeBlockSafeBounds,
   findAlignedBlock
@@ -1080,19 +1084,28 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
     };
 
     // Boundary or spine timestamp mutation
-    const updateBoundaryOrSpineTime = (targetVal: number, isZeroSnap = false): boolean => {
+    const updateBoundaryOrSpineTime = (
+      targetVal: number,
+      snapKind?: boolean | 'zero' | 'acoustic'
+    ): boolean => {
       if (isReadOnly) return false;
       if (!selection || (selection.kind !== 'boundary' && selection.kind !== 'spine')) return false;
       const val = round6(targetVal);
       if (!Number.isFinite(val) || Math.abs(val - selection.time) < 1e-9) {
         return false;
       }
-      const moveOpts = isZeroSnap
-        ? {
-            coalesce: false,
-            actionMeta: { type: 'snap-zero-crossing' as const }
-          }
-        : undefined;
+      const moveOpts =
+        snapKind === true || snapKind === 'zero'
+          ? {
+              coalesce: false,
+              actionMeta: { type: 'snap-zero-crossing' as const }
+            }
+          : snapKind === 'acoustic'
+            ? {
+                coalesce: false,
+                actionMeta: { type: 'snap-acoustic-edge' as const }
+              }
+            : undefined;
       if (selection.kind === 'boundary') {
         return moveTierBoundary(selection.tierIndex, selection.time, val, boundaryShared, {
           ...moveOpts,
@@ -1127,8 +1140,40 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
         showToast('当前位置已位于最近过零点');
         return;
       }
-      if (updateBoundaryOrSpineTime(snapped, true)) {
+      if (updateBoundaryOrSpineTime(snapped, 'zero')) {
         showToast(`已吸附至最近过零点 (${snapped.toFixed(6)} s)`);
+      }
+    };
+
+    const handleSnapBoundaryAcoustic = async () => {
+      if (isReadOnly || !selection || (selection.kind !== 'boundary' && selection.kind !== 'spine')) {
+        return;
+      }
+      if (!effectiveAudioBuffer) {
+        showToast('请先载入录音以使用声学边界吸附');
+        return;
+      }
+      try {
+        const res = await snapBoundaryAcoustically(
+          effectiveAudioBuffer,
+          audioOffset,
+          selection.time,
+          0.045
+        );
+        if (!res.found) {
+          showToast('附近未检测到明显声学边界');
+          return;
+        }
+        const snapped = round6(res.snappedTimeSec);
+        if (Math.abs(snapped - selection.time) < 1e-6) {
+          showToast('当前位置已位于最近声学边界');
+          return;
+        }
+        if (updateBoundaryOrSpineTime(snapped, 'acoustic')) {
+          showToast(formatAcousticSnapToast(selection.time, snapped));
+        }
+      } catch {
+        showToast('声学边界吸附失败', true);
       }
     };
 
@@ -1165,6 +1210,54 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
       }
     };
 
+    const handleSnapIntervalEdgeAcoustic = async (which: 'start' | 'end') => {
+      if (isReadOnly || selection?.kind !== 'interval' || !activeInterval) return;
+      if (!effectiveAudioBuffer) {
+        showToast('请先载入录音以使用声学边界吸附');
+        return;
+      }
+      const origT = which === 'start' ? activeInterval.xmin : activeInterval.xmax;
+      try {
+        const res = await snapBoundaryAcoustically(effectiveAudioBuffer, audioOffset, origT, 0.045);
+        if (!res.found) {
+          showToast('附近未检测到明显声学边界');
+          return;
+        }
+        const snapped = round6(res.snappedTimeSec);
+        if (Math.abs(snapped - origT) < 1e-6) {
+          showToast('该边界已位于最近声学边界');
+          return;
+        }
+        const ok =
+          which === 'start'
+            ? updateIntervalBoundsWithAnchor(
+                selection.tierIndex,
+                selection.itemIndex,
+                { xmin: snapped },
+                'end',
+                linkAdjacent
+              )
+            : updateIntervalBoundsWithAnchor(
+                selection.tierIndex,
+                selection.itemIndex,
+                { xmax: snapped },
+                'start',
+                linkAdjacent
+              );
+        if (ok) {
+          showToast(
+            formatAcousticSnapToast(
+              origT,
+              snapped,
+              which === 'start' ? '已将起点吸附至声学边界' : '已将终点吸附至声学边界'
+            )
+          );
+        }
+      } catch {
+        showToast('声学边界吸附失败', true);
+      }
+    };
+
     const handleSnapPointZero = async () => {
       if (isReadOnly || selection?.kind !== 'point' || !activePoint) return;
       const snapped = await resolveNearestZero(activePoint.number);
@@ -1178,6 +1271,36 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
       }
       if (movePointToTime(selection.tierIndex, selection.itemIndex, snapped, '吸附过零点')) {
         showToast(`已吸附至最近过零点 (${snapped.toFixed(6)} s)`);
+      }
+    };
+
+    const handleSnapPointAcoustic = async () => {
+      if (isReadOnly || selection?.kind !== 'point' || !activePoint) return;
+      if (!effectiveAudioBuffer) {
+        showToast('请先载入录音以使用声学边界吸附');
+        return;
+      }
+      try {
+        const res = await snapBoundaryAcoustically(
+          effectiveAudioBuffer,
+          audioOffset,
+          activePoint.number,
+          0.045
+        );
+        if (!res.found) {
+          showToast('附近未检测到明显声学边界');
+          return;
+        }
+        const snapped = round6(res.snappedTimeSec);
+        if (Math.abs(snapped - activePoint.number) < 1e-6) {
+          showToast('当前标点已位于最近声学边界');
+          return;
+        }
+        if (movePointToTime(selection.tierIndex, selection.itemIndex, snapped, '吸附声学边界')) {
+          showToast(formatAcousticSnapToast(activePoint.number, snapped));
+        }
+      } catch {
+        showToast('声学边界吸附失败', true);
       }
     };
 
@@ -2544,16 +2667,28 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
                     }
                   />
                   {hasAudioOrAnalysis && (
-                    <button
-                      type="button"
-                      className="insp-icon-btn"
-                      disabled={isReadOnly}
-                      title="起点吸附到最近过零点"
-                      aria-label="起点吸附到最近过零点"
-                      onClick={() => void handleSnapIntervalEdgeZero('start')}
-                    >
-                      <UiIcon name="zeroCross" size={12} />
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        className="insp-icon-btn"
+                        disabled={isReadOnly || !effectiveAudioBuffer}
+                        title="起点吸附到附近声学边界（AcouSeg 1.0）"
+                        aria-label="起点吸附到附近声学边界"
+                        onClick={() => void handleSnapIntervalEdgeAcoustic('start')}
+                      >
+                        <UiIcon name="nudgeBoundary" size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        className="insp-icon-btn"
+                        disabled={isReadOnly}
+                        title="起点吸附到最近过零点"
+                        aria-label="起点吸附到最近过零点"
+                        onClick={() => void handleSnapIntervalEdgeZero('start')}
+                      >
+                        <UiIcon name="zeroCross" size={12} />
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -2575,16 +2710,28 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
                     }
                   />
                   {hasAudioOrAnalysis && (
-                    <button
-                      type="button"
-                      className="insp-icon-btn"
-                      disabled={isReadOnly}
-                      title="终点吸附到最近过零点"
-                      aria-label="终点吸附到最近过零点"
-                      onClick={() => void handleSnapIntervalEdgeZero('end')}
-                    >
-                      <UiIcon name="zeroCross" size={12} />
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        className="insp-icon-btn"
+                        disabled={isReadOnly || !effectiveAudioBuffer}
+                        title="终点吸附到附近声学边界（AcouSeg 1.0）"
+                        aria-label="终点吸附到附近声学边界"
+                        onClick={() => void handleSnapIntervalEdgeAcoustic('end')}
+                      >
+                        <UiIcon name="nudgeBoundary" size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        className="insp-icon-btn"
+                        disabled={isReadOnly}
+                        title="终点吸附到最近过零点"
+                        aria-label="终点吸附到最近过零点"
+                        onClick={() => void handleSnapIntervalEdgeZero('end')}
+                      >
+                        <UiIcon name="zeroCross" size={12} />
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -3004,6 +3151,7 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
                 accentColor="#D97706"
                 disabled={isReadOnly}
                 onSnapZero={() => void handleSnapBoundaryZero()}
+                onSnapAcoustic={() => void handleSnapBoundaryAcoustic()}
               />
             </InspectorCard>
           )}
@@ -3526,11 +3674,23 @@ export const InspectorPanel = forwardRef<InspectorPanelHandle, InspectorPanelPro
                 type="button"
                 className="insp-btn is-xs"
                 style={{ flex: '1 1 0' }}
+                disabled={isReadOnly || !effectiveAudioBuffer}
+                title="吸附至附近音素或音节声学边界（AcouSeg 1.0）"
+                onClick={() => void handleSnapPointAcoustic()}
+              >
+                吸附声学边界
+              </button>
+              <button
+                type="button"
+                className="insp-btn is-xs"
+                style={{ flex: '1 1 0' }}
                 disabled={isReadOnly || (!analysis && !effectiveAudioBuffer)}
                 onClick={() => void handleSnapPointZero()}
               >
                 吸附过零点
               </button>
+            </div>
+            <div className="insp-row-wrap">
               <button
                 type="button"
                 className="insp-btn is-xs"

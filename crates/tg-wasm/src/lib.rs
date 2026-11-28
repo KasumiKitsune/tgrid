@@ -270,6 +270,67 @@ pub fn align_split_boundaries_json(samples: &[f32], params_json: &str) -> Result
         acoustic_classes: &params.acoustic_classes,
         f0_frames: params.f0_frames.as_deref(),
     };
-    let out = tg_core::align_split_boundaries(&input);
+    let use_nn = params.use_nn.unwrap_or(true);
+    let out = if use_nn {
+        tg_core::nn::align_split_boundaries_hybrid(&input, tg_core::nn::builtin_acouseg_net())
+    } else {
+        tg_core::align_split_boundaries(&input)
+    };
     serde_json::to_string(&out).map_err(to_js_err)
+}
+
+#[wasm_bindgen]
+pub fn detect_speech_segments_nn_json(
+    samples: &[f32],
+    sample_rate: u32,
+    params_json: &str,
+) -> Result<String, JsValue> {
+    let params: tg_core::nn::VadParams = if params_json.trim().is_empty() {
+        tg_core::nn::VadParams::default()
+    } else {
+        serde_json::from_str(params_json).map_err(to_js_err)?
+    };
+    let segs = tg_core::nn::detect_speech_segments_nn(
+        samples,
+        sample_rate,
+        &params,
+        tg_core::nn::builtin_acouseg_net(),
+    );
+    serde_json::to_string(&segs).map_err(to_js_err)
+}
+
+#[wasm_bindgen]
+pub fn extract_acoustic_snap_peaks_json(
+    samples: &[f32],
+    sample_rate: u32,
+    samples_origin_sec: f64,
+    xmin: f64,
+    xmax: f64,
+) -> Result<String, JsValue> {
+    let peaks = tg_core::nn::extract_acoustic_snap_peaks(
+        samples,
+        sample_rate,
+        samples_origin_sec,
+        xmin,
+        xmax,
+    );
+    serde_json::to_string(&peaks).map_err(to_js_err)
+}
+
+#[wasm_bindgen]
+pub fn snap_acoustic_boundary_json(
+    samples: &[f32],
+    sample_rate: u32,
+    samples_origin_sec: f64,
+    target_time_sec: f64,
+    window_sec: f64,
+) -> Result<String, JsValue> {
+    let res = tg_core::nn::snap_boundary_to_acoustic_edge(
+        samples,
+        sample_rate,
+        samples_origin_sec,
+        target_time_sec,
+        window_sec,
+    );
+    serde_json::to_string(&res).map_err(to_js_err)
 }

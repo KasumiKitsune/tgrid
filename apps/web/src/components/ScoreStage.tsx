@@ -9,6 +9,11 @@ import React, {
   useState
 } from 'react';
 import { getPlatformBridge, isTauriRuntime } from '../bridge/PlatformBridge';
+import type { AcousticSnapPeak } from '../bridge/types';
+import {
+  getCachedAcousticSnapPeaks,
+  prefetchAcousticSnapPeaks
+} from '../utils/acousticSnapClient';
 import {
   computeLayout,
   elasticXInBand,
@@ -579,6 +584,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const splitIntervalByDelimiter = useEditorStore((s) => s.splitIntervalByDelimiter);
     const smartSplitUseAcoustic = useEditorStore((s) => s.smartSplitUseAcoustic);
     const setSmartSplitUseAcoustic = useEditorStore((s) => s.setSmartSplitUseAcoustic);
+    const smartAcousticSnap = useEditorStore((s) => s.smartAcousticSnap);
     const mergeIntervalWith = useEditorStore((s) => s.mergeIntervalWith);
     const deleteBoundaryAt = useEditorStore((s) => s.deleteBoundaryAt);
     const deleteBoundaryAcrossAllTiers = useEditorStore((s) => s.deleteBoundaryAcrossAllTiers);
@@ -610,6 +616,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const [smartSplitBar, setSmartSplitBar] = useState<SmartSplitBarState | null>(null);
     const smartSplitRunSeqRef = useRef(0);
 
+    const stageWrapRef = useRef<HTMLDivElement>(null);
     const stageRef = useRef<HTMLElement>(null);
     const sheetRef = useRef<HTMLDivElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
@@ -1578,6 +1585,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       if (!svg) return;
       const layer = svg.querySelector('#selection-playhead-layer');
       renderInteractiveOverlay(layer, layout, {
+        tg,
+        styleDoc,
         selection,
         multiSelection,
         playRange,
@@ -1589,6 +1598,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       });
     }, [
       layout,
+      tg,
+      styleDoc,
       selection,
       multiSelection,
       playRange,
@@ -5017,6 +5028,49 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       renderHoverAt(e.clientX, e.clientY, e.shiftKey, e.altKey, e.target as Element);
     };
 
+    const beginDragAcousticSnapPeaks = (
+      band: BandLayout,
+      centerTime: number
+    ): { getPeaks: () => AcousticSnapPeak[] | null; cancel: () => void } => {
+      if (!audioBuffer || !smartAcousticSnap) {
+        return { getPeaks: () => null, cancel: () => {} };
+      }
+      const halfSpan = 2.5;
+      const winMin = Math.max(
+        audioOffset,
+        Math.min(band.startT, centerTime - halfSpan),
+        centerTime - 4.0
+      );
+      const winMax = Math.min(
+        audioOffset + audioBuffer.duration,
+        Math.max(band.endT, centerTime + halfSpan),
+        centerTime + 4.0
+      );
+      if (winMax <= winMin + 0.01) {
+        return { getPeaks: () => null, cancel: () => {} };
+      }
+      let cancelled = false;
+      let peaks: AcousticSnapPeak[] | null = getCachedAcousticSnapPeaks(
+        audioBuffer,
+        audioOffset,
+        winMin,
+        winMax
+      );
+      if (!peaks) {
+        void prefetchAcousticSnapPeaks(audioBuffer, audioOffset, winMin, winMax).then((res) => {
+          if (!cancelled && res.length > 0) {
+            peaks = res;
+          }
+        });
+      }
+      return {
+        getPeaks: () => peaks,
+        cancel: () => {
+          cancelled = true;
+        }
+      };
+    };
+
     const startBoundaryDrag = (opts: {
       band: BandLayout;
       bandIdx: number;
@@ -5052,6 +5106,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       let lastClientY = startClientY;
       let dragActive = true;
       let moveSeq = 0;
+      const acousticSnapSession = beginDragAcousticSnapPeaks(band, origTime);
 
       const updateBoundaryAt = async (clientX: number, clientY: number) => {
         const seq = ++moveSeq;
@@ -5109,7 +5164,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             showPlayhead,
             bypassAlt: altKeyDownRef.current,
             stickyTime,
-            hiddenTierIndices
+            hiddenTierIndices,
+            acousticPeaks: acousticSnapSession.getPeaks()
           });
           if (hit) {
             t = hit.t;
@@ -5199,6 +5255,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       const cleanup = (commit: boolean) => {
         if (!dragActive) return;
         dragActive = false;
+        acousticSnapSession.cancel();
         draggingRef.current = false;
         document.body.style.cursor = prevBodyCursor;
         window.removeEventListener('pointermove', onMove);
@@ -5275,6 +5332,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       let lastClientY = startClientY;
       let dragActive = true;
       let moveSeq = 0;
+      const resizeAcousticSnap = beginDragAcousticSnapPeaks(band, origEdgeT);
 
       const updateResizeAt = async (clientX: number, clientY: number) => {
         const seq = ++moveSeq;
@@ -5347,7 +5405,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             showPlayhead,
             bypassAlt: altKeyDownRef.current,
             stickyTime,
-            hiddenTierIndices
+            hiddenTierIndices,
+            acousticPeaks: resizeAcousticSnap.getPeaks()
           });
           if (hit) {
             t = hit.t;
@@ -6292,6 +6351,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         let moveSeq = 0;
         const tierMin = tg.tiers[ti].xmin;
         const tierMax = tg.tiers[ti].xmax;
+        const pointAcousticSnap = beginDragAcousticSnapPeaks(band, origPt.number);
 
         const updatePointAt = async (clientX: number, clientY: number) => {
           const seq = ++moveSeq;
@@ -6330,7 +6390,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               showPlayhead,
               bypassAlt: altKeyDownRef.current,
               stickyTime,
-              hiddenTierIndices
+              hiddenTierIndices,
+              acousticPeaks: pointAcousticSnap.getPeaks()
             });
             if (hit) {
               t = hit.t;
@@ -6418,6 +6479,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         const cleanup = (commit: boolean) => {
           if (!dragActive) return;
           dragActive = false;
+          pointAcousticSnap.cancel();
           draggingRef.current = false;
           if (moved) {
             document.body.style.cursor = prevBodyCursor;
@@ -6699,6 +6761,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
           let lastClientY = e.clientY;
           let dragActive = true;
           let moveSeq = 0;
+          const createAcousticSnap = beginDragAcousticSnapPeaks(band, startT);
 
           const updateCreateAt = async (clientX: number, clientY: number) => {
             const seq = ++moveSeq;
@@ -6747,7 +6810,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
                 showPlayhead,
                 bypassAlt: altKeyDownRef.current,
                 stickyTime: stickyEndTime,
-                hiddenTierIndices
+                hiddenTierIndices,
+                acousticPeaks: createAcousticSnap.getPeaks()
               });
               if (hit && Math.abs(hit.t - startT) > 1e-9) {
                 endT = hit.t;
@@ -8614,17 +8678,55 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       return `tier:${selection.tierIndex}`;
     }, [selection, multiAnalysis.count, multiAnalysis.envelopeXmin, multiAnalysis.envelopeXmax]);
 
-    const [floatingDragOffset, setFloatingDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+    const [floatingManualPos, setFloatingManualPos] = useState<{ left: number; top: number } | null>(null);
     const [isFloatingBarDragging, setIsFloatingBarDragging] = useState(false);
-    const floatingDragOffsetRef = useRef(floatingDragOffset);
-    floatingDragOffsetRef.current = floatingDragOffset;
+    const floatingManualPosRef = useRef(floatingManualPos);
+    floatingManualPosRef.current = floatingManualPos;
     const floatingDragCleanupRef = useRef<(() => void) | null>(null);
+    const [floatingPos, setFloatingPos] = useState<{ left: number; top: number } | null>(null);
+    const floatingPosRef = useRef(floatingPos);
+    floatingPosRef.current = floatingPos;
+    const lastFloatingAutoRef = useRef<{
+      left: number;
+      top: number;
+      dock: 'below-band' | 'above-band' | 'bottom-dock' | 'top-dock';
+      bandIndex: number;
+    } | null>(null);
 
-    // Reset temporary drag offset automatically whenever the selected object changes
+    const clampFloatingPosToStage = useCallback(
+      (rawLeft: number, rawTop: number): { left: number; top: number } => {
+        const wrapEl = stageWrapRef.current;
+        const stageEl = stageRef.current;
+        const barEl = floatingBarRef.current;
+        if (!wrapEl || !stageEl) {
+          return { left: Math.round(rawLeft), top: Math.round(rawTop) };
+        }
+        const wrapScale = getElementRectScale(wrapEl);
+        const wrapRect = wrapEl.getBoundingClientRect();
+        const stageRect = stageEl.getBoundingClientRect();
+        const barW = barEl ? barEl.offsetWidth : 480;
+        const barH = barEl ? barEl.offsetHeight : 60;
+        const stageLeft = (stageRect.left - wrapRect.left) / wrapScale + stageEl.clientLeft;
+        const stageTop = (stageRect.top - wrapRect.top) / wrapScale + stageEl.clientTop;
+        const stageRight = stageLeft + stageEl.clientWidth;
+        const stageBottom = stageTop + stageEl.clientHeight;
+        const edgePad = 6;
+        const minL = stageLeft + edgePad;
+        const maxL = Math.max(minL, stageRight - barW - edgePad);
+        const minT = stageTop + edgePad;
+        const maxT = Math.max(minT, stageBottom - barH - edgePad);
+        return {
+          left: Math.round(Math.max(minL, Math.min(maxL, rawLeft))),
+          top: Math.round(Math.max(minT, Math.min(maxT, rawTop)))
+        };
+      },
+      []
+    );
+
+    // Cancel any in-flight drag when selection changes (keep user's pinned custom position)
     useEffect(() => {
       floatingDragCleanupRef.current?.();
       floatingDragCleanupRef.current = null;
-      setFloatingDragOffset({ x: 0, y: 0 });
       setIsFloatingBarDragging(false);
     }, [floatingSelectionKey]);
 
@@ -8635,47 +8737,61 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       };
     }, []);
 
-    const handleFloatingBarDragStart = useCallback((e: React.PointerEvent<HTMLElement>) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      e.stopPropagation();
+    const handleFloatingBarDragStart = useCallback(
+      (e: React.PointerEvent<HTMLElement>) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        floatingDragCleanupRef.current?.();
+
+        const wrapEl = stageWrapRef.current;
+        const startClientX = e.clientX;
+        const startClientY = e.clientY;
+        const basePos = floatingManualPosRef.current ?? floatingPosRef.current ?? { left: 12, top: 12 };
+        const originLeft = basePos.left;
+        const originTop = basePos.top;
+        const prevCursor = document.body.style.cursor;
+        const prevSelect = document.body.style.userSelect;
+        let moved = false;
+
+        const onMove = (ev: PointerEvent) => {
+          const z = wrapEl ? getElementRectScale(wrapEl) : 1;
+          const dx = (ev.clientX - startClientX) / z;
+          const dy = (ev.clientY - startClientY) / z;
+          if (!moved) {
+            if (Math.hypot(dx, dy) < 2) return;
+            moved = true;
+            document.body.style.cursor = 'grabbing';
+            document.body.style.userSelect = 'none';
+            setIsFloatingBarDragging(true);
+          }
+          setFloatingManualPos(clampFloatingPosToStage(originLeft + dx, originTop + dy));
+        };
+
+        const finish = () => {
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', finish);
+          window.removeEventListener('pointercancel', finish);
+          document.body.style.cursor = prevCursor;
+          document.body.style.userSelect = prevSelect;
+          setIsFloatingBarDragging(false);
+          floatingDragCleanupRef.current = null;
+        };
+
+        floatingDragCleanupRef.current = finish;
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', finish);
+        window.addEventListener('pointercancel', finish);
+      },
+      [clampFloatingPosToStage]
+    );
+
+    const handleFloatingBarDragReset = useCallback(() => {
       floatingDragCleanupRef.current?.();
-
-      const sheetEl = sheetRef.current;
-      const startClientX = e.clientX;
-      const startClientY = e.clientY;
-      const originX = floatingDragOffsetRef.current.x;
-      const originY = floatingDragOffsetRef.current.y;
-      const prevCursor = document.body.style.cursor;
-      const prevSelect = document.body.style.userSelect;
-      document.body.style.cursor = 'grabbing';
-      document.body.style.userSelect = 'none';
-      setIsFloatingBarDragging(true);
-
-      const onMove = (ev: PointerEvent) => {
-        const z = sheetEl ? getElementRectScale(sheetEl) : 1;
-        const dx = (ev.clientX - startClientX) / z;
-        const dy = (ev.clientY - startClientY) / z;
-        setFloatingDragOffset({
-          x: Math.round(originX + dx),
-          y: Math.round(originY + dy)
-        });
-      };
-
-      const finish = () => {
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', finish);
-        window.removeEventListener('pointercancel', finish);
-        document.body.style.cursor = prevCursor;
-        document.body.style.userSelect = prevSelect;
-        setIsFloatingBarDragging(false);
-        floatingDragCleanupRef.current = null;
-      };
-
-      floatingDragCleanupRef.current = finish;
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', finish);
-      window.addEventListener('pointercancel', finish);
+      floatingDragCleanupRef.current = null;
+      setIsFloatingBarDragging(false);
+      lastFloatingAutoRef.current = null;
+      setFloatingManualPos(null);
     }, []);
 
     const handleOpenSplitModalFromFloating = useCallback(
@@ -8696,172 +8812,213 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       [tg]
     );
 
-    const [floatingPos, setFloatingPos] = useState<{ left: number; top: number } | null>(null);
-
     useLayoutEffect(() => {
       if (!anchorRect || !anchorBand || !selection || !hasFloatingBarContent) {
         setFloatingPos(null);
+        lastFloatingAutoRef.current = null;
         return;
       }
 
       const computePos = () => {
         const barEl = floatingBarRef.current;
+        const wrapEl = stageWrapRef.current;
         const stageEl = stageRef.current;
         const sheetEl = sheetRef.current;
-        const barW = barEl ? barEl.offsetWidth : 480;
-        const barH = barEl ? barEl.offsetHeight : 38;
-        const gap = 8;
-        const margin = 6;
+        if (!wrapEl || !stageEl || !sheetEl) return;
 
-        // Horizontal: center over selected element, clamped cleanly inside both sheet & visible stage bounds
-        let minLeft = margin;
-        let maxLeft = Math.max(margin, layout.width - barW - margin);
-        if (stageEl && sheetEl) {
-          const z = getElementRectScale(sheetEl);
-          const stageRect = stageEl.getBoundingClientRect();
-          const sheetRect = sheetEl.getBoundingClientRect();
-          const sheetOriginX = sheetRect.left + sheetEl.clientLeft * z;
-          const visLeftInSheet = (stageRect.left - sheetOriginX) / z;
-          const visRightInSheet = (stageRect.right - sheetOriginX) / z;
-          const visMin = Math.max(margin, visLeftInSheet + margin);
-          const visMax = Math.min(
-            layout.width - barW - margin,
-            visRightInSheet - barW - margin
+        const barW = barEl ? barEl.offsetWidth : 480;
+        const barH = barEl ? barEl.offsetHeight : 60;
+
+        // If user manually dragged the bar, keep it where placed while clamping inside visible stage bounds
+        if (floatingManualPosRef.current) {
+          const clampedManual = clampFloatingPosToStage(
+            floatingManualPosRef.current.left,
+            floatingManualPosRef.current.top
           );
-          if (visMin <= visMax) {
-            minLeft = visMin;
-            maxLeft = visMax;
+          if (
+            clampedManual.left !== floatingManualPosRef.current.left ||
+            clampedManual.top !== floatingManualPosRef.current.top
+          ) {
+            setFloatingManualPos(clampedManual);
           }
         }
-        const left = Math.max(minLeft, Math.min(maxLeft, anchorRect.x + anchorRect.w / 2 - barW / 2));
 
-        // Vertical: avoid own tiers, own waveform/spectrogram, and adjacent bands' waveform/tier boundaries.
-        const prevBand = anchorBand.bandIndex > 0 ? layout.bands[anchorBand.bandIndex - 1] : null;
-        const nextBand =
-          anchorBand.bandIndex + 1 < layout.bands.length
-            ? layout.bands[anchorBand.bandIndex + 1]
-            : null;
-        const compactGap = 6;
-        const belowTop = anchorBand.tiersBottomY + compactGap;
-        const aboveTop = anchorBand.linearY - barH - compactGap;
+        const wrapScale = getElementRectScale(wrapEl);
+        const sheetScale = getElementRectScale(sheetEl);
+        const wrapRect = wrapEl.getBoundingClientRect();
+        const stageRect = stageEl.getBoundingClientRect();
+        const sheetRect = sheetEl.getBoundingClientRect();
 
-        const overlapLen = (a0: number, a1: number, b0: number, b1: number) =>
-          Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+        // Visible stage client area in stageWrapEl-local CSS pixels (excludes scrollbars)
+        const stageLeft = (stageRect.left - wrapRect.left) / wrapScale + stageEl.clientLeft;
+        const stageTop = (stageRect.top - wrapRect.top) / wrapScale + stageEl.clientTop;
+        const stageVisW = stageEl.clientWidth;
+        const stageVisH = stageEl.clientHeight;
+        const stageRight = stageLeft + stageVisW;
+        const stageBottom = stageTop + stageVisH;
 
-        const rectsOverlap = (
-          ax0: number,
-          ay0: number,
-          ax1: number,
-          ay1: number,
-          bx0: number,
-          by0: number,
-          bx1: number,
-          by1: number
-        ) => overlapLen(ax0, ax1, bx0, bx1) * overlapLen(ay0, ay1, by0, by1);
+        const sidePad = 12;
+        const minLeft = stageLeft + sidePad;
+        const maxLeft = Math.max(minLeft, stageRight - barW - sidePad);
+        const safeTop = Math.max(stageTop + 10, styleBrush ? 44 : 10);
+        const smartSplitReserve = smartSplitBar ? 54 : 0;
+        const safeBottom = Math.max(safeTop + barH, stageBottom - 12 - smartSplitReserve);
 
-        let minVisTop = margin;
-        let maxVisTop = Math.max(margin, layout.height - barH - margin);
-        let visBottomInSheet = layout.height - margin;
-        if (stageEl && sheetEl) {
-          const z = getElementRectScale(sheetEl);
-          const stageRect = stageEl.getBoundingClientRect();
-          const sheetRect = sheetEl.getBoundingClientRect();
-          const sheetOriginY = sheetRect.top + sheetEl.clientTop * z;
-          const visibleTopInSheet = (stageRect.top - sheetOriginY) / z;
-          const visibleBottomInSheet = (stageRect.bottom - sheetOriginY) / z;
-          minVisTop = visibleTopInSheet + margin;
-          visBottomInSheet = visibleBottomInSheet - margin;
-          maxVisTop = Math.max(minVisTop, visBottomInSheet - barH);
+        const sheetOriginX = sheetRect.left + sheetEl.clientLeft * sheetScale;
+        const sheetOriginY = sheetRect.top + sheetEl.clientTop * sheetScale;
+        const toWrapX = (sx: number) => (sheetOriginX + sx * sheetScale - wrapRect.left) / wrapScale;
+        const toWrapY = (sy: number) => (sheetOriginY + sy * sheetScale - wrapRect.top) / wrapScale;
+
+        const selLeft = toWrapX(anchorRect.x);
+        const selRight = toWrapX(anchorRect.x + anchorRect.w);
+        const selTop = toWrapY(anchorRect.y);
+        const selBottom = toWrapY(anchorRect.y + anchorRect.h);
+        const selCenterX = (selLeft + selRight) * 0.5;
+
+        // Measure the currently edited band's vertical bounds (waveform/spectrogram/ruler + all tiers)
+        const bandTopSvg = Math.min(
+          anchorBand.linearY,
+          anchorBand.waveH > 0 ? anchorBand.waveY : anchorBand.linearY,
+          anchorBand.tiersTopY
+        );
+        const isLastBand = anchorBand.bandIndex >= layout.bands.length - 1;
+        const nextBand = !isLastBand ? layout.bands[anchorBand.bandIndex + 1] : null;
+        const hasEmbeddedLegend = Boolean(layout.legendItems && layout.legendItems.length > 0);
+        const bandBottomSvg =
+          isLastBand && hasEmbeddedLegend
+            ? Math.max(anchorBand.tiersBottomY, layout.height - Math.max(0, layout.padBottom ?? 0))
+            : anchorBand.tiersBottomY;
+
+        const bandTopWrap = toWrapY(bandTopSvg);
+        const bandBottomWrap = toWrapY(bandBottomSvg);
+
+        const clampX = (x: number) => Math.max(minLeft, Math.min(maxLeft, x));
+        const prevAuto = lastFloatingAutoRef.current;
+
+        // Strategy A1: Place directly below the currently edited band (in the inter-row gap or below the last tier)
+        // Guarantees 0% occlusion of the active band's waveform, spectrogram, time ruler, and all tiers.
+        let belowBandTop: number | null = null;
+        {
+          let candidateTop = bandBottomWrap + 8;
+          if (nextBand) {
+            const nextTopSvg = Math.min(
+              nextBand.linearY,
+              nextBand.waveH > 0 ? nextBand.waveY : nextBand.linearY,
+              nextBand.tiersTopY
+            );
+            const nextTopWrap = toWrapY(nextTopSvg);
+            const gap = nextTopWrap - bandBottomWrap;
+            if (gap >= barH + 12) {
+              candidateTop = bandBottomWrap + Math.min(14, Math.max(8, (gap - barH) * 0.45));
+            }
+          }
+          if (candidateTop >= safeTop && candidateTop + barH <= safeBottom) {
+            belowBandTop = candidateTop;
+          }
         }
 
-        const belowClearOfNext = !nextBand || belowTop + barH <= nextBand.linearY - 4;
-        const aboveClearOfPrev = !prevBand || aboveTop >= prevBand.tiersBottomY + 4;
-        const fitsBelow = belowClearOfNext && belowTop >= minVisTop && belowTop <= maxVisTop;
-        const fitsAbove = aboveClearOfPrev && aboveTop >= minVisTop && aboveTop <= maxVisTop;
+        // Strategy A2: If the active band sits near the bottom of the viewport, place directly above the active band
+        let aboveBandTop: number | null = null;
+        if (belowBandTop === null) {
+          const candidateTop = bandTopWrap - 10 - barH;
+          if (candidateTop >= safeTop && candidateTop + barH <= safeBottom) {
+            aboveBandTop = candidateTop;
+          }
+        }
 
-        let chosenLeft = left;
-        let chosenTop = belowTop;
+        let dock: 'below-band' | 'above-band' | 'bottom-dock' | 'top-dock';
+        let chosenLeft: number;
+        let chosenTop: number;
 
-        if (fitsBelow) {
-          chosenTop = belowTop;
-        } else if (fitsAbove) {
-          chosenTop = aboveTop;
+        if (belowBandTop !== null || aboveBandTop !== null) {
+          dock = belowBandTop !== null ? 'below-band' : 'above-band';
+          chosenTop = belowBandTop !== null ? belowBandTop : aboveBandTop!;
+          const idealLeft = clampX(selCenterX - barW / 2);
+          if (
+            prevAuto &&
+            prevAuto.dock === dock &&
+            prevAuto.bandIndex === anchorBand.bandIndex
+          ) {
+            const stableLeft = clampX(prevAuto.left);
+            // Anti-jitter deadzone: keep horizontal position steady while browsing nearby intervals in the same row
+            if (selCenterX >= stableLeft + 24 && selCenterX <= stableLeft + barW - 24) {
+              chosenLeft = stableLeft;
+            } else {
+              chosenLeft = idealLeft;
+            }
+          } else {
+            chosenLeft = idealLeft;
+          }
         } else {
-          // Score non-occluding fallback slots (below/above selection, beside selection, viewport edges)
-          const acousticTop = anchorBand.linearY;
-          const acousticBot =
-            anchorBand.specH > 0 ? anchorBand.anchorY + anchorBand.anchorH : anchorBand.linearY + anchorBand.linearH;
+          // Strategy B: Single band exceeds viewport height -> dock cleanly at viewport edge with selection avoidance
+          const centerLeft = clampX(stageLeft + (stageVisW - barW) / 2);
+          const bottomDockTop = Math.max(safeTop, safeBottom - barH);
+          const topDockTop = safeTop;
 
-          const scorePlacement = (candL: number, candT: number): number => {
-            const l = Math.max(minLeft, Math.min(maxLeft, candL));
-            const t = Math.max(minVisTop, Math.min(maxVisTop, candT));
-            const r = l + barW;
-            const b = t + barH;
-            let penalty = 0;
-            // Heavy penalty for overlapping the selected target itself
-            penalty +=
-              rectsOverlap(
-                l,
-                t,
-                r,
-                b,
-                anchorRect.x - 4,
-                anchorRect.y - 4,
-                anchorRect.x + anchorRect.w + 4,
-                anchorRect.y + anchorRect.h + 4
-              ) * 40;
-            // Heavy penalty for overlapping adjacent band waveforms / bands
-            if (nextBand) {
-              penalty += overlapLen(t, b, nextBand.linearY - 2, nextBand.tiersTopY) * 180;
-              penalty += overlapLen(t, b, nextBand.tiersTopY, nextBand.tiersBottomY) * 90;
-            }
-            if (prevBand) {
-              penalty += overlapLen(t, b, prevBand.linearY, prevBand.tiersBottomY + 2) * 140;
-            }
-            // High penalty for overlapping owning band's waveform / spectrogram
-            if (anchorBand.linearH > 0) {
-              penalty += overlapLen(t, b, acousticTop, acousticBot) * 120;
-            }
-            // Mild penalty for overlapping sibling tiers inside owning band
-            penalty += overlapLen(t, b, anchorBand.tiersTopY, anchorBand.tiersBottomY) * 20;
-            // Slight preference for proximity to anchor
-            penalty += Math.abs(t - (anchorRect.y + anchorRect.h / 2)) * 0.05;
-            return penalty;
-          };
+          const bottomConflicts = selBottom + 16 >= bottomDockTop && selTop <= bottomDockTop + barH + 8;
+          const topConflicts = selTop - 16 <= topDockTop + barH && selBottom >= topDockTop - 8;
 
-          const candidates: Array<{ l: number; t: number }> = [
-            { l: left, t: belowTop },
-            { l: left, t: aboveTop },
-            { l: left, t: anchorRect.y + anchorRect.h + 6 },
-            { l: left, t: anchorRect.y - barH - 6 },
-            { l: anchorRect.x + anchorRect.w + 10, t: anchorRect.y },
-            { l: anchorRect.x - barW - 10, t: anchorRect.y },
-            { l: left, t: minVisTop },
-            { l: left, t: maxVisTop }
-          ];
-          let bestScore = Infinity;
-          for (const c of candidates) {
-            const cl = Math.max(minLeft, Math.min(maxLeft, c.l));
-            const ct = Math.max(minVisTop, Math.min(maxVisTop, c.t));
-            const s = scorePlacement(cl, ct);
-            if (s < bestScore) {
-              bestScore = s;
-              chosenLeft = cl;
-              chosenTop = ct;
+          const keepTopHysteresis =
+            prevAuto?.dock === 'top-dock' && !topConflicts && selBottom + 32 >= bottomDockTop;
+
+          if (keepTopHysteresis) {
+            dock = 'top-dock';
+            chosenTop = topDockTop;
+            chosenLeft = centerLeft;
+          } else if (!bottomConflicts) {
+            dock = 'bottom-dock';
+            chosenTop = bottomDockTop;
+            chosenLeft = centerLeft;
+          } else if (!topConflicts) {
+            dock = 'top-dock';
+            chosenTop = topDockTop;
+            chosenLeft = centerLeft;
+          } else {
+            // Very short viewport where both edges overlap the selection: pick less vertical overlap & dodge X
+            const overlapLen = (a0: number, a1: number, b0: number, b1: number) =>
+              Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+            const topOv = overlapLen(topDockTop, topDockTop + barH, selTop - 8, selBottom + 8);
+            const botOv = overlapLen(bottomDockTop, bottomDockTop + barH, selTop - 8, selBottom + 8);
+            if (topOv <= botOv) {
+              dock = 'top-dock';
+              chosenTop = topDockTop;
+            } else {
+              dock = 'bottom-dock';
+              chosenTop = bottomDockTop;
+            }
+            const rightCand = clampX(selRight + 14);
+            const leftCand = clampX(selLeft - barW - 14);
+            const xOverlap = (l: number) => overlapLen(l, l + barW, selLeft - 10, selRight + 10);
+            chosenLeft = centerLeft;
+            let bestXOv = xOverlap(centerLeft);
+            for (const cand of [rightCand, leftCand]) {
+              const ov = xOverlap(cand);
+              if (ov < bestXOv) {
+                bestXOv = ov;
+                chosenLeft = cand;
+              }
             }
           }
         }
 
         const next = { left: Math.round(chosenLeft), top: Math.round(chosenTop) };
+        lastFloatingAutoRef.current = {
+          left: next.left,
+          top: next.top,
+          dock,
+          bandIndex: anchorBand.bandIndex
+        };
         setFloatingPos((prev) => (prev && prev.left === next.left && prev.top === next.top ? prev : next));
       };
 
       computePos();
       const barEl = floatingBarRef.current;
       const stageEl = stageRef.current;
+      const sheetEl = sheetRef.current;
       const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(computePos) : null;
       if (ro && barEl) ro.observe(barEl);
       if (ro && stageEl) ro.observe(stageEl);
+      if (ro && sheetEl) ro.observe(sheetEl);
       if (stageEl) stageEl.addEventListener('scroll', computePos, { passive: true });
       window.addEventListener('resize', computePos, { passive: true });
       return () => {
@@ -8884,9 +9041,14 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       layout.bands,
       layout.width,
       layout.height,
+      layout.padBottom,
       stageW,
       stageH,
-      canvasScale
+      canvasScale,
+      uiScale,
+      styleBrush,
+      smartSplitBar,
+      clampFloatingPosToStage
     ]);
 
     const showBlankQuickStart = Boolean(
@@ -8970,6 +9132,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
 
     return (
       <div
+        ref={stageWrapRef}
         className="stage-inner-wrap"
         style={{
           flex: '1 1 auto',
@@ -9138,37 +9301,6 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               </>
             )}
 
-            {/* Scheme 1: Warm Paper Architectural Double-Layer Floating Action Bar */}
-            {selection && anchorRect && anchorBand && hasFloatingBarContent && (
-              <FloatingActionBar
-                ref={floatingBarRef}
-                selection={selection}
-                multiAnalysis={multiAnalysis}
-                audioBuffer={audioBuffer}
-                visible={Boolean(floatingPos)}
-                position={
-                  floatingPos
-                    ? {
-                        left: floatingPos.left + floatingDragOffset.x,
-                        top: floatingPos.top + floatingDragOffset.y
-                      }
-                    : {
-                        left: 6 + floatingDragOffset.x,
-                        top: Math.round(anchorBand.tiersBottomY + 8) + floatingDragOffset.y
-                      }
-                }
-                isDragging={isFloatingBarDragging}
-                onDragHandlePointerDown={handleFloatingBarDragStart}
-                onStartPlayback={onStartPlayback}
-                onOpenInline={openInline}
-                onCopyText={copyText}
-                onShowScrubPreview={showScrubPreviewLine}
-                onClearScrubPreview={clearScrubPreview}
-                onRunSmartSplit={runSmartSplit}
-                onOpenSplitModal={handleOpenSplitModalFromFloating}
-              />
-            )}
-
             {/* Live Dual-Scale (±40 ms / ±150 ms) Floating Acoustic Micro-Loupe */}
             <AcousticMicroLoupe
               anchor={showMicroLoupe ? loupeAnchor : null}
@@ -9327,6 +9459,29 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             }}
           />
         </main>
+
+        {/* Non-occluding Viewport-Aware Floating Action Bar (decoupled from #sheet zoom & scroll) */}
+        {selection && anchorRect && anchorBand && hasFloatingBarContent && (
+          <FloatingActionBar
+            ref={floatingBarRef}
+            selection={selection}
+            multiAnalysis={multiAnalysis}
+            audioBuffer={audioBuffer}
+            visible={Boolean(floatingManualPos || floatingPos)}
+            position={floatingManualPos ?? floatingPos ?? { left: 12, top: 12 }}
+            isDragging={isFloatingBarDragging}
+            isPinned={Boolean(floatingManualPos)}
+            onDragHandlePointerDown={handleFloatingBarDragStart}
+            onDragHandleDoubleClick={handleFloatingBarDragReset}
+            onStartPlayback={onStartPlayback}
+            onOpenInline={openInline}
+            onCopyText={copyText}
+            onShowScrubPreview={showScrubPreviewLine}
+            onClearScrubPreview={clearScrubPreview}
+            onRunSmartSplit={runSmartSplit}
+            onOpenSplitModal={handleOpenSplitModalFromFloating}
+          />
+        )}
 
         {/* Non-focus-stealing post-split floating bar for quick granularity switch / equal fallback */}
         {smartSplitBar && (

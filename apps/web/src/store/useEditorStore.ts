@@ -124,6 +124,7 @@ import type {
 } from '../style/types';
 
 export type IpaInputMode = 'off' | 'yunlong' | 'praat';
+export type AcousticEngineMode = 'neural' | 'classic';
 export type SidebarTab = 'inspector' | 'style' | 'tiers' | 'history' | 'settings' | 'customize';
 export type PreferencesSection = 'editing' | 'general' | 'floating' | 'shortcuts';
 export type EditInspectorMode = 'sidebar' | 'floating';
@@ -173,6 +174,7 @@ export const FLOATING_BAR_CATALOG: Record<FloatingBarTarget, FloatingBarItemMeta
     { id: 'ml-zoom', label: '放大查看范围', previewLabel: '放大', compactLabel: '放大', defaultVisible: false }
   ],
   boundary: [
+    { id: 'bnd-acoustic', label: '吸附声学边界', previewLabel: '声学边界', compactLabel: '声学', defaultVisible: true },
     { id: 'bnd-zero', label: '吸附过零点', previewLabel: '吸附过零', compactLabel: '过零', defaultVisible: true },
     { id: 'bnd-link', label: '仅本层 / 联动对齐层', previewLabel: '仅本层 | 联动对齐层', compactLabel: '本层 | 联动', defaultVisible: true },
     { id: 'bnd-audition', label: '跨界试听 (±200ms)', previewLabel: '试听 ±200ms', compactLabel: '试听', defaultVisible: true },
@@ -182,7 +184,7 @@ export const FLOATING_BAR_CATALOG: Record<FloatingBarTarget, FloatingBarItemMeta
   ],
   point: [
     { id: 'pt-edit', label: '改字', previewLabel: '改字', compactLabel: '改字', defaultVisible: true },
-    { id: 'pt-align', label: '对齐吸附（过零 / 边界 / 中点）', previewLabel: '对齐吸附', compactLabel: '吸附', defaultVisible: true },
+    { id: 'pt-align', label: '对齐吸附（声学 / 过零 / 边界 / 中点）', previewLabel: '对齐吸附', compactLabel: '吸附', defaultVisible: true },
     { id: 'pt-play-ctx', label: '前后试听 (±250ms)', previewLabel: '试听 ±250ms', compactLabel: '试听', defaultVisible: true },
     { id: 'pt-nudge', label: '微调时刻 (±5ms)', previewLabel: '±5ms', compactLabel: '±5ms', defaultVisible: true },
     { id: 'pt-delete', label: '删除标点', previewLabel: '删除', compactLabel: '删除', defaultVisible: true },
@@ -765,6 +767,8 @@ export interface EditorState {
   autoSwitchContextualRibbon: boolean;
   restoreSessionOnStartup: boolean;
   smartSplitUseAcoustic: boolean;
+  acousticEngineMode: AcousticEngineMode;
+  smartAcousticSnap: boolean;
   corpusAutoSave: boolean;
 
   // Office-Style Right Sidebar & Edit Inspector Preferences
@@ -963,6 +967,8 @@ export interface EditorState {
   setAutoSwitchContextualRibbon: (v: boolean) => void;
   setRestoreSessionOnStartup: (enabled: boolean) => void;
   setSmartSplitUseAcoustic: (enabled: boolean) => void;
+  setAcousticEngineMode: (mode: AcousticEngineMode) => void;
+  setSmartAcousticSnap: (enabled: boolean) => void;
   setCorpusAutoSave: (enabled: boolean) => void;
   setFloatingBarDensity: (density: FloatingBarDensity) => void;
   setSidebarOpen: (open: boolean) => void;
@@ -1544,6 +1550,8 @@ function saveRibbonCollapsed(collapsed: boolean): void {
 const RESTORE_SESSION_STORAGE_KEY = 'tg_restore_session_v1';
 const HAS_OPENED_STORAGE_KEY = 'tg_has_opened_v1';
 const SMART_SPLIT_ACOUSTIC_STORAGE_KEY = 'tg_smart_split_acoustic_v1';
+const ACOUSTIC_ENGINE_MODE_STORAGE_KEY = 'tg_acoustic_engine_mode_v1';
+const SMART_ACOUSTIC_SNAP_STORAGE_KEY = 'tg_smart_acoustic_snap_v1';
 const AUTO_SWITCH_CTX_RIBBON_STORAGE_KEY = 'tg_auto_ctx_ribbon_v1';
 const CORPUS_AUTO_SAVE_STORAGE_KEY = 'tg_corpus_auto_save_v1';
 const FLOATING_BAR_DENSITY_STORAGE_KEY = 'tg_floating_bar_density_v1';
@@ -1627,6 +1635,40 @@ function loadSmartSplitUseAcoustic(): boolean {
 function saveSmartSplitUseAcoustic(enabled: boolean): void {
   try {
     localStorage.setItem(SMART_SPLIT_ACOUSTIC_STORAGE_KEY, enabled ? '1' : '0');
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function loadAcousticEngineMode(): AcousticEngineMode {
+  try {
+    const raw = localStorage.getItem(ACOUSTIC_ENGINE_MODE_STORAGE_KEY);
+    if (raw === 'classic' || raw === 'neural') return raw;
+  } catch {
+    // ignore storage errors
+  }
+  return 'neural';
+}
+
+function saveAcousticEngineMode(mode: AcousticEngineMode): void {
+  try {
+    localStorage.setItem(ACOUSTIC_ENGINE_MODE_STORAGE_KEY, mode);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function loadSmartAcousticSnap(): boolean {
+  try {
+    return localStorage.getItem(SMART_ACOUSTIC_SNAP_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function saveSmartAcousticSnap(enabled: boolean): void {
+  try {
+    localStorage.setItem(SMART_ACOUSTIC_SNAP_STORAGE_KEY, enabled ? '1' : '0');
   } catch {
     // ignore storage errors
   }
@@ -1861,6 +1903,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   autoSwitchContextualRibbon: loadAutoSwitchContextualRibbon(),
   restoreSessionOnStartup: loadRestoreSessionOnStartup(),
   smartSplitUseAcoustic: loadSmartSplitUseAcoustic(),
+  acousticEngineMode: loadAcousticEngineMode(),
+  smartAcousticSnap: loadSmartAcousticSnap(),
   corpusAutoSave: loadCorpusAutoSave(),
 
   sidebarOpen: initialSidebarPrefs.sidebarOpen,
@@ -3626,6 +3670,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     saveSmartSplitUseAcoustic(smartSplitUseAcoustic);
     set({ smartSplitUseAcoustic });
   },
+  setAcousticEngineMode: (acousticEngineMode) => {
+    saveAcousticEngineMode(acousticEngineMode);
+    set({ acousticEngineMode });
+  },
+  setSmartAcousticSnap: (smartAcousticSnap) => {
+    saveSmartAcousticSnap(smartAcousticSnap);
+    set({ smartAcousticSnap });
+  },
   setCorpusAutoSave: (corpusAutoSave) => {
     saveCorpusAutoSave(corpusAutoSave);
     set({ corpusAutoSave });
@@ -4115,10 +4167,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       },
       undefined,
       {
-        type: isZeroSnap ? 'snap-zero-crossing' : 'move-point',
+        type: isZeroSnap
+          ? 'snap-zero-crossing'
+          : label?.includes('声学边界')
+            ? 'snap-acoustic-edge'
+            : 'move-point',
         title: label || '移动标注点',
         detail: `${tierName} · ${formatTimeSec(oldT)} → ${formatTimeSec(clampedT)} (${formatDeltaTime(clampedT - oldT)})`,
-        icon: isZeroSnap ? 'zeroCross' : 'nudgeFine',
+        icon: isZeroSnap ? 'zeroCross' : label?.includes('声学边界') ? 'nudgeBoundary' : 'nudgeFine',
         tierName,
         focusTime: clampedT,
         coalesce: label
@@ -5639,6 +5695,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const bndKey = leftIdx >= 0 ? `L${leftIdx}` : `R${rightIdx}`;
     const tierName = formatTierLabel(tier.name, tierIndex);
     const isZeroSnap = opts?.actionMeta?.type === 'snap-zero-crossing';
+    const isAcousticSnap = opts?.actionMeta?.type === 'snap-acoustic-edge';
 
     const meta: HistoryActionMeta = isZeroSnap
       ? {
@@ -5649,7 +5706,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           tierName,
           focusTime: newT
         }
-      : {
+      : isAcousticSnap
+        ? {
+            type: 'snap-acoustic-edge',
+            title: '吸附声学边界',
+            detail: `${tierName} · ${formatTimeSec(oldT)} → ${formatTimeSec(newT)} (${formatDeltaTime(newT - oldT)})`,
+            icon: 'nudgeBoundary',
+            tierName,
+            focusTime: newT
+          }
+        : {
           type: 'move-boundary',
           title: isOuterStart || isOuterEnd ? '收缩外端边界' : '移动边界',
           detail: `${tierName} · ${formatTimeSec(oldT)} → ${formatTimeSec(newT)} (${formatDeltaTime(newT - oldT)})`,
@@ -5750,6 +5816,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
 
     const isZeroSnap = opts?.actionMeta?.type === 'snap-zero-crossing';
+    const isAcousticSnap = opts?.actionMeta?.type === 'snap-acoustic-edge';
     const meta: HistoryActionMeta = isZeroSnap
       ? {
           type: 'snap-zero-crossing',
@@ -5758,7 +5825,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           icon: 'zeroCross',
           focusTime: newT
         }
-      : {
+      : isAcousticSnap
+        ? {
+            type: 'snap-acoustic-edge',
+            title: '吸附声学边界',
+            detail: `跨层对齐 · ${formatTimeSec(oldT)} → ${formatTimeSec(newT)} (${formatDeltaTime(newT - oldT)})`,
+            icon: 'nudgeBoundary',
+            focusTime: newT
+          }
+        : {
           type: 'move-shared-boundary',
           title: isGlobalOuterStart || isGlobalOuterEnd ? '跨层收缩外端边界' : '跨层移动边界',
           detail: `对齐时刻 · ${formatTimeSec(oldT)} → ${formatTimeSec(newT)} (${formatDeltaTime(newT - oldT)})`,

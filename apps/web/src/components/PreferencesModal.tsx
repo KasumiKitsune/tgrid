@@ -33,6 +33,7 @@ interface SearchableCardDef {
   id:
     | 'edit-mode'
     | 'edit-toggles'
+    | 'acoustic-assist'
     | 'history-limit'
     | 'ui-scale'
     | 'general-toggles'
@@ -53,6 +54,11 @@ const SEARCHABLE_CARDS: SearchableCardDef[] = [
     id: 'edit-toggles',
     section: 'editing',
     keywords: '点选 自动展开 属性栏 拖拽 边界 标点 声学 放大镜 局部 波形 语谱 交互 顶部 工具页签 选项卡 自动切换 选中 对象'
+  },
+  {
+    id: 'acoustic-assist',
+    section: 'editing',
+    keywords: '声学 边界 辅助 引擎 模型 AcouSeg 传统 规则 算法 智能 切分 词表 自动切词 拖拽 吸附 音素 音节 Alt'
   },
   {
     id: 'history-limit',
@@ -118,6 +124,10 @@ export const PreferencesModal: React.FC = () => {
   const setShowMicroLoupe = useEditorStore((s) => s.setShowMicroLoupe);
   const autoSwitchContextualRibbon = useEditorStore((s) => s.autoSwitchContextualRibbon);
   const setAutoSwitchContextualRibbon = useEditorStore((s) => s.setAutoSwitchContextualRibbon);
+  const acousticEngineMode = useEditorStore((s) => s.acousticEngineMode);
+  const setAcousticEngineMode = useEditorStore((s) => s.setAcousticEngineMode);
+  const smartAcousticSnap = useEditorStore((s) => s.smartAcousticSnap);
+  const setSmartAcousticSnap = useEditorStore((s) => s.setSmartAcousticSnap);
 
   const historyLimit = useEditorStore((s) => s.historyLimit);
   const setHistoryLimit = useEditorStore((s) => s.setHistoryLimit);
@@ -160,10 +170,8 @@ export const PreferencesModal: React.FC = () => {
   }, [historyLimit]);
 
   useEffect(() => {
-    if (!preferencesOpen) {
-      setSearchQuery('');
-      return;
-    }
+    if (!preferencesOpen) return;
+    setSearchQuery('');
     void refreshRecoveryStats();
   }, [preferencesOpen, refreshRecoveryStats]);
 
@@ -283,6 +291,75 @@ export const PreferencesModal: React.FC = () => {
           />
           <span className="pvc-toggle-sub">
             编辑模式下点击区间、边界或标点时自动切入顶部对应操作页签，取消选中后回到原页签
+          </span>
+        </div>
+      </div>
+    </section>
+  );
+
+  const renderAcousticAssistCard = (searchHit = false) => (
+    <section
+      key="acoustic-assist"
+      className={`prefs-card ${searchHit ? 'is-search-hit' : ''}`}
+      aria-label="声学边界辅助（AcouSeg 1.0）"
+    >
+      <div className="prefs-card-hd">
+        <span className="prefs-card-title">
+          <span>声学边界辅助（AcouSeg 1.0）</span>
+          <QTip
+            align="right"
+            tip="用于智能切分、词表自动切词与一键声学边界吸附；不干预基频与共振峰测量，可随时切回传统规则。"
+          />
+        </span>
+        <span className="prefs-card-meta">
+          {acousticEngineMode === 'neural' ? 'AcouSeg 1.0' : '传统规则算法'}
+        </span>
+      </div>
+
+      <div className="pvc-toggle-card is-on">
+        <div className="pvc-toggle-foot">
+          <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)' }}>
+            声学辅助引擎
+          </span>
+          <div
+            className="pref-seg"
+            style={{ width: '100%', marginTop: 6 }}
+            role="group"
+            aria-label="声学辅助引擎"
+          >
+            <button
+              type="button"
+              className={acousticEngineMode === 'neural' ? 'is-active' : ''}
+              onClick={() => setAcousticEngineMode('neural')}
+            >
+              声学边界模型（AcouSeg 1.0）
+            </button>
+            <button
+              type="button"
+              className={acousticEngineMode === 'classic' ? 'is-active' : ''}
+              onClick={() => setAcousticEngineMode('classic')}
+            >
+              传统规则算法
+            </button>
+          </div>
+          <span className="pvc-toggle-sub">
+            切换智能切分与词表自动切词使用的边界定位引擎，传统规则适合纯能量与谱变化参考
+          </span>
+        </div>
+      </div>
+
+      <div
+        className={`pvc-toggle-card ${smartAcousticSnap ? 'is-on' : ''}`}
+        style={{ marginTop: 10 }}
+      >
+        <div className="pvc-toggle-foot">
+          <ToggleSwitch
+            label="拖拽边界智能声学吸附"
+            checked={smartAcousticSnap}
+            onChange={setSmartAcousticSnap}
+          />
+          <span className="pvc-toggle-sub">
+            默认关闭；开启后载入录音时拖动边界自动吸附至附近音素或音节边界（按住 Alt 可临时跳过）
           </span>
         </div>
       </div>
@@ -460,6 +537,8 @@ export const PreferencesModal: React.FC = () => {
         return renderEditModeCard(true);
       case 'edit-toggles':
         return renderEditTogglesCard(true);
+      case 'acoustic-assist':
+        return renderAcousticAssistCard(true);
       case 'history-limit':
         return renderHistoryLimitCard(true);
       case 'ui-scale':
@@ -652,6 +731,7 @@ export const PreferencesModal: React.FC = () => {
                   <>
                     {renderEditModeCard()}
                     {renderEditTogglesCard()}
+                    {renderAcousticAssistCard()}
                     {renderHistoryLimitCard()}
                   </>
                 )}

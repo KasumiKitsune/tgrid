@@ -44,6 +44,8 @@ pub struct AcousticSplitParams {
     pub acoustic_classes: Vec<AcousticClass>,
     #[serde(default)]
     pub f0_frames: Option<Vec<F0Frame>>,
+    #[serde(default)]
+    pub use_nn: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -1342,6 +1344,328 @@ pub fn align_split_boundaries(input: &AcousticSplitInput<'_>) -> AcousticSplitOu
         fallback_to_equal: false,
         speech_span,
     }
+}
+
+/// Native 5ms-hop, 15ms-short-window physical DSP boundary curves for Branch B (OnsetRime / Phone).
+/// Reused by `nn::hybrid::align_split_boundaries_hybrid` so 5ms neural phone boundary peaks fuse
+/// with crisp 5ms DSP acoustic transitions rather than 10ms/25ms interpolated features.
+pub(crate) fn compute_native_5ms_branch_b_dsp(
+    input: &AcousticSplitInput<'_>,
+    frame_times: &[f64],
+    dt: f64,
+    n_vs: usize,
+    n_ve: usize,
+    classes: &[AcousticClass],
+) -> Vec<Vec<f64>> {
+    let k = classes.len();
+    let m_frames = frame_times.len();
+    if k <= 1 || m_frames == 0 || input.samples.is_empty() || input.sample_rate < 4000 {
+        return vec![vec![0.0; m_frames]; k.saturating_sub(1)];
+    }
+
+    let fs = input.sample_rate as f64;
+    let dc_start = (((input.xmin - 0.015 - input.samples_origin_sec) * fs).floor() as isize).max(0)
+        as usize;
+    let dc_end = (((input.xmax + 0.015 - input.samples_origin_sec) * fs).ceil() as isize)
+        .clamp(0, input.samples.len() as isize) as usize;
+    let dc_mean: f32 = if dc_start < dc_end {
+        let mut acc = 0.0f64;
+        let mut cnt = 0usize;
+        for &s in &input.samples[dc_start..dc_end] {
+            if s.is_finite() {
+                acc += s as f64;
+                cnt += 1;
+            }
+        }
+        if cnt > 0 {
+            (acc / cnt as f64) as f32
+        } else {
+            0.0
+        }
+    } else {
+        0.0
+    };
+
+    // 15ms short Hann window for sharp 5ms-resolution phone transitions
+    let lw = ((0.015 * fs).round() as usize).max(64);
+    let n_fft = lw.next_power_of_two().max(256);
+    let half_fft = n_fft / 2;
+
+    let mut hann = vec![0.0f32; lw];
+    let mut s_h = 0.0f64;
+    for (j, h) in hann.iter_mut().enumerate() {
+        let val = 0.5 * (1.0 - (TAU * (j as f64) / ((lw - 1) as f64)).cos());
+        *h = val as f32;
+        s_h += val * val;
+    }
+    let power_norm = 1.0 / ((n_fft as f64) * s_h);
+
+    let df = fs / (n_fft as f64);
+    let f_top = (8000.0_f64).min(0.475 * fs);
+    let f_mid_hi = if input.sample_rate < 10_000 {
+        2200.0
+    } else {
+        3000.0
+    };
+
+    let mel_bank = build_preemph_mel_bank(n_fft, fs, 80.0, f_top);
+    let mut low_bins = Vec::new();
+    let mut mid_bins = Vec::new();
+    let mut high_bins = Vec::new();
+    let mut tot_bins = Vec::new();
+    for k_bin in 0..=half_fft {
+        let f = (k_bin as f64) * df;
+        if f >= 80.0 && f <= f_top {
+            tot_bins.push(k_bin);
+            if f < 400.0 {
+                low_bins.push(k_bin);
+            } else if f < f_mid_hi {
+                mid_bins.push(k_bin);
+            } else {
+                high_bins.push(k_bin);
+            }
+        }
+    }
+
+    let mut e_low = vec![-100.0f64; m_frames];
+    let mut e_mid = vec![-100.0f64; m_frames];
+    let mut e_high = vec![-100.0f64; m_frames];
+    let mut e_tot = vec![-100.0f64; m_frames];
+    let mut e_act = vec![-100.0f64; m_frames];
+    let mut mel_db = vec![[-100.0f64; 20]; m_frames];
+
+    let mut fft_re = vec![0.0f32; n_fft];
+    let mut fft_im = vec![0.0f32; n_fft];
+    let mut p_even = vec![0.0f64; half_fft + 1];
+    let mut p_odd = vec![0.0f64; half_fft + 1];
+
+    let sample_at = |idx: isize| -> f32 {
+        if idx >= 0 && (idx as usize) < input.samples.len() {
+            let v = input.samples[idx as usize];
+            if v.is_finite() {
+                v - dc_mean
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        }
+    };
+
+    let mut pair_start = 0usize;
+    while pair_start < m_frames {
+        let has_odd = pair_start + 1 < m_frames;
+        fft_re.fill(0.0);
+        fft_im.fill(0.0);
+
+        let c0 = ((frame_times[pair_start] - input.samples_origin_sec) * fs).round() as isize;
+        let s0 = c0 - (lw as isize) / 2;
+        for j in 0..lw {
+            fft_re[j] = sample_at(s0 + j as isize) * hann[j];
+        }
+
+        if has_odd {
+            let c1 =
+                ((frame_times[pair_start + 1] - input.samples_origin_sec) * fs).round() as isize;
+            let s1 = c1 - (lw as isize) / 2;
+            for j in 0..lw {
+                fft_im[j] = sample_at(s1 + j as isize) * hann[j];
+            }
+        }
+
+        fft_radix2_inplace(&mut fft_re, &mut fft_im);
+
+        p_even[0] = (fft_re[0] as f64).powi(2) * power_norm;
+        p_odd[0] = (fft_im[0] as f64).powi(2) * power_norm;
+        p_even[half_fft] = (fft_re[half_fft] as f64).powi(2) * power_norm;
+        p_odd[half_fft] = (fft_im[half_fft] as f64).powi(2) * power_norm;
+
+        for kb in 1..half_fft {
+            let kp = n_fft - kb;
+            let rk = fft_re[kb] as f64;
+            let ik = fft_im[kb] as f64;
+            let rkp = fft_re[kp] as f64;
+            let ikp = fft_im[kp] as f64;
+            let a0 = rk + rkp;
+            let b0 = ik - ikp;
+            p_even[kb] = 0.5 * (a0 * a0 + b0 * b0) * power_norm;
+            if has_odd {
+                let a1 = ik + ikp;
+                let b1 = rk - rkp;
+                p_odd[kb] = 0.5 * (a1 * a1 + b1 * b1) * power_norm;
+            }
+        }
+
+        let mut store_frame = |m_idx: usize, spec: &[f64]| {
+            let sum_bins = |bins: &[usize]| -> f64 {
+                let mut s = 0.0f64;
+                for &b in bins {
+                    s += spec[b];
+                }
+                10.0 * (s + 1e-10).log10()
+            };
+            let el = sum_bins(&low_bins);
+            let em = sum_bins(&mid_bins);
+            let eh = sum_bins(&high_bins);
+            let et = sum_bins(&tot_bins);
+            e_low[m_idx] = el;
+            e_mid[m_idx] = em;
+            e_high[m_idx] = eh;
+            e_tot[m_idx] = et;
+            e_act[m_idx] = et.max(eh + 6.0);
+            for (b_idx, weights) in mel_bank.iter().enumerate() {
+                let mut ms = 0.0f64;
+                for &(bin, w) in weights {
+                    ms += w * spec[bin];
+                }
+                mel_db[m_idx][b_idx] = 10.0 * (ms + 1e-10).log10();
+            }
+        };
+
+        store_frame(pair_start, &p_even);
+        if has_odd {
+            store_frame(pair_start + 1, &p_odd);
+        }
+        pair_start += 2;
+    }
+
+    let e_peak_act = percentile(&e_act, 0.95);
+    let e_floor = percentile(&e_tot, 0.05);
+    let d_act = e_peak_act - e_floor;
+    let l_clamp = if d_act >= 12.0 {
+        (e_floor - 3.0).max(e_peak_act - 50.0)
+    } else {
+        e_peak_act - 50.0
+    };
+    let l_clamp_mel = if d_act >= 12.0 {
+        (e_floor - 15.0).max(e_peak_act - 55.0)
+    } else {
+        e_peak_act - 55.0
+    };
+
+    let e_low_c: Vec<f64> = e_low.iter().map(|&v| v.max(l_clamp)).collect();
+    let e_mid_c: Vec<f64> = e_mid.iter().map(|&v| v.max(l_clamp)).collect();
+    let e_high_c: Vec<f64> = e_high.iter().map(|&v| v.max(l_clamp)).collect();
+    let h_tilt: Vec<f64> = (0..m_frames).map(|m| e_high_c[m] - e_low_c[m]).collect();
+
+    for frame in &mut mel_db {
+        for v in frame.iter_mut() {
+            if *v < l_clamp_mel {
+                *v = l_clamp_mel;
+            }
+        }
+    }
+
+    let half_i = ((0.015 / dt).round() as isize).max(2);
+    let d_norm: f64 = (1..=half_i).map(|i| 2.0 * ((i * i) as f64)).sum();
+    let mut stm = vec![0.0f64; m_frames];
+    for m in 0..m_frames {
+        let mut sq_sum = 0.0f64;
+        for b in 0..20 {
+            let mut num = 0.0f64;
+            for i in -half_i..=half_i {
+                let idx = (m as isize + i).clamp(0, (m_frames - 1) as isize) as usize;
+                num += (i as f64) * mel_db[idx][b];
+            }
+            let slope = num / d_norm;
+            sq_sum += slope * slope;
+        }
+        stm[m] = (sq_sum / 20.0).sqrt();
+    }
+
+    let vs = n_vs.min(m_frames - 1);
+    let ve = n_ve.min(m_frames - 1).max(vs);
+    let stm_p20 = percentile(&stm[vs..=ve], 0.20);
+    let stm_p95 = percentile(&stm[vs..=ve], 0.95);
+    let stm_denom = (stm_p95 - stm_p20).max(1.5);
+    let stm_hat: Vec<f64> = stm
+        .iter()
+        .map(|&v| ((v - stm_p20) / stm_denom).clamp(0.0, 1.0))
+        .collect();
+
+    let voicing = compute_voicing(
+        input.samples,
+        dc_mean,
+        input.samples_origin_sec,
+        fs,
+        frame_times,
+        &e_tot,
+        e_floor,
+        d_act,
+        input.f0_frames,
+    );
+    let theta_sil = if d_act >= 12.0 {
+        (e_floor + 5.0).max(e_peak_act - 28.0)
+    } else {
+        e_peak_act - 28.0
+    };
+    let delta_d = ((0.010 / dt).round() as usize).max(1);
+
+    let mut out = Vec::with_capacity(k - 1);
+    for cut_idx in 0..(k - 1) {
+        let c_l = classes[cut_idx];
+        let c_r = classes[cut_idx + 1];
+        let mut b_curve = vec![0.0f64; m_frames];
+
+        for m in 0..m_frames {
+            let mut eta = 1.0f64;
+            let phi = match (c_l, c_r) {
+                (
+                    AcousticClass::VoicelessObs,
+                    AcousticClass::Vowel | AcousticClass::NasalLiquid,
+                ) => {
+                    let m_ahead = (m + delta_d + 1).min(m_frames - 1);
+                    if voicing[m_ahead] < 0.25 && h_tilt[m_ahead] > -2.0 {
+                        eta = 0.25;
+                    }
+                    let dv = dir_diff(&voicing, m, delta_d).clamp(0.0, 1.0);
+                    let d_low = (dir_diff(&e_low_c, m, delta_d) / 18.0).clamp(0.0, 1.0);
+                    let d_tilt = (-dir_diff(&h_tilt, m, delta_d) / 20.0).clamp(0.0, 1.0);
+                    0.45 * dv.max(d_low) + 0.15 * d_tilt
+                }
+                (
+                    AcousticClass::Vowel | AcousticClass::NasalLiquid,
+                    AcousticClass::VoicelessObs,
+                ) => {
+                    let dv = (-dir_diff(&voicing, m, delta_d)).clamp(0.0, 1.0);
+                    let d_low = (-dir_diff(&e_low_c, m, delta_d) / 18.0).clamp(0.0, 1.0);
+                    let d_high = (dir_diff(&e_high_c, m, delta_d) / 15.0).clamp(0.0, 1.0);
+                    0.35 * dv.max(d_low) + 0.15 * d_high
+                }
+                (AcousticClass::Vowel, AcousticClass::NasalLiquid) => {
+                    let m_next = (m + delta_d).min(m_frames - 1);
+                    if e_low_c[m_next] > theta_sil + 8.0 {
+                        0.40 * (-dir_diff(&e_mid_c, m, delta_d) / 10.0).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    }
+                }
+                (AcousticClass::NasalLiquid, AcousticClass::Vowel) => {
+                    let m_prev = m.saturating_sub(delta_d);
+                    if e_low_c[m_prev] > theta_sil + 8.0 {
+                        0.40 * (dir_diff(&e_mid_c, m, delta_d) / 10.0).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    }
+                }
+                (
+                    AcousticClass::VoicedObs,
+                    AcousticClass::Vowel | AcousticClass::NasalLiquid,
+                ) => {
+                    let d_mid = (dir_diff(&e_mid_c, m, delta_d) / 12.0).clamp(0.0, 1.0);
+                    let d_high = (-dir_diff(&e_high_c, m, delta_d) / 12.0).clamp(0.0, 1.0);
+                    0.35 * d_mid + 0.10 * d_high
+                }
+                (AcousticClass::Vowel, AcousticClass::VoicedObs) => {
+                    0.35 * (-dir_diff(&e_mid_c, m, delta_d) / 12.0).clamp(0.0, 1.0)
+                }
+                _ => 0.25 * stm_hat[m] * voicing[m],
+            };
+            b_curve[m] = (0.55 * stm_hat[m] * eta + phi).clamp(0.0, 1.0);
+        }
+        out.push(b_curve);
+    }
+    out
 }
 
 #[cfg(test)]

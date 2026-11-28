@@ -9,6 +9,7 @@ import {
   CorpusSidebarToggleIcon,
   CorpusStatusIcon
 } from '../corpus/corpusIcons';
+import { getCorpusUnsavedSummary } from '../corpus/draftManager';
 import type { CorpusItemStatus, CorpusProjectState } from '../corpus/types';
 import { formatKeyCombo } from '../shortcuts/registry';
 import { UiIcon } from './Icons';
@@ -35,6 +36,12 @@ export interface CorpusNavBarProps {
   currentIndex?: number;
   /** 当前导航序列总条数，未提供时按全量列表计算 */
   totalCount?: number;
+  /** 当前筛选条件命中的词条数 */
+  filteredCount?: number;
+  /** 是否存在激活的筛选或搜索条件 */
+  hasActiveFilter?: boolean;
+  /** 当前打开词条是否不在当前筛选结果内（且筛选结果非空） */
+  isOutsideFilter?: boolean;
   /** 是否可切换至上一条 / 下一条 */
   canPrev?: boolean;
   canNext?: boolean;
@@ -85,6 +92,9 @@ export const CorpusNavBar: React.FC<CorpusNavBarProps> = ({
   showStatusMarks = true,
   currentIndex,
   totalCount,
+  filteredCount,
+  hasActiveFilter = false,
+  isOutsideFilter = false,
   canPrev,
   canNext,
   onToggleSidebar,
@@ -107,6 +117,11 @@ export const CorpusNavBar: React.FC<CorpusNavBarProps> = ({
 
   const resolvedIndex = currentIndex !== undefined ? currentIndex : fallbackIndex;
   const resolvedTotal = totalCount !== undefined ? totalCount : corpus.items.length;
+  const resolvedFilteredCount = filteredCount !== undefined ? filteredCount : resolvedTotal;
+  const isFilterEmpty = hasActiveFilter && resolvedFilteredCount === 0;
+  const resolvedOutsideFilter = Boolean(
+    isOutsideFilter || (hasActiveFilter && resolvedFilteredCount > 0 && resolvedIndex === -1)
+  );
   const resolvedCanPrev =
     canPrev !== undefined ? canPrev : resolvedIndex > 0 && resolvedTotal > 0;
   const resolvedCanNext =
@@ -115,27 +130,33 @@ export const CorpusNavBar: React.FC<CorpusNavBarProps> = ({
       : resolvedTotal > 0 && (resolvedIndex === -1 || resolvedIndex < resolvedTotal - 1);
 
   const displayName = activeItem ? activeItem.label || activeItem.id : '未选择词条';
-  const positionText =
-    resolvedIndex >= 0 && resolvedTotal > 0
-      ? `${resolvedIndex + 1} / ${resolvedTotal}`
-      : `0 / ${resolvedTotal}`;
+  const positionText = isFilterEmpty
+    ? '筛选 0 条'
+    : resolvedOutsideFilter
+      ? `筛选外 · 共 ${resolvedFilteredCount} 条`
+      : resolvedIndex >= 0 && resolvedTotal > 0
+        ? `${resolvedIndex + 1} / ${resolvedTotal}`
+        : `0 / ${resolvedTotal}`;
+  const positionTitle = isFilterEmpty
+    ? '当前筛选条件没有匹配的词条'
+    : resolvedOutsideFilter
+      ? `当前打开的词条不在当前筛选结果中（筛选共 ${resolvedFilteredCount} 条），点击「跳至首条」或「下一条」可进入筛选第 1 条`
+      : activeItem
+        ? `${positionText}  ${displayName} (${activeItem.audioRelPath})`
+        : positionText;
 
-  const corpusExt = corpus as CorpusProjectState & {
-    unsavedItemIds?: string[];
-    projectIndexDirty?: boolean;
-  };
-  const resolvedUnsavedIds = unsavedItemIds ?? corpusExt.unsavedItemIds ?? [];
-  const resolvedIndexDirty = projectIndexDirty || Boolean(corpusExt.projectIndexDirty);
-  const activeId = corpus.activeItemId;
-  const isCurrentUnsaved = Boolean(
-    isDirty || (activeId && resolvedUnsavedIds.includes(activeId))
+  const unsavedSummary = useMemo(
+    () =>
+      getCorpusUnsavedSummary(corpus, isDirty, {
+        unsavedItemIds,
+        projectIndexDirty
+      }),
+    [corpus, isDirty, unsavedItemIds, projectIndexDirty]
   );
-  const totalUnsavedItems = useMemo(() => {
-    const set = new Set<string>(resolvedUnsavedIds);
-    if (isDirty && activeId) set.add(activeId);
-    return set.size;
-  }, [resolvedUnsavedIds, isDirty, activeId]);
-  const otherUnsavedCount = Math.max(0, totalUnsavedItems - (isCurrentUnsaved ? 1 : 0));
+  const resolvedIndexDirty = unsavedSummary.projectIndexDirty;
+  const isCurrentUnsaved = unsavedSummary.isCurrentUnsaved;
+  const totalUnsavedItems = unsavedSummary.unsavedCount;
+  const otherUnsavedCount = unsavedSummary.otherUnsavedCount;
 
   const isSaving = corpus.saveStatus === 'saving';
   const isError = corpus.saveStatus === 'error';
@@ -188,9 +209,29 @@ export const CorpusNavBar: React.FC<CorpusNavBarProps> = ({
 
         <div
           className="corpus-nav-current"
-          title={activeItem ? `${positionText}  ${displayName} (${activeItem.audioRelPath})` : positionText}
+          title={positionTitle}
         >
-          <span className="corpus-nav-pos">{positionText}</span>
+          <span
+            className={`corpus-nav-pos ${
+              resolvedOutsideFilter
+                ? 'is-outside-filter'
+                : isFilterEmpty
+                  ? 'is-filter-empty'
+                  : ''
+            }`}
+          >
+            {positionText}
+          </span>
+          {resolvedOutsideFilter && resolvedCanNext && (
+            <button
+              type="button"
+              className="compact corpus-nav-jump-btn"
+              title={`跳转到当前筛选结果的第 1 条（共 ${resolvedFilteredCount} 条）`}
+              onClick={onNext}
+            >
+              <span>跳至首条</span>
+            </button>
+          )}
           <span className="corpus-nav-name">{displayName}</span>
         </div>
       </div>

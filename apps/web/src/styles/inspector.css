@@ -325,6 +325,13 @@
   border-color: var(--accent-blue);
   color: #FFFFFF;
   font-weight: 600;
+  --tgi-stroke: currentColor;
+  --tgi-stroke-muted: currentColor;
+  --tgi-stroke-subtle: rgba(255, 255, 255, 0.82);
+  --tgi-stroke-hover: currentColor;
+  --tgi-accent: currentColor;
+  --tgi-accent-strong: currentColor;
+  --tgi-accent-mid: currentColor;
 }
 
 .insp-root .insp-btn-primary:hover:not(:disabled) {

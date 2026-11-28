@@ -1,6 +1,7 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { getPlatformBridge, isTauriRuntime } from '../bridge/PlatformBridge';
 import type { BuiltinSampleId } from '../data/samples';
+import { getCorpusUnsavedSummary } from '../corpus/draftManager';
 import {
   AutoPlayIcon,
   AutoSplitIcon,
@@ -34,6 +35,10 @@ import {
 } from '../store/historyModel';
 import { useEditorStore, type RibbonTabId } from '../store/useEditorStore';
 import { alignSplitBoundariesAcoustically } from '../utils/acousticSplitClient';
+import {
+  formatAcousticSnapToast,
+  snapBoundaryAcoustically
+} from '../utils/acousticSnapClient';
 import {
   resolveSplitSourceText,
   splitTextByDelimiter,
@@ -230,6 +235,7 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
   const playing = useEditorStore((s) => s.playing);
   const setLoop = useEditorStore((s) => s.setLoop);
   const hiddenTierIndices = useEditorStore((s) => s.hiddenTierIndices);
+  const audioOffset = useEditorStore((s) => s.audioOffset);
   const analysis = useEditorStore((s) => s.analysis);
   const openExportModal = useEditorStore((s) => s.openExportModal);
 
@@ -953,6 +959,51 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
     }
   };
 
+  const handleSnapBoundaryAcoustic = async () => {
+    if (isReadOnly || !audioBuffer || !selection) return;
+    if (selection.kind !== 'boundary' && selection.kind !== 'spine') return;
+    try {
+      const res = await snapBoundaryAcoustically(audioBuffer, audioOffset, selection.time, 0.045);
+      if (!res.found) {
+        showToast('附近未检测到明显声学边界');
+        return;
+      }
+      const snapped = round6(res.snappedTimeSec);
+      if (Math.abs(snapped - selection.time) < 1e-6) {
+        showToast('当前位置已位于最近声学边界');
+        return;
+      }
+      let ok = false;
+      if (selection.kind === 'boundary') {
+        ok = moveTierBoundary(selection.tierIndex, selection.time, snapped, boundaryShared, {
+          coalesce: false,
+          actionMeta: { type: 'snap-acoustic-edge' },
+          nextSelection: {
+            kind: 'boundary',
+            tierIndex: selection.tierIndex,
+            time: snapped,
+            bandIndex: selection.bandIndex
+          }
+        });
+      } else {
+        ok = moveSharedTimestamp(selection.time, snapped, {
+          coalesce: false,
+          actionMeta: { type: 'snap-acoustic-edge' },
+          nextSelection: {
+            kind: 'spine',
+            time: snapped,
+            bandIndex: selection.bandIndex
+          }
+        });
+      }
+      if (ok) {
+        showToast(formatAcousticSnapToast(selection.time, snapped));
+      }
+    } catch (err) {
+      showToast(`声学边界吸附失败：${String(err)}`, true);
+    }
+  };
+
   const handleSnapPointZeroCrossing = async () => {
     if (isReadOnly || !analysis || selection?.kind !== 'point' || !activePoint) return;
     try {
@@ -968,6 +1019,32 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
       }
     } catch (err) {
       showToast(`过零点吸附失败：${String(err)}`, true);
+    }
+  };
+
+  const handleSnapPointAcoustic = async () => {
+    if (isReadOnly || !audioBuffer || selection?.kind !== 'point' || !activePoint) return;
+    try {
+      const res = await snapBoundaryAcoustically(
+        audioBuffer,
+        audioOffset,
+        activePoint.number,
+        0.045
+      );
+      if (!res.found) {
+        showToast('附近未检测到明显声学边界');
+        return;
+      }
+      const snapped = round6(res.snappedTimeSec);
+      if (Math.abs(snapped - activePoint.number) < 1e-6) {
+        showToast('当前标点已位于最近声学边界');
+        return;
+      }
+      if (movePointToTime(selection.tierIndex, selection.itemIndex, snapped, '吸附声学边界')) {
+        showToast(formatAcousticSnapToast(activePoint.number, snapped));
+      }
+    } catch (err) {
+      showToast(`声学边界吸附失败：${String(err)}`, true);
     }
   };
 
@@ -1920,17 +1997,15 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
 
   const renderCorpusTab = () => {
     if (!activeCorpus) return null;
-    const corpusExt = activeCorpus as typeof activeCorpus & {
-      unsavedItemIds?: string[];
-      projectIndexDirty?: boolean;
-    };
-    const unsavedIds = corpusExt.unsavedItemIds ?? [];
-    const unsavedCount = Math.max(unsavedIds.length, isDirty ? 1 : 0);
-    const hasPendingSave = unsavedCount > 0 || Boolean(corpusExt.projectIndexDirty);
+    const {
+      unsavedCount,
+      projectIndexDirty,
+      hasPendingSave,
+      readonlyPendingCount: zipCount
+    } = getCorpusUnsavedSummary(activeCorpus, isDirty);
     const isSaving = activeCorpus.saveStatus === 'saving';
     const corpusSaveAllHint = getEffectiveShortcutHint('corpus-save-all', customShortcuts);
     const canExportZip = Boolean(onExportCorpusZip);
-    const zipCount = Math.max(unsavedCount, activeCorpus.dirtyCount);
     const zipTitle = activeCorpus.writable
       ? '将当前未保存词条打包导出为 .zip 备份'
       : zipCount > 0
@@ -1944,7 +2019,7 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
           ? '正在保存…'
           : unsavedCount > 0
             ? `保存全部 (${unsavedCount})`
-            : corpusExt.projectIndexDirty
+            : projectIndexDirty
               ? '保存项目状态'
               : '保存全部';
 
@@ -3113,6 +3188,24 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
             <button
               type="button"
               className="ribbon-big-btn ipa-ctrl-noblur"
+              disabled={isReadOnly || !audioBuffer}
+              title={
+                isReadOnly
+                  ? readOnlyHint
+                  : audioBuffer
+                    ? '将当前边界吸附至附近音素或音节声学边界（AcouSeg 1.0）'
+                    : '请先载入配套录音后使用声学边界吸附'
+              }
+              onMouseDown={preventBlur}
+              onClick={() => void handleSnapBoundaryAcoustic()}
+            >
+              <UiIcon name="nudgeBoundary" size={22} />
+              <span>吸附声学边界</span>
+            </button>
+
+            <button
+              type="button"
+              className="ribbon-big-btn ipa-ctrl-noblur"
               disabled={isReadOnly || !hasAudioSession}
               title={
                 isReadOnly
@@ -3412,6 +3505,23 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
       <>
         <div className="ribbon-group">
           <div className="ribbon-group-body">
+            <button
+              type="button"
+              className="ribbon-big-btn ipa-ctrl-noblur"
+              disabled={isReadOnly || !audioBuffer}
+              title={
+                isReadOnly
+                  ? readOnlyHint
+                  : audioBuffer
+                    ? '将当前标点吸附至附近音素或音节声学边界（AcouSeg 1.0）'
+                    : '请先载入配套录音后使用声学边界吸附'
+              }
+              onMouseDown={preventBlur}
+              onClick={() => void handleSnapPointAcoustic()}
+            >
+              <UiIcon name="nudgeBoundary" size={22} />
+              <span>吸附声学边界</span>
+            </button>
             <button
               type="button"
               className="ribbon-big-btn ipa-ctrl-noblur"

@@ -604,10 +604,132 @@ export function renderInteractiveOverlay(
     | 'dragPreview'
     | 'intervalDragPreview'
     | 'hasAudio'
-  >
+  > &
+    Partial<Pick<RenderScoreInput, 'tg' | 'styleDoc'>>
 ): void {
   if (!layerG) return;
   while (layerG.firstChild) layerG.removeChild(layerG.firstChild);
+
+  const hasCustomStyle = Boolean(input.tg && input.styleDoc && hasAnyCustomStyle(input.styleDoc));
+
+  const getCustomBorderInset = (tierIndex: number, itemIndex: number): number | null => {
+    if (!hasCustomStyle || !input.tg || !input.styleDoc) return null;
+    const st = resolveIntervalStyle(input.styleDoc, input.tg, tierIndex, itemIndex);
+    if (!st.hasCustom || !st.hasCustomBorder || st.borderWidth <= 0) return null;
+    return Math.max(0.5, st.borderWidth / 2);
+  };
+
+  // Non-occluding selection focus for intervals carrying a custom border:
+  // draws subtle interior tint plus top/bottom focus rails strictly inside [x0, x1] in TIER_GAP clearance
+  // (or inset corner reticles when an interior multi-lane lacks vertical clearance) so custom dash/width stays 100% visible
+  // without intruding horizontally into adjacent intervals.
+  const drawCustomBorderIntervalFocus = (
+    x0: number,
+    w: number,
+    ly: number,
+    lh: number,
+    lane: number,
+    laneCount: number,
+    opts: {
+      color: string;
+      fillOpacity: number;
+      strokeWidth: number;
+      dashArray?: string;
+      borderInset: number;
+    }
+  ) => {
+    svgEl(
+      'rect',
+      {
+        x: x0,
+        y: ly,
+        width: w,
+        height: lh,
+        fill: opts.color,
+        'fill-opacity': opts.fillOpacity
+      },
+      layerG
+    );
+
+    const x1 = x0 + w;
+    const canTopRail = lane === 0;
+    const canBotRail = lane === laneCount - 1;
+    const railAttrs: Record<string, string | number> = {
+      fill: 'none',
+      stroke: opts.color,
+      'stroke-width': opts.strokeWidth,
+      ...(opts.dashArray ? { 'stroke-dasharray': opts.dashArray } : {})
+    };
+
+    if (canTopRail) {
+      const railY = ly - 2.2;
+      if (w >= 8) {
+        const rx0 = x0 + 0.75;
+        const rx1 = x1 - 0.75;
+        svgEl(
+          'path',
+          {
+            d: `M${rx0},${ly - 0.2} L${rx0},${railY} L${rx1},${railY} L${rx1},${ly - 0.2}`,
+            ...railAttrs
+          },
+          layerG
+        );
+      } else {
+        svgEl('line', { x1: x0, y1: railY, x2: x1, y2: railY, ...railAttrs }, layerG);
+      }
+    }
+
+    if (canBotRail) {
+      const railY = ly + lh + 2.2;
+      if (w >= 8) {
+        const rx0 = x0 + 0.75;
+        const rx1 = x1 - 0.75;
+        svgEl(
+          'path',
+          {
+            d: `M${rx0},${ly + lh + 0.2} L${rx0},${railY} L${rx1},${railY} L${rx1},${ly + lh + 0.2}`,
+            ...railAttrs
+          },
+          layerG
+        );
+      } else {
+        svgEl('line', { x1: x0, y1: railY, x2: x1, y2: railY, ...railAttrs }, layerG);
+      }
+    }
+
+    if (!canTopRail || !canBotRail) {
+      const pad = opts.borderInset + 2;
+      const arm = Math.min(4, Math.max(2, Math.floor((Math.min(w, lh) - pad * 2) / 3)));
+      if (w >= pad * 2 + arm * 2 && lh >= pad * 2 + arm * 2) {
+        const ix0 = x0 + pad;
+        const ix1 = x1 - pad;
+        const iy0 = ly + pad;
+        const iy1 = ly + lh - pad;
+        const parts: string[] = [];
+        if (!canTopRail) {
+          parts.push(`M${ix0},${iy0 + arm} L${ix0},${iy0} L${ix0 + arm},${iy0}`);
+          parts.push(`M${ix1 - arm},${iy0} L${ix1},${iy0} L${ix1},${iy0 + arm}`);
+        }
+        if (!canBotRail) {
+          parts.push(`M${ix0},${iy1 - arm} L${ix0},${iy1} L${ix0 + arm},${iy1}`);
+          parts.push(`M${ix1 - arm},${iy1} L${ix1},${iy1} L${ix1},${iy1 - arm}`);
+        }
+        if (parts.length > 0) {
+          svgEl(
+            'path',
+            {
+              d: parts.join(' '),
+              fill: 'none',
+              stroke: opts.color,
+              'stroke-width': 1.35,
+              opacity: 0.9
+            },
+            layerG
+          );
+        }
+      }
+    }
+  };
 
   // Spine-safe vertical guide: never slashes across rotated -52° timestamp digits in [neckBotY, tiersTopY].
   // Draws crisp 3px docking ticks at neckBotY and tiersTopY, then resumes cleanly through annotation tiers.
@@ -895,21 +1017,40 @@ export function renderInteractiveOverlay(
           if (vi.iv.origIdx === item.itemIndex) {
             const ly = tl.y + (tl.laneOffsets?.[vi.iv.lane] || 0);
             const lh = tl.laneHeights?.[vi.iv.lane] || tl.h;
-            svgEl(
-              'rect',
-              {
-                x: vi.x0 + 0.5,
-                y: ly + 0.5,
-                width: Math.max(1, vi.w - 1),
-                height: lh - 1,
-                fill: '#2563EB',
-                'fill-opacity': 0.11,
-                stroke: '#2563EB',
-                'stroke-width': 1.5,
-                'stroke-dasharray': '4 2'
-              },
-              layerG
-            );
+            const customBorderInset = getCustomBorderInset(item.tierIndex, item.itemIndex);
+            if (customBorderInset !== null) {
+              drawCustomBorderIntervalFocus(
+                vi.x0,
+                vi.w,
+                ly,
+                lh,
+                vi.iv.lane ?? 0,
+                tl.laneHeights?.length ?? 1,
+                {
+                  color: '#2563EB',
+                  fillOpacity: 0.08,
+                  strokeWidth: 1.4,
+                  dashArray: '4 2',
+                  borderInset: customBorderInset
+                }
+              );
+            } else {
+              svgEl(
+                'rect',
+                {
+                  x: vi.x0 + 0.5,
+                  y: ly + 0.5,
+                  width: Math.max(1, vi.w - 1),
+                  height: lh - 1,
+                  fill: '#2563EB',
+                  'fill-opacity': 0.11,
+                  stroke: '#2563EB',
+                  'stroke-width': 1.5,
+                  'stroke-dasharray': '4 2'
+                },
+                layerG
+              );
+            }
             // Small corner accent dot distinguishing secondary multi-selected intervals
             if (vi.w >= 10) {
               svgEl(
@@ -970,20 +1111,38 @@ export function renderInteractiveOverlay(
             }
             const ly = tl.y + (tl.laneOffsets?.[vi.iv.lane] || 0);
             const lh = tl.laneHeights?.[vi.iv.lane] || tl.h;
-            svgEl(
-              'rect',
-              {
-                x: vi.x0 + 0.5,
-                y: ly + 0.5,
-                width: Math.max(1, vi.w - 1),
-                height: lh - 1,
-                fill: '#1D4ED8',
-                'fill-opacity': 0.08,
-                stroke: '#1D4ED8',
-                'stroke-width': 1.8
-              },
-              layerG
-            );
+            const customBorderInset = getCustomBorderInset(sel.tierIndex, sel.itemIndex);
+            if (customBorderInset !== null) {
+              drawCustomBorderIntervalFocus(
+                vi.x0,
+                vi.w,
+                ly,
+                lh,
+                vi.iv.lane ?? 0,
+                tl.laneHeights?.length ?? 1,
+                {
+                  color: '#1D4ED8',
+                  fillOpacity: 0.055,
+                  strokeWidth: 1.5,
+                  borderInset: customBorderInset
+                }
+              );
+            } else {
+              svgEl(
+                'rect',
+                {
+                  x: vi.x0 + 0.5,
+                  y: ly + 0.5,
+                  width: Math.max(1, vi.w - 1),
+                  height: lh - 1,
+                  fill: '#1D4ED8',
+                  'fill-opacity': 0.08,
+                  stroke: '#1D4ED8',
+                  'stroke-width': 1.8
+                },
+                layerG
+              );
+            }
           }
         }
         for (const vz of tl.visibleZeros || []) {

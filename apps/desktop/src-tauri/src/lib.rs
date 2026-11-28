@@ -1,4 +1,5 @@
 use tg_core::acoustic_split::{AcousticSplitInput, AcousticSplitOutput, AcousticSplitParams};
+use tg_core::nn::{AcousticSnapPeak, AcousticSnapResult, VadParams, VadSegment};
 use tg_core::model::{
     CollectionFormat, CollectionItem, ContourBox, ContourPath, EngineInfo, IpaCandidate,
     IpaConvertResult, IpaSymbolInfo, LinearSeg, ParsedDocument, PraatMatch, SliceOptions, TextGrid,
@@ -218,7 +219,54 @@ fn align_split_boundaries(samples: Vec<f32>, params: AcousticSplitParams) -> Aco
         acoustic_classes: &params.acoustic_classes,
         f0_frames: params.f0_frames.as_deref(),
     };
-    tg_core::align_split_boundaries(&input)
+    if params.use_nn.unwrap_or(true) {
+        tg_core::nn::align_split_boundaries_hybrid(&input, tg_core::nn::builtin_acouseg_net())
+    } else {
+        tg_core::align_split_boundaries(&input)
+    }
+}
+
+#[tauri::command]
+fn detect_speech_segments_nn(
+    samples: Vec<f32>,
+    sample_rate: u32,
+    params: Option<VadParams>,
+) -> Vec<VadSegment> {
+    let p = params.unwrap_or_default();
+    tg_core::nn::detect_speech_segments_nn(
+        &samples,
+        sample_rate,
+        &p,
+        tg_core::nn::builtin_acouseg_net(),
+    )
+}
+
+#[tauri::command]
+fn extract_acoustic_snap_peaks(
+    samples: Vec<f32>,
+    sample_rate: u32,
+    samples_origin_sec: f64,
+    xmin: f64,
+    xmax: f64,
+) -> Vec<AcousticSnapPeak> {
+    tg_core::nn::extract_acoustic_snap_peaks(&samples, sample_rate, samples_origin_sec, xmin, xmax)
+}
+
+#[tauri::command]
+fn snap_acoustic_boundary(
+    samples: Vec<f32>,
+    sample_rate: u32,
+    samples_origin_sec: f64,
+    target_time_sec: f64,
+    window_sec: f64,
+) -> AcousticSnapResult {
+    tg_core::nn::snap_boundary_to_acoustic_edge(
+        &samples,
+        sample_rate,
+        samples_origin_sec,
+        target_time_sec,
+        window_sec,
+    )
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -984,6 +1032,9 @@ pub fn run() {
             compute_waveform_path,
             find_zero_crossing,
             align_split_boundaries,
+            detect_speech_segments_nn,
+            extract_acoustic_snap_peaks,
+            snap_acoustic_boundary,
             scan_corpus_dir,
             stat_local_file,
             inspect_dropped_paths,

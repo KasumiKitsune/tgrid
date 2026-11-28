@@ -4,6 +4,7 @@ import { formatKeyCombo } from '../shortcuts/registry';
 import { useEditorStore } from '../store/useEditorStore';
 import type { BuiltinSampleId } from '../data/samples';
 import { CorpusFolderIcon } from '../corpus/corpusIcons';
+import { getCorpusUnsavedSummary } from '../corpus/draftManager';
 import { CloseIcon, TGridIcon, UiIcon } from './Icons';
 import { RibbonBar } from './RibbonBar';
 
@@ -200,19 +201,10 @@ export const Topbar: React.FC<TopbarProps> = ({
   // do not index "春晓示例.TextGrid" as the site's main title.
   useEffect(() => {
     const activeTabNow = tabs.find((t) => t.id === activeTabId);
-    const activeCorpusExt =
+    const activeHasUnsaved =
       activeTabNow?.kind === 'corpus' && activeTabNow.corpus
-        ? (activeTabNow.corpus as typeof activeTabNow.corpus & {
-            unsavedItemIds?: string[];
-            projectIndexDirty?: boolean;
-          })
-        : null;
-    const activeHasUnsaved = Boolean(
-      isDirty ||
-        (activeCorpusExt &&
-          ((activeCorpusExt.unsavedItemIds?.length ?? 0) > 0 ||
-            Boolean(activeCorpusExt.projectIndexDirty)))
-    );
+        ? getCorpusUnsavedSummary(activeTabNow.corpus, isDirty).hasAnyUnsaved
+        : isDirty;
     const defaultWebTitle = 'T·Grid — Praat TextGrid 编辑器与语音标注出图工具';
     const isUnmodifiedDefaultSample =
       !isDesktop && !activeHasUnsaved && tabs.length <= 1 && (!filename || filename === '春晓示例.TextGrid');
@@ -290,26 +282,11 @@ export const Topbar: React.FC<TopbarProps> = ({
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           const isCorpus = tab.kind === 'corpus' && Boolean(tab.corpus);
-          const corpusExt = isCorpus
-            ? (tab.corpus! as typeof tab.corpus & {
-                unsavedItemIds?: string[];
-                projectIndexDirty?: boolean;
-              })
+          const corpusSummary = isCorpus
+            ? getCorpusUnsavedSummary(tab.corpus!, tab.isDirty)
             : null;
-          const corpusUnsavedCount = isCorpus
-            ? Math.max(
-                corpusExt?.unsavedItemIds?.length ?? 0,
-                tab.isDirty ? 1 : 0
-              )
-            : 0;
-          const corpusHasUnsaved = isCorpus
-            ? Boolean(
-                tab.isDirty ||
-                  corpusUnsavedCount > 0 ||
-                  corpusExt?.projectIndexDirty ||
-                  (!tab.corpus!.writable && tab.corpus!.dirtyCount > 0)
-              )
-            : false;
+          const corpusUnsavedCount = corpusSummary?.unsavedCount ?? 0;
+          const corpusHasUnsaved = corpusSummary?.hasAnyUnsaved ?? false;
           const tabHasUnsaved = isCorpus ? corpusHasUnsaved : tab.isDirty;
           const corpusTotal = isCorpus ? tab.corpus!.items.length : 0;
           let corpusDone = 0;
@@ -329,7 +306,7 @@ export const Topbar: React.FC<TopbarProps> = ({
             ? ''
             : corpusUnsavedCount > 0
               ? ` · 有 ${corpusUnsavedCount} 条词条未保存`
-              : corpusExt?.projectIndexDirty
+              : corpusSummary?.projectIndexDirty
                 ? ' · 有未保存的项目状态变更'
                 : !tab.corpus!.writable && tab.corpus!.dirtyCount > 0
                   ? ` · 已暂存 ${tab.corpus!.dirtyCount} 项修改`

@@ -3,8 +3,72 @@ import type {
   CorpusFileFingerprint,
   CorpusFileStat,
   CorpusItemRecord,
-  CorpusItemStatus
+  CorpusItemStatus,
+  CorpusProjectState
 } from './types';
+
+export interface CorpusUnsavedSummary {
+  unsavedSet: Set<string>;
+  unsavedCount: number;
+  projectIndexDirty: boolean;
+  /** 可写模式下是否存在待保存草稿或项目索引变更 */
+  hasPendingSave: boolean;
+  /** 含只读降级暂存计数在内的总待处理态（用于标签页脏点、窗口标题等） */
+  hasAnyUnsaved: boolean;
+  /** 只读导出场景下展示的待导出修改计数 */
+  readonlyPendingCount: number;
+  isCurrentUnsaved: boolean;
+  otherUnsavedCount: number;
+}
+
+/**
+ * 统一计算词表项目的未保存草稿与项目索引脏状态，供顶部栏、侧边栏、导航条与标签页共用单一事实源。
+ */
+export function getCorpusUnsavedSummary(
+  corpus:
+    | (Pick<CorpusProjectState, 'activeItemId' | 'writable' | 'dirtyCount'> & {
+        unsavedItemIds?: readonly string[];
+        projectIndexDirty?: boolean;
+      })
+    | null
+    | undefined,
+  isDirty: boolean,
+  overrides?: {
+    unsavedItemIds?: readonly string[];
+    projectIndexDirty?: boolean;
+  }
+): CorpusUnsavedSummary {
+  const resolvedUnsavedIds = overrides?.unsavedItemIds ?? corpus?.unsavedItemIds ?? [];
+  const projectIndexDirty = Boolean(overrides?.projectIndexDirty || corpus?.projectIndexDirty);
+  const activeId = corpus?.activeItemId ?? null;
+
+  const unsavedSet = new Set<string>(resolvedUnsavedIds);
+  if (isDirty && activeId) {
+    unsavedSet.add(activeId);
+  }
+
+  const unsavedCount = unsavedSet.size;
+  const isCurrentUnsaved = Boolean(isDirty || (activeId && unsavedSet.has(activeId)));
+  const otherUnsavedCount = Math.max(0, unsavedCount - (isCurrentUnsaved ? 1 : 0));
+  const hasPendingSave = unsavedCount > 0 || projectIndexDirty;
+  const readonlyPendingCount = Math.max(unsavedCount, corpus?.dirtyCount ?? 0);
+  const hasAnyUnsaved = Boolean(
+    isDirty ||
+      hasPendingSave ||
+      (corpus && !corpus.writable && corpus.dirtyCount > 0)
+  );
+
+  return {
+    unsavedSet,
+    unsavedCount,
+    projectIndexDirty,
+    hasPendingSave,
+    hasAnyUnsaved,
+    readonlyPendingCount,
+    isCurrentUnsaved,
+    otherUnsavedCount
+  };
+}
 
 export interface CorpusItemDraft {
   itemId: string;

@@ -1,6 +1,8 @@
 import React, {
+  createContext,
   forwardRef,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -28,9 +30,13 @@ import {
   type FloatingBarDensity
 } from '../store/useEditorStore';
 import type { MultiSelectionAnalysis } from '../utils/multiSelection';
+import {
+  formatAcousticSnapToast,
+  snapBoundaryAcoustically
+} from '../utils/acousticSnapClient';
 import { formatAlignMicroFeedback } from '../utils/qaDiagnostics';
 import { inferSmartSplit, type SmartSplitCandidate } from '../utils/smartSplit';
-import { getViewportZoom } from '../utils/uiScale';
+import { getElementRectScale } from '../utils/uiScale';
 import { getPalette } from '../style/palettes';
 import {
   TIME_MATCH_EPS,
@@ -63,7 +69,9 @@ export interface FloatingActionBarProps {
   visible: boolean;
   position: { left: number; top: number };
   isDragging: boolean;
+  isPinned?: boolean;
   onDragHandlePointerDown: (e: React.PointerEvent<HTMLElement>) => void;
+  onDragHandleDoubleClick?: () => void;
   onStartPlayback: (startT: number, endT: number) => void;
   onOpenInline: (target: FloatingInlineTarget) => void;
   onCopyText: (text: string, label: string) => void;
@@ -394,6 +402,8 @@ const NudgeRightIcon: React.FC = () => (
   </svg>
 );
 
+const FloatingBarPositionContext = createContext('');
+
 const AnchoredPopover: React.FC<{
   open: boolean;
   alignRight?: boolean;
@@ -401,44 +411,91 @@ const AnchoredPopover: React.FC<{
   children: React.ReactNode;
 }> = ({ open, alignRight = false, className = '', children }) => {
   const popRef = useRef<HTMLDivElement>(null);
+  const barPosKey = useContext(FloatingBarPositionContext);
   const [openUp, setOpenUp] = useState(false);
   const [shiftX, setShiftX] = useState(0);
+  const [maxHeightPx, setMaxHeightPx] = useState<number | undefined>(undefined);
 
   useLayoutEffect(() => {
     if (!open) {
       setOpenUp(false);
       setShiftX(0);
+      setMaxHeightPx(undefined);
       return;
     }
-    const el = popRef.current;
-    if (!el) return;
 
-    const z = getViewportZoom();
-    const pad = 10 * z;
-    // Measure in default downward placement first
-    const rect = el.getBoundingClientRect();
-    const overflowBottom = rect.bottom - (window.innerHeight - pad);
-    const spaceAbove = rect.top - pad;
-    const nextUp = overflowBottom > 0 && spaceAbove > rect.height + 16 * z;
+    const measure = () => {
+      const el = popRef.current;
+      if (!el) return;
 
-    let nextShiftX = 0;
-    if (rect.right > window.innerWidth - pad) {
-      nextShiftX -= (rect.right - (window.innerWidth - pad)) / z;
-    }
-    if (rect.left + nextShiftX * z < pad) {
-      nextShiftX += (pad - (rect.left + nextShiftX * z)) / z;
-    }
-    setOpenUp(nextUp);
-    setShiftX(Math.round(nextShiftX));
-  }, [open, alignRight, children]);
+      const scale = getElementRectScale(el);
+      const pad = 8 * scale;
+      const gap = 5 * scale;
+
+      const anchorEl = el.parentElement;
+      const anchorRect = anchorEl ? anchorEl.getBoundingClientRect() : el.getBoundingClientRect();
+      const clipEl = el.closest('.stage-inner-wrap') as HTMLElement | null;
+      const clipRect = clipEl
+        ? clipEl.getBoundingClientRect()
+        : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+
+      const boundLeft = Math.max(0, clipRect.left);
+      const boundRight = Math.min(window.innerWidth, clipRect.right);
+      const boundTop = Math.max(0, clipRect.top);
+      const boundBottom = Math.min(window.innerHeight, clipRect.bottom);
+
+      // Measure natural content height without stale maxHeight cap
+      const prevMaxH = el.style.maxHeight;
+      el.style.maxHeight = 'none';
+      const naturalW = el.offsetWidth * scale;
+      const naturalH = Math.max(el.offsetHeight, el.scrollHeight) * scale;
+      el.style.maxHeight = prevMaxH;
+
+      const spaceBelow = boundBottom - pad - (anchorRect.bottom + gap);
+      const spaceAbove = anchorRect.top - gap - (boundTop + pad);
+
+      // Flip upward whenever downward space would clip and upward has more room
+      const nextUp = spaceBelow < naturalH && spaceAbove > spaceBelow;
+      const availH = nextUp ? spaceAbove : spaceBelow;
+      const nextMaxH =
+        naturalH > availH ? Math.max(120, Math.floor(availH / scale)) : undefined;
+
+      // Horizontal clamp computed from anchorRect (immune to previous shiftX)
+      const naturalLeft = alignRight ? anchorRect.right - naturalW : anchorRect.left;
+      const naturalRight = naturalLeft + naturalW;
+      let nextShiftX = 0;
+      if (naturalRight > boundRight - pad) {
+        nextShiftX -= (naturalRight - (boundRight - pad)) / scale;
+      }
+      if (naturalLeft + nextShiftX * scale < boundLeft + pad) {
+        nextShiftX += (boundLeft + pad - (naturalLeft + nextShiftX * scale)) / scale;
+      }
+
+      setOpenUp(nextUp);
+      setShiftX(Math.round(nextShiftX));
+      setMaxHeightPx(nextMaxH);
+    };
+
+    measure();
+    window.addEventListener('resize', measure, { passive: true });
+    return () => window.removeEventListener('resize', measure);
+  }, [open, alignRight, children, barPosKey]);
 
   if (!open) return null;
+
+  const popStyle: React.CSSProperties | undefined =
+    shiftX !== 0 || maxHeightPx !== undefined
+      ? {
+          ...(shiftX !== 0 ? { marginLeft: shiftX } : undefined),
+          ...(maxHeightPx !== undefined ? { maxHeight: maxHeightPx } : undefined)
+        }
+      : undefined;
 
   return (
     <div
       ref={popRef}
       className={`fb-arch-popover ${alignRight ? 'align-right' : ''} ${openUp ? 'is-up' : ''} ${className}`}
-      style={shiftX !== 0 ? { marginLeft: shiftX } : undefined}
+      style={popStyle}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
@@ -456,7 +513,9 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
       visible,
       position,
       isDragging,
+      isPinned = false,
       onDragHandlePointerDown,
+      onDragHandleDoubleClick,
       onStartPlayback,
       onOpenInline,
       onCopyText,
@@ -472,6 +531,7 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
     const setViewDomain = useEditorStore((s) => s.setViewDomain);
     const playRange = useEditorStore((s) => s.playRange);
     const setPlayRange = useEditorStore((s) => s.setPlayRange);
+    const audioOffset = useEditorStore((s) => s.audioOffset);
     const analysis = useEditorStore((s) => s.analysis);
     const hiddenTierIndices = useEditorStore((s) => s.hiddenTierIndices);
     const floatingBarConfig = useEditorStore((s) => s.floatingBarConfig);
@@ -994,6 +1054,47 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
       [analysis, tg, showToast, commitIntervalStart, commitIntervalEnd]
     );
 
+    const snapIntervalEdgeAcoustic = useCallback(
+      async (ti: number, ii: number, edge: 'start' | 'end') => {
+        if (!audioBuffer) {
+          showToast('请先载入录音以使用声学边界吸附');
+          return;
+        }
+        const tier = tg.tiers[ti];
+        const iv = tier?.intervals[ii];
+        if (!tier || !iv) return;
+        const targetT = edge === 'start' ? iv.xmin : iv.xmax;
+        try {
+          const res = await snapBoundaryAcoustically(audioBuffer, audioOffset, targetT, 0.045);
+          if (!res.found) {
+            showToast('附近未检测到明显声学边界');
+            return;
+          }
+          const snapped = round6(res.snappedTimeSec);
+          if (Math.abs(snapped - targetT) < 1e-6) {
+            showToast(edge === 'start' ? '起点已位于最近声学边界' : '终点已位于最近声学边界');
+            return;
+          }
+          const ok =
+            edge === 'start'
+              ? commitIntervalStart(ti, ii, snapped)
+              : commitIntervalEnd(ti, ii, snapped);
+          if (ok) {
+            showToast(
+              formatAcousticSnapToast(
+                targetT,
+                snapped,
+                edge === 'start' ? '已将起点吸附至声学边界' : '已将终点吸附至声学边界'
+              )
+            );
+          }
+        } catch {
+          showToast('声学边界吸附失败', true);
+        }
+      },
+      [audioBuffer, audioOffset, tg, showToast, commitIntervalStart, commitIntervalEnd]
+    );
+
     const moveIntervalToPlayRange = useCallback(
       (ti: number, ii: number) => {
         if (!playRange || playRange.end <= playRange.start) {
@@ -1097,6 +1198,63 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
       [selection, analysis, moveTierBoundary, moveSharedTimestamp, showToast]
     );
 
+    const snapBoundaryOrSpineAcoustic = useCallback(
+      async (linked: boolean) => {
+        if (selection.kind !== 'boundary' && selection.kind !== 'spine') return;
+        if (!audioBuffer) {
+          showToast('请先载入录音以使用声学边界吸附');
+          return;
+        }
+        try {
+          const res = await snapBoundaryAcoustically(audioBuffer, audioOffset, selection.time, 0.045);
+          if (!res.found) {
+            showToast('附近未检测到明显声学边界');
+            return;
+          }
+          const snapped = round6(res.snappedTimeSec);
+          if (Math.abs(snapped - selection.time) < 1e-6) {
+            showToast('当前已位于最近声学边界');
+            return;
+          }
+          let ok = false;
+          if (selection.kind === 'boundary') {
+            ok = moveTierBoundary(selection.tierIndex, selection.time, snapped, linked, {
+              coalesce: false,
+              actionMeta: { type: 'snap-acoustic-edge' },
+              nextSelection: {
+                kind: 'boundary',
+                tierIndex: selection.tierIndex,
+                time: snapped,
+                bandIndex: selection.bandIndex
+              }
+            });
+          } else {
+            ok = moveSharedTimestamp(selection.time, snapped, {
+              coalesce: false,
+              actionMeta: { type: 'snap-acoustic-edge' },
+              nextSelection: {
+                kind: 'spine',
+                time: snapped,
+                bandIndex: selection.bandIndex
+              }
+            });
+          }
+          if (ok) {
+            showToast(
+              formatAcousticSnapToast(
+                selection.time,
+                snapped,
+                linked ? '已联动吸附至声学边界' : '已吸附至声学边界'
+              )
+            );
+          }
+        } catch {
+          showToast('声学边界吸附失败', true);
+        }
+      },
+      [selection, audioBuffer, audioOffset, moveTierBoundary, moveSharedTimestamp, showToast]
+    );
+
     const nudgeBoundaryOrSpine = useCallback(
       (delta: number, linked: boolean) => {
         if (selection.kind !== 'boundary' && selection.kind !== 'spine') return;
@@ -1163,6 +1321,34 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
         showToast('过零点吸附失败', true);
       }
     }, [selection, tg, analysis, movePointToTime, showToast]);
+
+    const snapPointAcoustic = useCallback(async () => {
+      if (selection.kind !== 'point') return;
+      const tier = tg.tiers[selection.tierIndex];
+      const pt = tier?.points[selection.itemIndex];
+      if (!tier || !pt) return;
+      if (!audioBuffer) {
+        showToast('请先载入录音以使用声学边界吸附');
+        return;
+      }
+      try {
+        const res = await snapBoundaryAcoustically(audioBuffer, audioOffset, pt.number, 0.045);
+        if (!res.found) {
+          showToast('附近未检测到明显声学边界');
+          return;
+        }
+        const snapped = round6(res.snappedTimeSec);
+        if (Math.abs(snapped - pt.number) < 1e-6) {
+          showToast('当前标点已位于最近声学边界');
+          return;
+        }
+        if (movePointToTime(selection.tierIndex, selection.itemIndex, snapped, '吸附声学边界')) {
+          showToast(formatAcousticSnapToast(pt.number, snapped));
+        }
+      } catch {
+        showToast('声学边界吸附失败', true);
+      }
+    }, [selection, tg, audioBuffer, audioOffset, movePointToTime, showToast]);
 
     const snapPointNearestBoundary = useCallback(() => {
       if (selection.kind !== 'point') return;
@@ -1906,6 +2092,29 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
                 onScrubEnd={onClearScrubPreview}
                 onCommit={(val) => commitIntervalEnd(ti, ii, val)}
               />
+            </div>
+          </div>
+          <div className="fb-arch-time-foot">
+            <span>声学吸附</span>
+            <div className="fb-arch-time-steps">
+              <button
+                type="button"
+                className="fb-arch-step-btn"
+                disabled={!audioBuffer}
+                title="将区间起点吸附至附近音素/音节声学边界（AcouSeg 1.0）"
+                onClick={() => void snapIntervalEdgeAcoustic(ti, ii, 'start')}
+              >
+                起·声学
+              </button>
+              <button
+                type="button"
+                className="fb-arch-step-btn"
+                disabled={!audioBuffer}
+                title="将区间终点吸附至附近音素/音节声学边界（AcouSeg 1.0）"
+                onClick={() => void snapIntervalEdgeAcoustic(ti, ii, 'end')}
+              >
+                止·声学
+              </button>
             </div>
           </div>
           <div className="fb-arch-time-foot">
@@ -2744,12 +2953,30 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
 
       const renderBoundaryAction = (id: string): React.ReactNode => {
         switch (id) {
-          case 'bnd-zero':
+          case 'bnd-acoustic':
             return (
               <button
                 key={id}
                 type="button"
                 className="fb-arch-btn is-primary"
+                disabled={!audioBuffer}
+                title={
+                  audioBuffer
+                    ? '吸附至附近音素或音节声学边界（AcouSeg 1.0）'
+                    : '请先载入配套录音后使用声学边界吸附'
+                }
+                onClick={() => void snapBoundaryOrSpineAcoustic(effectiveLinked)}
+              >
+                <UiIcon name="nudgeBoundary" size={13} />
+                <span>{isCompact ? '声学' : '声学边界'}</span>
+              </button>
+            );
+          case 'bnd-zero':
+            return (
+              <button
+                key={id}
+                type="button"
+                className="fb-arch-btn"
                 disabled={!analysis}
                 title={zHint ? `吸附最近音频过零点 (${zHint})` : '吸附最近音频过零点'}
                 onClick={() => void snapBoundaryOrSpineZeroCrossing(effectiveLinked)}
@@ -2913,6 +3140,24 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
 
       const renderBoundaryOverflowItem = (id: string): React.ReactNode => {
         switch (id) {
+          case 'bnd-acoustic':
+            return (
+              <button
+                key={id}
+                type="button"
+                className="fb-arch-pop-item"
+                disabled={!audioBuffer}
+                onClick={() => {
+                  setOpenPop(null);
+                  void snapBoundaryOrSpineAcoustic(effectiveLinked);
+                }}
+              >
+                <span className="fb-arch-pop-lead">
+                  <UiIcon name="nudgeBoundary" size={13} />
+                  <span>吸附声学边界</span>
+                </span>
+              </button>
+            );
           case 'bnd-zero':
             return (
               <button
@@ -3388,6 +3633,20 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
                   <button
                     type="button"
                     className="fb-arch-pop-item is-rec"
+                    disabled={!audioBuffer}
+                    onClick={() => {
+                      setOpenPop(null);
+                      void snapPointAcoustic();
+                    }}
+                  >
+                    <span className="fb-arch-pop-lead">
+                      <UiIcon name="nudgeBoundary" size={13} />
+                      <span>吸附声学边界</span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="fb-arch-pop-item"
                     disabled={!analysis}
                     onClick={() => {
                       setOpenPop(null);
@@ -4352,106 +4611,122 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
       return null;
     }
 
+    const dragHandleTitle = isPinned
+      ? '拖动移动工具栏，双击恢复默认位置（当前为手动定位）'
+      : '拖动移动工具栏，双击恢复默认位置';
+
     return (
-      <div
-        ref={setCombinedRef}
-        className={`fb-arch-host ${visible ? 'visible' : ''} ${isDragging ? 'is-dragging' : ''}`}
-        style={{ left: position.left, top: position.top }}
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {collapsed ? (
-          <div className={`fb-arch-mini fb-obj-${objClass}`}>
-            <span
-              className="fb-arch-drag"
-              title="按住拖移工具栏位置"
-              onPointerDown={(e) => {
-                setOpenPop(null);
-                onDragHandlePointerDown(e);
-              }}
-            >
-              <DragGripIcon />
-            </span>
-            <span className="fb-arch-kind">{kindLabel}</span>
-            <span className="fb-arch-mini-time">{timeSummary}</span>
-            {quickPlayHandler && (
+      <FloatingBarPositionContext.Provider value={`${position.left}:${position.top}`}>
+        <div
+          ref={setCombinedRef}
+          className={`fb-arch-host ${visible ? 'visible' : ''} ${isDragging ? 'is-dragging' : ''} ${openPop ? 'has-open-popover' : ''}`}
+          style={{ left: position.left, top: position.top }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {collapsed ? (
+            <div className={`fb-arch-mini fb-obj-${objClass}`}>
+              <span
+                className={`fb-arch-drag${isPinned ? ' is-pinned' : ''}`}
+                title={dragHandleTitle}
+                onPointerDown={(e) => {
+                  setOpenPop(null);
+                  onDragHandlePointerDown(e);
+                }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setOpenPop(null);
+                  onDragHandleDoubleClick?.();
+                }}
+              >
+                <DragGripIcon />
+              </span>
+              <span className="fb-arch-kind">{kindLabel}</span>
+              <span className="fb-arch-mini-time">{timeSummary}</span>
+              {quickPlayHandler && (
+                <button
+                  type="button"
+                  className="fb-arch-util-btn"
+                  title="快速播放"
+                  onClick={quickPlayHandler}
+                >
+                  <UiIcon name="play" size={11} />
+                </button>
+              )}
               <button
                 type="button"
                 className="fb-arch-util-btn"
-                title="快速播放"
-                onClick={quickPlayHandler}
+                title="展开浮动工具栏"
+                onClick={() => setCollapsed(false)}
               >
-                <UiIcon name="play" size={11} />
+                <ExpandIcon />
+                <span>展开</span>
               </button>
-            )}
-            <button
-              type="button"
-              className="fb-arch-util-btn"
-              title="展开浮动工具栏"
-              onClick={() => setCollapsed(false)}
-            >
-              <ExpandIcon />
-              <span>展开</span>
-            </button>
-          </div>
-        ) : (
-          <div className={`fb-arch fb-obj-${objClass} ${isCompact ? 'is-compact' : ''}`}>
-            <div className="fb-arch-head">
-              <div className="fb-arch-head-left">
-                <span
-                  className="fb-arch-drag"
-                  title="按住拖移工具栏位置（切换选中对象自动重置）"
-                  onPointerDown={(e) => {
-                    setOpenPop(null);
-                    onDragHandlePointerDown(e);
-                  }}
-                >
-                  <DragGripIcon />
-                </span>
-                <span className="fb-arch-kind">{kindLabel}</span>
-                <span className="fb-arch-ctx" title={ctxLabel}>
-                  {ctxLabel}
-                </span>
-                <div className="fb-arch-anchor">
+            </div>
+          ) : (
+            <div className={`fb-arch fb-obj-${objClass} ${isCompact ? 'is-compact' : ''}`}>
+              <div className="fb-arch-head">
+                <div className="fb-arch-head-left">
+                  <span
+                    className={`fb-arch-drag${isPinned ? ' is-pinned' : ''}`}
+                    title={dragHandleTitle}
+                    onPointerDown={(e) => {
+                      setOpenPop(null);
+                      onDragHandlePointerDown(e);
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      setOpenPop(null);
+                      onDragHandleDoubleClick?.();
+                    }}
+                  >
+                    <DragGripIcon />
+                  </span>
+                  <span className="fb-arch-kind">{kindLabel}</span>
+                  <span className="fb-arch-ctx" title={ctxLabel}>
+                    {ctxLabel}
+                  </span>
+                  <div className="fb-arch-anchor">
+                    <button
+                      type="button"
+                      className={`fb-arch-time-trigger ${openPop === 'time' ? 'is-open' : ''}`}
+                      title="点击展开精确时间输入与微调"
+                      aria-expanded={openPop === 'time'}
+                      onClick={() => togglePop('time')}
+                    >
+                      <span>{timeSummary}</span>
+                      <ChevronIcon size={9} />
+                    </button>
+                    <AnchoredPopover open={openPop === 'time'}>{timePopoverContent}</AnchoredPopover>
+                  </div>
+                </div>
+                <div className="fb-arch-head-right">
                   <button
                     type="button"
-                    className={`fb-arch-time-trigger ${openPop === 'time' ? 'is-open' : ''}`}
-                    title="点击展开精确时间输入与微调"
-                    aria-expanded={openPop === 'time'}
-                    onClick={() => togglePop('time')}
+                    className="fb-arch-util-btn"
+                    title="打开右侧属性栏"
+                    onClick={openInspectorSidebar}
                   >
-                    <span>{timeSummary}</span>
-                    <ChevronIcon size={9} />
+                    <UiIcon name="inspector" size={11} />
                   </button>
-                  <AnchoredPopover open={openPop === 'time'}>{timePopoverContent}</AnchoredPopover>
+                  <button
+                    type="button"
+                    className="fb-arch-util-btn"
+                    title="折叠为极窄迷你条"
+                    onClick={() => {
+                      setOpenPop(null);
+                      setCollapsed(true);
+                    }}
+                  >
+                    <CollapseIcon />
+                  </button>
                 </div>
               </div>
-              <div className="fb-arch-head-right">
-                <button
-                  type="button"
-                  className="fb-arch-util-btn"
-                  title="打开右侧属性栏"
-                  onClick={openInspectorSidebar}
-                >
-                  <UiIcon name="inspector" size={11} />
-                </button>
-                <button
-                  type="button"
-                  className="fb-arch-util-btn"
-                  title="折叠为极窄迷你条"
-                  onClick={() => {
-                    setOpenPop(null);
-                    setCollapsed(true);
-                  }}
-                >
-                  <CollapseIcon />
-                </button>
-              </div>
+              <div className="fb-arch-body">{bodyContent}</div>
             </div>
-            <div className="fb-arch-body">{bodyContent}</div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      </FloatingBarPositionContext.Provider>
     );
   }
 );

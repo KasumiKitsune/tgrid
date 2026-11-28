@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
+  AcousticSnapPeak,
+  AcousticSnapResult,
   AcousticSplitParams,
   AcousticSplitResult,
   AudioAnalysisSummary,
@@ -26,6 +28,8 @@ import type {
   TextGrid,
   TextGridFormat,
   TierDiagnostics,
+  VadParams,
+  VadSegmentResult,
   YunlongStepResult,
   ZipEntryInput
 } from './types';
@@ -270,6 +274,50 @@ export class TauriBridge implements PlatformBridge {
     return invoke<AcousticSplitResult>('align_split_boundaries', {
       samples: Array.from(samples),
       params
+    });
+  }
+
+  async detectSpeechSegmentsNn(
+    samples: Float32Array,
+    sampleRate: number,
+    params?: VadParams
+  ): Promise<VadSegmentResult[]> {
+    return invoke<VadSegmentResult[]>('detect_speech_segments_nn', {
+      samples: Array.from(samples),
+      sampleRate,
+      params: params ?? null
+    });
+  }
+
+  async extractAcousticSnapPeaks(
+    samples: Float32Array,
+    sampleRate: number,
+    samplesOriginSec: number,
+    xmin: number,
+    xmax: number
+  ): Promise<AcousticSnapPeak[]> {
+    return invoke<AcousticSnapPeak[]>('extract_acoustic_snap_peaks', {
+      samples: Array.from(samples),
+      sampleRate,
+      samplesOriginSec,
+      xmin,
+      xmax
+    });
+  }
+
+  async snapAcousticBoundary(
+    samples: Float32Array,
+    sampleRate: number,
+    samplesOriginSec: number,
+    targetTimeSec: number,
+    windowSec = 0.045
+  ): Promise<AcousticSnapResult> {
+    return invoke<AcousticSnapResult>('snap_acoustic_boundary', {
+      samples: Array.from(samples),
+      sampleRate,
+      samplesOriginSec,
+      targetTimeSec,
+      windowSec
     });
   }
 

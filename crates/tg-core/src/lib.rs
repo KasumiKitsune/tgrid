@@ -4,6 +4,7 @@ pub mod contour;
 pub mod ipa;
 mod ipa_data;
 pub mod model;
+pub mod nn;
 pub mod ops;
 pub mod zip;
 

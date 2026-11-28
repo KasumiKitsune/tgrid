@@ -1,12 +1,18 @@
-import type { TextGrid } from '../bridge/types';
-import { elasticXInBand, type BandLayout } from '../layout/computeLayout';
+import type { AcousticSnapPeak, TextGrid } from '../bridge/types';
+import {
+  elasticXInBand,
+  timeFromElasticX,
+  timeFromLinearX,
+  type BandLayout
+} from '../layout/computeLayout';
 
 export type SnapTargetKind =
   | 'cross-tier-boundary'
   | 'slot-edge'
   | 'point'
   | 'play-range'
-  | 'playhead';
+  | 'playhead'
+  | 'acoustic-edge';
 
 export interface SnapResult {
   t: number;
@@ -38,6 +44,7 @@ export interface SnapContext {
   bypassAlt?: boolean;
   stickyTime?: number | null;
   hiddenTierIndices?: number[];
+  acousticPeaks?: readonly AcousticSnapPeak[] | null;
 }
 
 export interface DualEdgeSnapContext {
@@ -90,6 +97,82 @@ interface MergedCandidate {
 
 const TIME_COINCIDE_EPS = 1e-12;
 const STRICT_BOUND_EPS = 1e-9;
+const MAX_ACOUSTIC_SNAP_DT_SEC = 0.035;
+
+function resolveAcousticPeakSnap(
+  ctx: SnapContext,
+  isAllowed: (t: number) => boolean
+): SnapResult | null {
+  const peaks = ctx.acousticPeaks;
+  if (!peaks || peaks.length === 0 || ctx.bypassAlt) return null;
+
+  const { band, pointerX, fromSpec } = ctx;
+  const cursorT = fromSpec
+    ? timeFromLinearX(band, pointerX)
+    : timeFromElasticX(band, pointerX);
+  if (!Number.isFinite(cursorT)) return null;
+
+  const minT = cursorT - MAX_ACOUSTIC_SNAP_DT_SEC;
+  const maxT = cursorT + MAX_ACOUSTIC_SNAP_DT_SEC;
+
+  // Binary search first peak with timeSec >= minT (O(log N))
+  let lo = 0;
+  let hi = peaks.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (peaks[mid].timeSec < minT) lo = mid + 1;
+    else hi = mid;
+  }
+
+  const baseTol = fromSpec ? 8.5 : 9.5;
+  let bestPeak: AcousticSnapPeak | null = null;
+  let bestDistPx = Infinity;
+  let bestX = 0;
+  let bestLinX = 0;
+  let bestEffStrength = -1;
+
+  for (let i = lo; i < peaks.length; i++) {
+    const p = peaks[i];
+    if (p.timeSec > maxT) break;
+    if (!isAllowed(p.timeSec)) continue;
+
+    const x = elasticXInBand(band, p.timeSec);
+    const linX = band.linearXForTime(p.timeSec);
+    const targetX = fromSpec ? linX : x;
+    const distPx = Math.abs(pointerX - targetX);
+    const isSticky =
+      ctx.stickyTime != null && Math.abs(p.timeSec - ctx.stickyTime) <= 1e-6;
+    const effTol = baseTol + (isSticky ? 2 : 0);
+    if (distPx > effTol) continue;
+
+    const effStrength = p.strength * (p.kind === 'syllable' ? 1.06 : 1.0);
+    if (
+      !bestPeak ||
+      distPx < bestDistPx - 2 ||
+      (Math.abs(distPx - bestDistPx) <= 2 && effStrength > bestEffStrength)
+    ) {
+      bestPeak = p;
+      bestDistPx = distPx;
+      bestX = x;
+      bestLinX = linX;
+      bestEffStrength = effStrength;
+    }
+  }
+
+  if (!bestPeak) return null;
+
+  return {
+    t: Number(bestPeak.timeSec.toFixed(6)),
+    x: bestX,
+    linX: bestLinX,
+    kind: 'acoustic-edge',
+    priority: 5,
+    label: '声学边界',
+    sourceTiers: [],
+    exact: true,
+    distPx: bestDistPx
+  };
+}
 
 function formatTierNamesLabel(names: string[], suffix = ''): string {
   if (names.length === 0) return suffix ? `对齐${suffix}` : '对齐边界';
@@ -221,7 +304,9 @@ export function resolveSnap(ctx: SnapContext): SnapResult | null {
     });
   }
 
-  if (raw.length === 0) return null;
+  if (raw.length === 0) {
+    return resolveAcousticPeakSnap(ctx, isAllowed);
+  }
 
   // Sort by timestamp and group coincident timestamps (<= 1e-12)
   raw.sort((a, b) => a.t - b.t || a.priority - b.priority);
@@ -315,7 +400,7 @@ export function resolveSnap(ctx: SnapContext): SnapResult | null {
   }
   const closestGap = getMinAdjacentGapPx(closestCand.targetX);
   if (fromSpec && closestGap < 4) {
-    return null;
+    return resolveAcousticPeakSnap(ctx, isAllowed);
   }
 
   const inRange: MergedCandidate[] = [];
@@ -336,7 +421,9 @@ export function resolveSnap(ctx: SnapContext): SnapResult | null {
     }
   }
 
-  if (inRange.length === 0) return null;
+  if (inRange.length === 0) {
+    return resolveAcousticPeakSnap(ctx, isAllowed);
+  }
 
   let bestDist = Infinity;
   for (const c of inRange) {
