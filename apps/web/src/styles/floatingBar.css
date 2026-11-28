@@ -534,16 +534,29 @@
 .fb-arch-popover.is-up {
   top: auto;
   bottom: calc(100% + 5px);
+  animation: fb-pop-in-up 140ms var(--ease);
+  transform-origin: bottom center;
 }
 
 @keyframes fb-pop-in {
   from {
     opacity: 0;
-    transform: translateY(-3px);
+    transform: translateY(-4px) scale(0.985);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fb-pop-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -1097,4 +1110,349 @@ button.prefs-fb-density-card.is-active .prefs-fb-density-card-name {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+}
+
+/* ============================================================================
+   Quick Style Swatch Trigger, Popover & Canvas Format Brush Banner
+   ============================================================================ */
+
+.fb-style-trigger {
+  position: relative;
+}
+
+.fb-style-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid #69665E;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  transition: transform 110ms var(--ease), border-color 110ms var(--ease);
+}
+
+.fb-style-dot.is-empty {
+  background: transparent;
+  border: 1.5px dashed #8C887F;
+}
+
+.fb-style-trigger:hover:not(:disabled) .fb-style-dot {
+  transform: scale(1.08);
+}
+
+.fb-style-pop {
+  min-width: 236px;
+  max-width: 268px;
+  padding: 8px 10px 7px;
+}
+
+.fb-style-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--ink-faint);
+  margin-bottom: 7px;
+}
+
+.fb-style-bw-tag {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  background: #ECE9E1;
+  border: 1px solid #D3CFC5;
+  padding: 0 4px;
+  line-height: 16px;
+}
+
+.fb-style-swatch-row {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 5px;
+  align-items: center;
+}
+
+button.fb-style-swatch {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid rgba(20, 20, 19, 0.34);
+  border-radius: 0;
+  cursor: pointer;
+  position: relative;
+  box-shadow: none;
+  transform: none;
+  transition: border-color 100ms var(--ease), box-shadow 100ms var(--ease);
+}
+
+button.fb-style-swatch:hover {
+  border-color: var(--ink);
+  box-shadow: 0 1px 4px rgba(20, 20, 19, 0.18);
+  transform: none;
+  z-index: 1;
+}
+
+button.fb-style-swatch.is-active {
+  border-color: var(--ink);
+  box-shadow:
+    0 0 0 1px var(--ink),
+    inset 0 0 0 1.5px #FFFFFF;
+  z-index: 2;
+}
+
+/* Vector-style B&W print pattern previews inside quick swatches */
+button.fb-style-swatch.pat-hatch-diag {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0 3px,
+    rgba(20, 20, 19, 0.42) 3px 4px
+  );
+}
+
+button.fb-style-swatch.pat-hatch-back {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0 3px,
+    rgba(20, 20, 19, 0.42) 3px 4px
+  );
+}
+
+button.fb-style-swatch.pat-crosshatch {
+  background-image:
+    repeating-linear-gradient(-45deg, transparent 0 3px, rgba(20, 20, 19, 0.36) 3px 4px),
+    repeating-linear-gradient(45deg, transparent 0 3px, rgba(20, 20, 19, 0.36) 3px 4px);
+}
+
+button.fb-style-swatch.pat-dots {
+  background-image: radial-gradient(circle, rgba(20, 20, 19, 0.48) 1px, transparent 1.2px);
+  background-size: 5px 5px;
+}
+
+button.fb-style-swatch.pat-stripes-v {
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0 3px,
+    rgba(20, 20, 19, 0.4) 3px 4px
+  );
+}
+
+button.fb-style-swatch.pat-stripes-h {
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent 0 3px,
+    rgba(20, 20, 19, 0.4) 3px 4px
+  );
+}
+
+.fb-style-bw-note {
+  margin-top: 6px;
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--ink-faint);
+}
+
+.fb-style-toggle-btn {
+  appearance: none;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 5px 2px;
+  font-family: var(--font-sans);
+  box-shadow: none;
+  transform: none;
+}
+
+.fb-style-foot {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+button.fb-style-foot-btn {
+  appearance: none;
+  height: 25px;
+  padding: 0 7px;
+  border: 1px solid #D3CFC5;
+  background: #FFFFFF;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
+  cursor: pointer;
+  transform: none;
+  box-shadow: none;
+  transition: background-color 120ms var(--ease), border-color 120ms var(--ease), color 120ms var(--ease);
+}
+
+button.fb-style-foot-btn:hover:not(:disabled) {
+  background: #ECE9E1;
+  border-color: #9C978D;
+  color: var(--ink);
+}
+
+button.fb-style-foot-btn:active:not(:disabled) {
+  background: #E0DDD4;
+}
+
+button.fb-style-foot-btn.is-clear:hover:not(:disabled) {
+  background: var(--accent-red-soft);
+  border-color: #FCA5A5;
+  color: var(--accent-red);
+}
+
+button.fb-style-foot-btn.is-clear:active:not(:disabled) {
+  background: #FEE2E2;
+}
+
+button.fb-style-foot-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+button.fb-style-more-btn {
+  appearance: none;
+  width: 100%;
+  height: 25px;
+  min-height: 0;
+  margin-top: 6px;
+  padding: 0 8px;
+  border: 1px solid #DFDCD3;
+  background: #F3F1EA;
+  color: var(--ink-muted);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  white-space: nowrap;
+  cursor: pointer;
+  transform: none;
+  box-shadow: none;
+  transition: background-color 120ms var(--ease), border-color 120ms var(--ease), color 120ms var(--ease);
+}
+
+button.fb-style-more-btn:hover:not(:disabled) {
+  background: #ECE9E1;
+  border-color: #B5B0A4;
+  color: var(--ink);
+}
+
+button.fb-style-more-btn:active:not(:disabled) {
+  background: #E0DDD4;
+}
+
+button.fb-style-more-btn.is-active {
+  background: var(--accent-blue-soft);
+  border-color: #93B4F5;
+  color: var(--accent-blue);
+  font-weight: 600;
+  --tgi-stroke: var(--accent-blue);
+  --tgi-stroke-hover: var(--accent-blue);
+  --tgi-accent: var(--accent-blue);
+}
+
+button.fb-style-more-btn.is-active:hover:not(:disabled) {
+  background: #E1EBFF;
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+button.fb-style-more-btn.is-active:active:not(:disabled) {
+  background: #D4E2FF;
+}
+
+/* Format Brush Active Canvas Cursor & Top Lightweight Status Banner */
+.stage.is-style-brush,
+svg.is-style-brush,
+svg.is-style-brush [data-role] {
+  cursor: crosshair !important;
+}
+
+.fb-brush-banner {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 165;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 8px 0 10px;
+  background: #FAF9F6;
+  color: var(--ink);
+  border: 1px solid #C6C2B8;
+  border-left: 3px solid #A9611B;
+  box-shadow:
+    0 6px 18px rgba(20, 20, 19, 0.12),
+    0 1px 2px rgba(20, 20, 19, 0.08);
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  line-height: 1;
+  white-space: nowrap;
+  max-width: calc(100% - 24px);
+  user-select: none;
+}
+
+.fb-brush-banner-dot {
+  width: 7px;
+  height: 7px;
+  background: #A9611B;
+  flex-shrink: 0;
+}
+
+.fb-brush-banner-text {
+  color: var(--ink);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+button.fb-brush-banner-btn {
+  appearance: none;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid #D3CFC5;
+  background: #FFFFFF;
+  color: var(--ink-muted);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transform: none;
+  box-shadow: none;
+  transition: background-color 110ms var(--ease), border-color 110ms var(--ease), color 110ms var(--ease);
+}
+
+button.fb-brush-banner-btn:hover {
+  background: #ECE9E1;
+  border-color: #9C978D;
+  color: var(--ink);
+}
+
+button.fb-brush-banner-btn.is-exit {
+  border-color: #C6C2B8;
+  color: var(--ink);
+}
+
+button.fb-brush-banner-btn.is-exit:hover {
+  background: #E7E4DC;
+  border-color: var(--ink-muted);
 }

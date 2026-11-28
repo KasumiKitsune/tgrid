@@ -5,6 +5,7 @@ import type { EditorSelection } from '../render/renderScoreSvg';
 import type { ScoreLayout } from '../layout/computeLayout';
 import { getShortcutEntry, normalizeKeyCombo } from '../shortcuts/registry';
 import {
+  DEFAULT_COALESCE_WINDOW_MS,
   canRedoTimeline,
   canUndoTimeline,
   clampHistoryLimit,
@@ -33,6 +34,7 @@ import {
   setTimelineMaxEntries,
   type BaselineKind,
   type HistoryActionMeta,
+  type HistoryActionType,
   type HistoryTimeline,
   type MutationContext
 } from './historyModel';
@@ -82,12 +84,47 @@ import { decodeTrigraphGlossSync, primeTrigraphString } from '../layout/richText
 import type {
   CorpusFilterState,
   CorpusItemRecord,
+  CorpusItemStyleOverrides,
   CorpusOptions,
-  CorpusProjectState
+  CorpusProjectState,
+  CorpusSharedStyle
 } from '../corpus/types';
+import {
+  cloneStyleDocument,
+  createDefaultStyleDocument,
+  createRuleFromPreset,
+  getPalette,
+  hasAnyCustomStyle,
+  isPaletteId
+} from '../style/palettes';
+import {
+  TIME_MATCH_EPS,
+  clearAllStyles,
+  clearObjectStyleOverride,
+  setBoundaryStyleOverride,
+  setIntervalStyleOverride,
+  setPointStyleOverride,
+  setTierStylePatch
+} from '../style/resolveStyle';
+import {
+  propagateStylesOnBoundaryMove,
+  propagateStylesOnMerge,
+  propagateStylesOnSplit,
+  propagateStylesOnTierChange
+} from '../style/reconcileStyle';
+import type {
+  BoundaryStylePatch,
+  IntervalStylePatch,
+  PaletteId,
+  PointStylePatch,
+  StyleBrush,
+  StyleDocument,
+  StyleRule,
+  TierStylePatch
+} from '../style/types';
 
 export type IpaInputMode = 'off' | 'yunlong' | 'praat';
-export type SidebarTab = 'inspector' | 'tiers' | 'history' | 'settings' | 'customize';
+export type SidebarTab = 'inspector' | 'style' | 'tiers' | 'history' | 'settings' | 'customize';
 export type PreferencesSection = 'editing' | 'general' | 'floating' | 'shortcuts';
 export type EditInspectorMode = 'sidebar' | 'floating';
 export type ExportRangePreset = 'all' | 'view' | 'selection' | 'custom';
@@ -417,6 +454,7 @@ function loadSidebarPrefs(): StoredSidebarPrefs {
     if (raw && typeof raw === 'object') {
       const tab: SidebarTab =
         raw.sidebarTab === 'inspector' ||
+        raw.sidebarTab === 'style' ||
         raw.sidebarTab === 'tiers' ||
         raw.sidebarTab === 'history' ||
         raw.sidebarTab === 'settings' ||
@@ -579,6 +617,8 @@ export interface ActivateCorpusEntryPayload {
   resetHistory?: boolean;
   /** 当草稿已存在但内存历史已被淘汰时，将新基线标记为未保存态 */
   initialDirty?: boolean;
+  /** 词条对应的初始样式文档（通常由整库共享样式与词条局部覆盖拼合对账生成） */
+  styleDoc?: StyleDocument;
 }
 
 export interface CorpusUnsavedStatePatch {
@@ -619,6 +659,7 @@ export interface TabRecord {
   audioDuration: number;
   audioSampleRate: number;
   analysis: AudioAnalysisSummary | null;
+  styleDoc: StyleDocument;
   isBlankPlaceholder: boolean;
 }
 
@@ -626,6 +667,7 @@ export interface CreateTabOptions {
   kind?: 'single' | 'corpus';
   corpus?: CorpusProjectState;
   tg?: TextGrid;
+  styleDoc?: StyleDocument;
   filename?: string;
   collectionTgs?: TextGrid[];
   activeIdx?: number;
@@ -660,6 +702,8 @@ export interface EditorState {
 
   // Active-tab mirrored top-level document fields (fast reactive selectors)
   tg: TextGrid;
+  styleDoc: StyleDocument;
+  styleBrush: StyleBrush | null;
   collectionTgs: TextGrid[];
   collectionActiveIdx: number;
   filename: string;
@@ -793,6 +837,13 @@ export interface EditorState {
     tabId?: string
   ) => void;
   syncCorpusUnsavedState: (patch: CorpusUnsavedStatePatch, tabId?: string) => void;
+  setCorpusStyleData: (
+    patch: {
+      sharedStyle?: CorpusSharedStyle;
+      itemStyles?: Record<string, CorpusItemStyleOverrides>;
+    },
+    tabId?: string
+  ) => void;
   clearCorpusEntryHistory: (itemId: string, tabId?: string) => void;
   markCorpusEntryHistorySaved: (itemId: string, tabId?: string) => void;
   setPendingAutoEditTarget: (target: PendingAutoEditTarget | null) => void;
@@ -830,6 +881,7 @@ export interface EditorState {
       fileFormat?: TextGridFormat;
       isBlankPlaceholder?: boolean;
       baselineKind?: BaselineKind;
+      styleDoc?: StyleDocument;
     }
   ) => void;
   markSaved: (meta?: {
@@ -842,7 +894,8 @@ export interface EditorState {
   commitTgMutation: (
     mutator: (draft: TextGrid, ctx: MutationContext) => boolean | void,
     nextSelection: EditorSelection | undefined,
-    meta: HistoryActionMeta
+    meta: HistoryActionMeta,
+    styleUpdater?: (prevStyle: StyleDocument, prevTg: TextGrid, nextTg: TextGrid) => StyleDocument
   ) => boolean;
   jumpToHistory: (targetCursor: number, opts?: HistoryJumpOptions) => boolean;
   jumpToSavedPoint: () => boolean;
@@ -1036,6 +1089,59 @@ export interface EditorState {
     targetXmax: number,
     opts?: TransformAlignedBlockOptions
   ) => TransformAlignedBlockResult;
+
+  // Style & Theme actions
+  setStylePalette: (paletteId: PaletteId) => void;
+  setStyleBwPrintMode: (enabled: boolean) => void;
+  setStyleShowLegend: (enabled: boolean) => void;
+  setStyleSwatchLabel: (swatchId: string, label: string) => void;
+  setIntervalStyle: (
+    tierIndex: number,
+    itemIndex: number,
+    patch: IntervalStylePatch,
+    opts?: { coalesce?: boolean; label?: string }
+  ) => void;
+  setMultiIntervalStyle: (
+    items: Array<{ tierIndex: number; itemIndex: number }>,
+    patch: IntervalStylePatch,
+    opts?: { coalesce?: boolean }
+  ) => void;
+  setBoundaryStyle: (
+    tierIndex: number | null,
+    time: number,
+    patch: BoundaryStylePatch,
+    opts?: { coalesce?: boolean }
+  ) => void;
+  setPointStyle: (
+    tierIndex: number,
+    itemIndex: number,
+    patch: PointStylePatch,
+    opts?: { coalesce?: boolean }
+  ) => void;
+  setTierStyle: (
+    tierIndex: number,
+    patch: TierStylePatch,
+    opts?: { coalesce?: boolean }
+  ) => void;
+  applyStyleToSameText: (
+    tierIndex: number,
+    text: string,
+    patch: IntervalStylePatch
+  ) => number;
+  clearSelectionStyle: () => void;
+  clearAllDocumentStyles: () => void;
+  upsertStyleRule: (rule: StyleRule) => void;
+  removeStyleRule: (ruleId: string) => void;
+  toggleStyleRule: (ruleId: string, enabled?: boolean) => void;
+  applyStyleRulePreset: (presetId: string) => void;
+  clearOrphanedStyles: () => void;
+  setStyleBrush: (brush: StyleBrush | null) => void;
+  clearStyleBrush: () => void;
+  loadStyleDocForTab: (
+    tabId: string,
+    styleDoc: StyleDocument,
+    opts?: { markDirty?: boolean }
+  ) => void;
 }
 
 let beforeHistoryNavigateHook: (() => void) | null = null;
@@ -1152,9 +1258,100 @@ function computeCollectionDirty(
   return false;
 }
 
+const PURE_TEXT_HISTORY_TYPES: ReadonlySet<HistoryActionType> = new Set<HistoryActionType>([
+  'edit-interval-text',
+  'edit-point-text',
+  'clear-interval-text',
+  'clear-point-text',
+  'clear-tier-text',
+  'cut-text',
+  'paste-text',
+  'replace-one',
+  'replace-all',
+  'convert-ipa',
+  'multi-clear-text'
+]);
+
+function hasTrackableStyleState(doc: StyleDocument): boolean {
+  if (doc.intervalOverrides.length > 0) return true;
+  if (doc.boundaryOverrides.length > 0) return true;
+  if (doc.pointOverrides.length > 0) return true;
+  if (Object.keys(doc.tierStyles).length > 0) return true;
+  if (
+    doc.orphaned &&
+    (doc.orphaned.intervals.length > 0 ||
+      doc.orphaned.boundaries.length > 0 ||
+      doc.orphaned.points.length > 0)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function syncStyleTextSnapshots(doc: StyleDocument, nextTg: TextGrid): StyleDocument {
+  let needsClone = false;
+  for (const ov of doc.intervalOverrides) {
+    const iv = nextTg.tiers[ov.tierIndex]?.intervals[ov.itemIndex];
+    if (iv && iv.text !== ov.textSnapshot) {
+      needsClone = true;
+      break;
+    }
+  }
+  if (!needsClone) {
+    for (const ov of doc.pointOverrides) {
+      const pt = nextTg.tiers[ov.tierIndex]?.points[ov.itemIndex];
+      if (pt && pt.mark !== ov.markSnapshot) {
+        needsClone = true;
+        break;
+      }
+    }
+  }
+  if (!needsClone) return doc;
+  const next = cloneStyleDocument(doc);
+  for (const ov of next.intervalOverrides) {
+    const iv = nextTg.tiers[ov.tierIndex]?.intervals[ov.itemIndex];
+    if (iv) ov.textSnapshot = iv.text;
+  }
+  for (const ov of next.pointOverrides) {
+    const pt = nextTg.tiers[ov.tierIndex]?.points[ov.itemIndex];
+    if (pt) ov.markSnapshot = pt.mark;
+  }
+  return next;
+}
+
+function cloneStyleBrush(brush: StyleBrush | null): StyleBrush | null {
+  if (!brush) return null;
+  if (brush.kind === 'tier') {
+    return {
+      kind: 'tier',
+      sticky: brush.sticky,
+      patch: {
+        ...(brush.patch.labelBg !== undefined ? { labelBg: brush.patch.labelBg } : {}),
+        ...(brush.patch.labelColor !== undefined ? { labelColor: brush.patch.labelColor } : {}),
+        ...(brush.patch.intervalDefault ? { intervalDefault: { ...brush.patch.intervalDefault } } : {}),
+        ...(brush.patch.boundaryDefault ? { boundaryDefault: { ...brush.patch.boundaryDefault } } : {}),
+        ...(brush.patch.pointDefault ? { pointDefault: { ...brush.patch.pointDefault } } : {})
+      }
+    };
+  }
+  return { ...brush, patch: { ...brush.patch } } as StyleBrush;
+}
+
+function resolveTierStyleKey(tg: TextGrid, tierIndex: number): string {
+  const tier = tg.tiers[tierIndex];
+  if (!tier) return `#${tierIndex}`;
+  const trimmed = tier.name.trim();
+  if (!trimmed) return `#${tierIndex}`;
+  const dupCount = tg.tiers.filter((t) => t.name === tier.name).length;
+  return dupCount === 1 ? tier.name : `#${tierIndex}`;
+}
+
 function createTabRecord(opts?: CreateTabOptions, historyLimit = loadSavedHistoryLimit()): TabRecord {
   const isDefaultBlank = !opts?.tg;
   const tg = opts?.tg ?? createSample('blank').tg;
+  const styleDoc = opts?.styleDoc
+    ? cloneStyleDocument(opts.styleDoc)
+    : createDefaultStyleDocument();
   const filename = opts?.filename ?? tg.name ?? '未命名.TextGrid';
   const collectionTgs = opts?.collectionTgs ?? [];
   const activeIdx = opts?.activeIdx ?? 0;
@@ -1167,7 +1364,8 @@ function createTabRecord(opts?: CreateTabOptions, historyLimit = loadSavedHistor
       tg,
       selection: null,
       hiddenTierIndices: [],
-      playRange: null
+      playRange: null,
+      styleDoc
     },
     historyLimit
   );
@@ -1201,6 +1399,7 @@ function createTabRecord(opts?: CreateTabOptions, historyLimit = loadSavedHistor
     audioDuration: 0,
     audioSampleRate: 0,
     analysis: null,
+    styleDoc,
     isBlankPlaceholder: isBlank
   };
 }
@@ -1210,6 +1409,7 @@ function fieldsFromTab(tab: TabRecord) {
     activeTabId: tab.id,
     corpusActiveEntryId: tab.corpus?.activeItemId ?? null,
     tg: tab.tg,
+    styleDoc: tab.styleDoc,
     collectionTgs: tab.collectionTgs,
     collectionActiveIdx: tab.collectionActiveIdx,
     filename: tab.filename,
@@ -1603,6 +1803,7 @@ const initialTab = createTabRecord(
 export const useEditorStore = create<EditorState>((set, get) => ({
   tabs: [initialTab],
   ...fieldsFromTab(initialTab),
+  styleBrush: null,
   pendingAutoEditTarget: null,
   historyLimit: initialHistoryLimit,
   lastHistoryNav: null,
@@ -2023,6 +2224,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const nextLastActive =
         selTierIdx !== null ? clampTierIndex(selTierIdx, payload.tg.tiers.length) : 0;
 
+      const nextStyleDoc = payload.styleDoc
+        ? cloneStyleDocument(payload.styleDoc)
+        : createDefaultStyleDocument();
+
       let nextHistory: HistoryTimeline | null = null;
       if (payload.resetHistory) {
         deleteCachedCorpusEntryHistory(target.id, payload.itemId);
@@ -2032,6 +2237,32 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           const cachedSnap = getCurrentSnapshot(cachedHistory);
           if (JSON.stringify(cachedSnap.tg) === JSON.stringify(payload.tg)) {
             nextHistory = sealTimelineCoalesce(cachedHistory);
+            // Sync latest corpus shared style into current cached snapshot if provided
+            if (payload.styleDoc) {
+              if (nextHistory.cursor < 0) {
+                nextHistory = {
+                  ...nextHistory,
+                  baseline: {
+                    ...nextHistory.baseline,
+                    snapshot: {
+                      ...nextHistory.baseline.snapshot,
+                      styleDoc: cloneStyleDocument(nextStyleDoc)
+                    }
+                  }
+                };
+              } else {
+                const updatedEntries = nextHistory.entries.slice();
+                const cur = updatedEntries[nextHistory.cursor];
+                updatedEntries[nextHistory.cursor] = {
+                  ...cur,
+                  snapshot: {
+                    ...cur.snapshot,
+                    styleDoc: cloneStyleDocument(nextStyleDoc)
+                  }
+                };
+                nextHistory = { ...nextHistory, entries: updatedEntries };
+              }
+            }
           }
         }
       }
@@ -2043,7 +2274,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             tg: payload.tg,
             selection: nextSelection,
             hiddenTierIndices: [],
-            playRange: temporal.playRange
+            playRange: temporal.playRange,
+            styleDoc: nextStyleDoc
           },
           s.historyLimit
         );
@@ -2076,6 +2308,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const nextTab: TabRecord = {
         ...target,
         tg: payload.tg,
+        styleDoc: nextStyleDoc,
         filename: payload.filename,
         currentFilePath: payload.currentFilePath,
         currentFileFormat: payload.currentFileFormat ?? target.corpus.defaultSaveFormat ?? 'longText',
@@ -2231,6 +2464,25 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
     }),
 
+  setCorpusStyleData: (patch, tabId) =>
+    set((s) => {
+      const targetTabId = tabId ?? s.activeTabId;
+      const target = s.tabs.find((t) => t.id === targetTabId);
+      if (!target || target.kind !== 'corpus' || !target.corpus) return s;
+      const nextCorpus: CorpusProjectState = {
+        ...target.corpus,
+        ...(Object.prototype.hasOwnProperty.call(patch, 'sharedStyle')
+          ? { sharedStyle: patch.sharedStyle }
+          : {}),
+        ...(Object.prototype.hasOwnProperty.call(patch, 'itemStyles')
+          ? { itemStyles: patch.itemStyles }
+          : {})
+      };
+      return {
+        tabs: s.tabs.map((t) => (t.id === targetTabId ? { ...t, corpus: nextCorpus } : t))
+      };
+    }),
+
   clearCorpusEntryHistory: (itemId, tabId) => {
     const targetTabId = tabId ?? get().activeTabId;
     deleteCachedCorpusEntryHistory(targetTabId, itemId);
@@ -2344,6 +2596,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((s) => {
       const isBlank = meta?.isBlankPlaceholder ?? false;
       const baselineKind: BaselineKind = meta?.baselineKind ?? (isBlank ? 'blank' : 'open');
+      const styleDoc = meta?.styleDoc
+        ? cloneStyleDocument(meta.styleDoc)
+        : createDefaultStyleDocument();
       const history = createHistoryTimeline(
         baselineKind,
         filename,
@@ -2351,7 +2606,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           tg,
           selection: null,
           hiddenTierIndices: [],
-          playRange: null
+          playRange: null,
+          styleDoc
         },
         s.historyLimit
       );
@@ -2359,6 +2615,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         collectionTgs.length > 0 ? { [activeIdx]: history } : {};
       const patch: Partial<TabRecord> = {
         tg,
+        styleDoc,
         filename,
         currentFilePath: meta?.filePath ?? null,
         currentFileFormat: meta?.fileFormat ?? 'longText',
@@ -2410,7 +2667,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             tg: rawTargetTg,
             selection: null,
             hiddenTierIndices: [],
-            playRange: null
+            playRange: null,
+            styleDoc: createDefaultStyleDocument()
           },
           s.historyLimit
         );
@@ -2421,6 +2679,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
       const targetSnap = getCurrentSnapshot(targetHistory);
       const nextTg = targetSnap.tg;
+      const nextStyleDoc = targetSnap.styleDoc
+        ? cloneStyleDocument(targetSnap.styleDoc)
+        : createDefaultStyleDocument();
       nextCollection[idx] = nextTg;
       const nextSelection = validateSelectionForTg(nextTg, targetSnap.selection);
       const nextHidden = sanitizeHiddenTiers(targetSnap.hiddenTierIndices, nextTg.tiers.length);
@@ -2437,6 +2698,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         history: targetHistory,
         isDirty: nextDirty,
         tg: nextTg,
+        styleDoc: nextStyleDoc,
         filename: nextTg.name || s.filename,
         viewDomain: null,
         selection: nextSelection,
@@ -2452,7 +2714,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
     }),
 
-  commitTgMutation: (mutator, nextSelection, meta) => {
+  commitTgMutation: (mutator, nextSelection, meta, styleUpdater) => {
     let committed = false;
     set((s) => {
       const produced = produceTgMutation(s.tg, mutator);
@@ -2460,6 +2722,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       committed = true;
 
       const nextTg = produced.nextTg;
+      let nextStyleDoc = s.styleDoc;
+      if (hasTrackableStyleState(s.styleDoc)) {
+        if (styleUpdater) {
+          nextStyleDoc = styleUpdater(s.styleDoc, s.tg, nextTg);
+        } else if (PURE_TEXT_HISTORY_TYPES.has(meta.type)) {
+          nextStyleDoc = syncStyleTextSnapshots(s.styleDoc, nextTg);
+        } else {
+          nextStyleDoc = propagateStylesOnTierChange(s.styleDoc, s.tg, nextTg);
+        }
+      }
+
       const rawSelection = produced.hasNextSelection
         ? produced.nextSelection!
         : nextSelection !== undefined
@@ -2483,7 +2756,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         tg: nextTg,
         selection: resolvedSelection,
         hiddenTierIndices: nextHidden,
-        playRange: temporal.playRange
+        playRange: temporal.playRange,
+        styleDoc: nextStyleDoc
       });
 
       const nextCollection =
@@ -2501,6 +2775,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
       const patch: Partial<TabRecord> = {
         tg: nextTg,
+        styleDoc: nextStyleDoc,
         collectionTgs: nextCollection,
         collectionHistories: nextCollectionHistories,
         history: nextHistory,
@@ -2546,6 +2821,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
       const nextHistory = setTimelineCursor(h, clampedTarget);
       const nextTg = targetSnap.tg;
+      const nextStyleDoc = targetSnap.styleDoc
+        ? cloneStyleDocument(targetSnap.styleDoc)
+        : s.styleDoc;
       const nextSelection = validateSelectionForTg(nextTg, targetSnap.selection);
       const nextHidden = sanitizeHiddenTiers(targetSnap.hiddenTierIndices, nextTg.tiers.length);
       const temporal = clampTabTemporalToTg(
@@ -2593,6 +2871,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
       const patch: Partial<TabRecord> = {
         tg: nextTg,
+        styleDoc: nextStyleDoc,
         collectionTgs: nextCollection,
         collectionHistories: nextCollectionHistories,
         history: nextHistory,
@@ -2661,7 +2940,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         tg: s.tg,
         selection: s.selection,
         hiddenTierIndices: s.hiddenTierIndices,
-        playRange: s.playRange
+        playRange: s.playRange,
+        styleDoc: s.styleDoc
       };
       const nextHistory = clearTimelineToCurrent(s.history, s.filename, curSnapshot);
       const nextCollectionHistories =
@@ -3038,8 +3318,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       st.showToast('仅支持合并同一层内的连续复选区间', true);
       return false;
     }
-    const tier = st.tg.tiers[analysis.units[0].tierIndex];
-    const tierName = formatTierLabel(tier?.name, analysis.units[0].tierIndex);
+    const mergedTierIndex = analysis.units[0].tierIndex;
+    const tier = st.tg.tiers[mergedTierIndex];
+    const tierName = formatTierLabel(tier?.name, mergedTierIndex);
+    const mergedIndices = analysis.items.map((it) => it.itemIndex);
+    const mergeStartIdx = Math.min(...mergedIndices);
+    const mergeEndIdx = Math.max(...mergedIndices);
+    const primaryIdx =
+      primaryRef && primaryRef.tierIndex === mergedTierIndex ? primaryRef.itemIndex : undefined;
     const bandIndex = st.selection?.bandIndex ?? 0;
     let mergedCount = 0;
     const committed = st.commitTgMutation(
@@ -3063,6 +3349,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         icon: 'mergeRight',
         tierName,
         focusTime: analysis.envelopeXmin
+      },
+      (prevStyle, _prevTg, nextTg) => {
+        const mergedIv = nextTg.tiers[mergedTierIndex]?.intervals[mergeStartIdx];
+        if (!mergedIv) return prevStyle;
+        return propagateStylesOnMerge(
+          prevStyle,
+          mergedTierIndex,
+          tier?.name ?? '',
+          mergeStartIdx,
+          mergeEndIdx,
+          mergedIv,
+          primaryIdx
+        );
       }
     );
     if (committed) {
@@ -3531,6 +3830,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       st.showToast('切分时间必须位于区间起止之间', true);
       return false;
     }
+    const origXmin = iv.xmin;
+    const origXmax = iv.xmax;
     const tierName = formatTierLabel(tier.name, tierIndex);
     return st.commitTgMutation(
       (_draft, ctx) => {
@@ -3550,6 +3851,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         icon: 'split',
         tierName,
         focusTime: t
+      },
+      (prevStyle, _prevTg, nextTg) => {
+        const newIntervals = nextTg.tiers[tierIndex]?.intervals.slice(itemIndex, itemIndex + 2) ?? [];
+        return propagateStylesOnSplit(
+          prevStyle,
+          tierIndex,
+          tier.name,
+          itemIndex,
+          origXmin,
+          origXmax,
+          newIntervals
+        );
       }
     );
   },
@@ -3585,6 +3898,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         icon: dir === -1 ? 'mergeLeft' : 'mergeRight',
         tierName,
         focusTime: origA.xmin
+      },
+      (prevStyle, _prevTg, nextTg) => {
+        const mergedIv = nextTg.tiers[tierIndex]?.intervals[aIdx];
+        if (!mergedIv) return prevStyle;
+        return propagateStylesOnMerge(
+          prevStyle,
+          tierIndex,
+          tier.name,
+          aIdx,
+          bIdx,
+          mergedIv,
+          itemIndex
+        );
       }
     );
   },
@@ -3618,6 +3944,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         icon: 'delBoundary',
         tierName,
         focusTime: time
+      },
+      (prevStyle, _prevTg, nextTg) => {
+        const mergedIv = nextTg.tiers[tierIndex]?.intervals[aIdx];
+        if (!mergedIv) return prevStyle;
+        return propagateStylesOnMerge(prevStyle, tierIndex, tier.name, aIdx, bIdx, mergedIv, aIdx);
       }
     );
   },
@@ -3629,6 +3960,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     let matchCount = 0;
     let selectedTierMergedIdx: number | null = null;
     const selTier = st.selection?.kind === 'boundary' ? st.selection.tierIndex : -1;
+    const mergedTiers: Array<{ tierIndex: number; tierName: string; aIdx: number; bIdx: number }> = [];
 
     for (let ti = 0; ti < st.tg.tiers.length; ti++) {
       const tier = st.tg.tiers[ti];
@@ -3637,8 +3969,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const rightIdx = tier.intervals.findIndex((iv) => Math.abs(iv.xmin - time) <= eps);
       if (leftIdx !== -1 && rightIdx !== -1 && leftIdx !== rightIdx) {
         matchCount++;
+        const aIdx = Math.min(leftIdx, rightIdx);
+        const bIdx = Math.max(leftIdx, rightIdx);
+        mergedTiers.push({ tierIndex: ti, tierName: tier.name, aIdx, bIdx });
         if (ti === selTier) {
-          selectedTierMergedIdx = Math.min(leftIdx, rightIdx);
+          selectedTierMergedIdx = aIdx;
         }
       }
     }
@@ -3680,6 +4015,24 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         detail: `${matchCount} 个层级 · ${formatTimeSec(time)}`,
         icon: 'delBoundaryAll',
         focusTime: time
+      },
+      (prevStyle, _prevTg, nextTg) => {
+        let cur = prevStyle;
+        for (const m of mergedTiers) {
+          const mergedIv = nextTg.tiers[m.tierIndex]?.intervals[m.aIdx];
+          if (mergedIv) {
+            cur = propagateStylesOnMerge(
+              cur,
+              m.tierIndex,
+              m.tierName,
+              m.aIdx,
+              m.bIdx,
+              mergedIv,
+              m.aIdx
+            );
+          }
+        }
+        return cur;
       }
     );
   },
@@ -4471,6 +4824,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       st.showToast(`该时刻不在「${targetName}」有效区间内`, true);
       return false;
     }
+    const origIv = tier.intervals[itemIdx];
     const ok = st.commitTgMutation(
       (_draft, ctx) => {
         const dTier = ctx.editTier(targetTierIndex);
@@ -4489,6 +4843,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         icon: 'projectToTier',
         tierName: targetName,
         focusTime: time
+      },
+      (prevStyle, _prevTg, nextTg) => {
+        const newIntervals =
+          nextTg.tiers[targetTierIndex]?.intervals.slice(itemIdx, itemIdx + 2) ?? [];
+        return propagateStylesOnSplit(
+          prevStyle,
+          targetTierIndex,
+          tier.name,
+          itemIdx,
+          origIv.xmin,
+          origIv.xmax,
+          newIntervals
+        );
       }
     );
     if (ok) {
@@ -4681,7 +5048,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         icon: 'splitEqual',
         tierName,
         focusTime: iv.xmin
-      }
+      },
+      (prevStyle) =>
+        propagateStylesOnSplit(prevStyle, tierIndex, tier.name, itemIndex, iv.xmin, iv.xmax, segs)
     );
     if (ok) get().showToast(`已将区间等分为 ${count} 段`);
     return ok;
@@ -4721,7 +5090,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         icon: 'splitEqual',
         tierName,
         focusTime: iv.xmin
-      }
+      },
+      (prevStyle) =>
+        propagateStylesOnSplit(prevStyle, tierIndex, tier.name, itemIndex, iv.xmin, iv.xmax, segs)
     );
     if (ok) get().showToast(`${toastLabel} ${count} 段`);
     return ok;
@@ -4795,6 +5166,26 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         icon: 'splitEqual',
         tierName,
         focusTime: originalXmin
+      },
+      (prevStyle) => {
+        const merged = propagateStylesOnMerge(
+          prevStyle,
+          tierIndex,
+          tier.name,
+          startItemIndex,
+          startItemIndex + prevCount - 1,
+          { xmin: originalXmin, xmax: originalXmax, text: '' },
+          startItemIndex
+        );
+        return propagateStylesOnSplit(
+          merged,
+          tierIndex,
+          tier.name,
+          startItemIndex,
+          originalXmin,
+          originalXmax,
+          segs
+        );
       }
     );
     if (ok) get().showToast(`${toastLabel} ${count} 段`);
@@ -5322,7 +5713,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }
       },
       undefined,
-      meta
+      meta,
+      (prevStyle, prevTg, nextTg) =>
+        isOuterStart || isOuterEnd
+          ? propagateStylesOnTierChange(prevStyle, prevTg, nextTg)
+          : propagateStylesOnBoundaryMove(prevStyle, tierIndex, tier.name, oldT, newT, false)
     );
   },
 
@@ -5498,7 +5893,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }
       },
       undefined,
-      meta
+      meta,
+      (prevStyle, prevTg, nextTg) =>
+        isGlobalOuterStart || isGlobalOuterEnd
+          ? propagateStylesOnTierChange(prevStyle, prevTg, nextTg)
+          : propagateStylesOnBoundaryMove(prevStyle, 0, '', oldT, newT, true)
     );
   },
 
@@ -5658,5 +6057,1018 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       finalXmin: appliedResult.finalXmin,
       finalXmax: appliedResult.finalXmax
     };
+  },
+
+  // ==========================================================================
+  // Style & Theme Actions
+  // ==========================================================================
+
+  setStylePalette: (paletteId) => {
+    if (!isPaletteId(paletteId)) return;
+    set((s) => {
+      if (s.styleDoc.paletteId === paletteId) return s;
+      const nextStyleDoc = cloneStyleDocument(s.styleDoc);
+      nextStyleDoc.paletteId = paletteId;
+      const palette = getPalette(paletteId);
+      const nextHistory = commitToTimeline(
+        s.history,
+        {
+          type: 'style-theme',
+          title: '切换配色主题',
+          detail: palette.name,
+          icon: 'customize'
+        },
+        {
+          tg: s.tg,
+          selection: s.selection,
+          hiddenTierIndices: s.hiddenTierIndices,
+          playRange: s.playRange,
+          styleDoc: nextStyleDoc
+        }
+      );
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+      return {
+        ...syncActivePatch(s, {
+          styleDoc: nextStyleDoc,
+          history: nextHistory,
+          collectionHistories: nextCollectionHistories,
+          isDirty: nextDirty,
+          isBlankPlaceholder: false
+        }),
+        docVersion: s.docVersion + 1
+      };
+    });
+  },
+
+  setStyleBwPrintMode: (enabled) => {
+    const nextEnabled = Boolean(enabled);
+    set((s) => {
+      if (s.styleDoc.bwPrintMode === nextEnabled) return s;
+      const nextStyleDoc = cloneStyleDocument(s.styleDoc);
+      nextStyleDoc.bwPrintMode = nextEnabled;
+      const nextHistory = commitToTimeline(
+        s.history,
+        {
+          type: 'style-theme',
+          title: nextEnabled ? '开启黑白印刷预览' : '关闭黑白印刷预览',
+          icon: 'customize'
+        },
+        {
+          tg: s.tg,
+          selection: s.selection,
+          hiddenTierIndices: s.hiddenTierIndices,
+          playRange: s.playRange,
+          styleDoc: nextStyleDoc
+        }
+      );
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+      return {
+        ...syncActivePatch(s, {
+          styleDoc: nextStyleDoc,
+          history: nextHistory,
+          collectionHistories: nextCollectionHistories,
+          isDirty: nextDirty,
+          isBlankPlaceholder: false
+        }),
+        docVersion: s.docVersion + 1
+      };
+    });
+  },
+
+  setStyleShowLegend: (enabled) => {
+    const nextEnabled = Boolean(enabled);
+    set((s) => {
+      if (s.styleDoc.showLegendInExport === nextEnabled) return s;
+      const nextStyleDoc = cloneStyleDocument(s.styleDoc);
+      nextStyleDoc.showLegendInExport = nextEnabled;
+      const nextHistory = commitToTimeline(
+        s.history,
+        {
+          type: 'style-theme',
+          title: nextEnabled ? '导出显示样式图例' : '导出隐藏样式图例',
+          icon: 'legend'
+        },
+        {
+          tg: s.tg,
+          selection: s.selection,
+          hiddenTierIndices: s.hiddenTierIndices,
+          playRange: s.playRange,
+          styleDoc: nextStyleDoc
+        }
+      );
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+      return {
+        ...syncActivePatch(s, {
+          styleDoc: nextStyleDoc,
+          history: nextHistory,
+          collectionHistories: nextCollectionHistories,
+          isDirty: nextDirty,
+          isBlankPlaceholder: false
+        }),
+        docVersion: s.docVersion + 1
+      };
+    });
+  },
+
+  setStyleSwatchLabel: (swatchId, label) => {
+    if (!swatchId) return;
+    set((s) => {
+      const cleaned = label.trim();
+      const prev = s.styleDoc.swatchLabels[swatchId] ?? '';
+      if (prev === cleaned) return s;
+      const nextStyleDoc = cloneStyleDocument(s.styleDoc);
+      if (cleaned) {
+        nextStyleDoc.swatchLabels[swatchId] = cleaned;
+      } else {
+        delete nextStyleDoc.swatchLabels[swatchId];
+      }
+      const nextHistory = commitToTimeline(
+        s.history,
+        {
+          type: 'style-theme',
+          title: '编辑图例标签',
+          detail: cleaned ? `${swatchId} · ${cleaned}` : `清除 ${swatchId} 标签`,
+          icon: 'legend',
+          coalesce: {
+            key: `style-swatch-label:${swatchId}`,
+            windowMs: DEFAULT_COALESCE_WINDOW_MS
+          }
+        },
+        {
+          tg: s.tg,
+          selection: s.selection,
+          hiddenTierIndices: s.hiddenTierIndices,
+          playRange: s.playRange,
+          styleDoc: nextStyleDoc
+        }
+      );
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+      return {
+        ...syncActivePatch(s, {
+          styleDoc: nextStyleDoc,
+          history: nextHistory,
+          collectionHistories: nextCollectionHistories,
+          isDirty: nextDirty,
+          isBlankPlaceholder: false
+        }),
+        docVersion: s.docVersion + 1
+      };
+    });
+  },
+
+  setIntervalStyle: (tierIndex, itemIndex, patch, opts) => {
+    set((s) => {
+      const tier = s.tg.tiers[tierIndex];
+      const iv = tier?.kind === 'intervalTier' ? tier.intervals[itemIndex] : null;
+      if (!tier || !iv) return s;
+      const nextStyleDoc = setIntervalStyleOverride(
+        s.styleDoc,
+        s.tg,
+        tierIndex,
+        itemIndex,
+        patch,
+        'merge'
+      );
+      const tierName = formatTierLabel(tier.name, tierIndex);
+      const isBrush = Boolean(opts?.label && opts.label.includes('格式刷'));
+      const nextHistory = commitToTimeline(
+        s.history,
+        {
+          type: isBrush ? 'style-brush' : 'style-edit',
+          title: opts?.label || '设置区间样式',
+          detail: `${tierName} · ${formatQuote(iv.text)}`,
+          icon: 'customize',
+          tierName,
+          focusTime: iv.xmin,
+          coalesce: opts?.coalesce
+            ? {
+                key: `style-iv:${tierIndex}:${itemIndex}`,
+                windowMs: DEFAULT_COALESCE_WINDOW_MS
+              }
+            : undefined
+        },
+        {
+          tg: s.tg,
+          selection: s.selection,
+          hiddenTierIndices: s.hiddenTierIndices,
+          playRange: s.playRange,
+          styleDoc: nextStyleDoc
+        }
+      );
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+      return {
+        ...syncActivePatch(s, {
+          styleDoc: nextStyleDoc,
+          history: nextHistory,
+          collectionHistories: nextCollectionHistories,
+          isDirty: nextDirty,
+          isBlankPlaceholder: false
+        }),
+        docVersion: s.docVersion + 1
+      };
+    });
+  },
+
+  setMultiIntervalStyle: (items, patch, opts) => {
+    set((s) => {
+      const clean = sanitizeIntervalRefs(s.tg, items);
+      if (clean.length === 0) return s;
+      let nextStyleDoc = s.styleDoc;
+      for (const ref of clean) {
+        nextStyleDoc = setIntervalStyleOverride(
+          nextStyleDoc,
+          s.tg,
+          ref.tierIndex,
+          ref.itemIndex,
+          patch,
+          'merge'
+        );
+      }
+      const nextHistory = commitToTimeline(
+        s.history,
+        {
+          type: 'style-edit',
+          title: `批量设置区间样式 (${clean.length} 项)`,
+          detail: `已应用到 ${clean.length} 个所选区间`,
+          icon: 'customize',
+          coalesce: opts?.coalesce
+            ? {
+                key: `style-multi-iv:${clean.map((r) => `${r.tierIndex}:${r.itemIndex}`).join(',')}`,
+                windowMs: DEFAULT_COALESCE_WINDOW_MS
+              }
+            : undefined
+        },
+        {
+          tg: s.tg,
+          selection: s.selection,
+          hiddenTierIndices: s.hiddenTierIndices,
+          playRange: s.playRange,
+          styleDoc: nextStyleDoc
+        }
+      );
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+      return {
+        ...syncActivePatch(s, {
+          styleDoc: nextStyleDoc,
+          history: nextHistory,
+          collectionHistories: nextCollectionHistories,
+          isDirty: nextDirty,
+          isBlankPlaceholder: false
+        }),
+        docVersion: s.docVersion + 1
+      };
+    });
+  },
+
+  setBoundaryStyle: (tierIndex, time, patch, opts) => {
+    if (!Number.isFinite(time)) return;
+    set((s) => {
+      if (tierIndex !== null && !s.tg.tiers[tierIndex]) return s;
+      const nextStyleDoc = setBoundaryStyleOverride(
+        s.styleDoc,
+        s.tg,
+        tierIndex,
+        time,
+        patch,
+        'merge'
+      );
+      const tierLabel =
+        tierIndex === null
+          ? '跨层对齐边界'
+          : formatTierLabel(s.tg.tiers[tierIndex]?.name, tierIndex);
+      const nextHistory = commitToTimeline(
+        s.history,
+        {
+          type: 'style-edit',
+          title: '设置边界样式',
+          detail: `${tierLabel} · ${formatTimeSec(time)}`,
+          icon: 'customize',
+          tierName: tierIndex === null ? undefined : tierLabel,
+          focusTime: time,
+          coalesce: opts?.coalesce
+            ? {
+                key: `style-bd:${tierIndex ?? 'all'}:${time.toFixed(4)}`,
+                windowMs: DEFAULT_COALESCE_WINDOW_MS
+              }
+            : undefined
+        },
+        {
+          tg: s.tg,
+          selection: s.selection,
+          hiddenTierIndices: s.hiddenTierIndices,
+          playRange: s.playRange,
+          styleDoc: nextStyleDoc
+        }
+      );
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+      return {
+        ...syncActivePatch(s, {
+          styleDoc: nextStyleDoc,
+          history: nextHistory,
+          collectionHistories: nextCollectionHistories,
+          isDirty: nextDirty,
+          isBlankPlaceholder: false
+        }),
+        docVersion: s.docVersion + 1
+      };
+    });
+  },
+
+  setPointStyle: (tierIndex, itemIndex, patch, opts) => {
+    set((s) => {
+      const tier = s.tg.tiers[tierIndex];
+      const pt = tier?.kind === 'textTier' ? tier.points[itemIndex] : null;
+      if (!tier || !pt) return s;
+      const nextStyleDoc = setPointStyleOverride(
+        s.styleDoc,
+        s.tg,
+        tierIndex,
+        itemIndex,
+        patch,
+        'merge'
+      );
+      const tierName = formatTierLabel(tier.name, tierIndex);
+      const nextHistory = commitToTimeline(
+        s.history,
+        {
+          type: 'style-edit',
+          title: '设置标点样式',
+          detail: `${tierName} · ${formatTimeSec(pt.number)}`,
+          icon: 'customize',
+          tierName,
+          focusTime: pt.number,
+          coalesce: opts?.coalesce
+            ? {
+                key: `style-pt:${tierIndex}:${itemIndex}`,
+                windowMs: DEFAULT_COALESCE_WINDOW_MS
+              }
+            : undefined
+        },
+        {
+          tg: s.tg,
+          selection: s.selection,
+          hiddenTierIndices: s.hiddenTierIndices,
+          playRange: s.playRange,
+          styleDoc: nextStyleDoc
+        }
+      );
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+      return {
+        ...syncActivePatch(s, {
+          styleDoc: nextStyleDoc,
+          history: nextHistory,
+          collectionHistories: nextCollectionHistories,
+          isDirty: nextDirty,
+          isBlankPlaceholder: false
+        }),
+        docVersion: s.docVersion + 1
+      };
+    });
+  },
+
+  setTierStyle: (tierIndex, patch, opts) => {
+    set((s) => {
+      const tier = s.tg.tiers[tierIndex];
+      if (!tier) return s;
+      const tierKey = resolveTierStyleKey(s.tg, tierIndex);
+      const nextStyleDoc = setTierStylePatch(s.styleDoc, tierKey, patch, 'merge');
+      const tierName = formatTierLabel(tier.name, tierIndex);
+      const nextHistory = commitToTimeline(
+        s.history,
+        {
+          type: 'style-edit',
+          title: '设置层级样式',
+          detail: tierName,
+          icon: 'layers',
+          tierName,
+          coalesce: opts?.coalesce
+            ? {
+                key: `style-tier:${tierKey}`,
+                windowMs: DEFAULT_COALESCE_WINDOW_MS
+              }
+            : undefined
+        },
+        {
+          tg: s.tg,
+          selection: s.selection,
+          hiddenTierIndices: s.hiddenTierIndices,
+          playRange: s.playRange,
+          styleDoc: nextStyleDoc
+        }
+      );
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+      return {
+        ...syncActivePatch(s, {
+          styleDoc: nextStyleDoc,
+          history: nextHistory,
+          collectionHistories: nextCollectionHistories,
+          isDirty: nextDirty,
+          isBlankPlaceholder: false
+        }),
+        docVersion: s.docVersion + 1
+      };
+    });
+  },
+
+  applyStyleToSameText: (tierIndex, text, patch) => {
+    let matchedCount = 0;
+    set((s) => {
+      const tier = s.tg.tiers[tierIndex];
+      if (!tier || tier.kind !== 'intervalTier') return s;
+      let nextStyleDoc = s.styleDoc;
+      for (let ii = 0; ii < tier.intervals.length; ii += 1) {
+        if (tier.intervals[ii].text === text) {
+          nextStyleDoc = setIntervalStyleOverride(nextStyleDoc, s.tg, tierIndex, ii, patch, 'merge');
+          matchedCount += 1;
+        }
+      }
+      if (matchedCount === 0) return s;
+      const tierName = formatTierLabel(tier.name, tierIndex);
+      const nextHistory = commitToTimeline(
+        s.history,
+        {
+          type: 'style-edit',
+          title: '同文本批量着色',
+          detail: `${tierName} · ${formatQuote(text)} (${matchedCount} 处)`,
+          icon: 'customize',
+          tierName
+        },
+        {
+          tg: s.tg,
+          selection: s.selection,
+          hiddenTierIndices: s.hiddenTierIndices,
+          playRange: s.playRange,
+          styleDoc: nextStyleDoc
+        }
+      );
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+      return {
+        ...syncActivePatch(s, {
+          styleDoc: nextStyleDoc,
+          history: nextHistory,
+          collectionHistories: nextCollectionHistories,
+          isDirty: nextDirty,
+          isBlankPlaceholder: false
+        }),
+        docVersion: s.docVersion + 1
+      };
+    });
+    return matchedCount;
+  },
+
+  clearSelectionStyle: () => {
+    set((s) => {
+      let nextStyleDoc = s.styleDoc;
+      let changed = false;
+      const cleanMulti = sanitizeIntervalRefs(s.tg, s.multiSelection);
+
+      if (cleanMulti.length >= 2) {
+        const before = nextStyleDoc.intervalOverrides.length;
+        for (const ref of cleanMulti) {
+          nextStyleDoc = clearObjectStyleOverride(nextStyleDoc, {
+            kind: 'interval',
+            tierIndex: ref.tierIndex,
+            itemIndex: ref.itemIndex
+          });
+        }
+        changed = nextStyleDoc.intervalOverrides.length !== before;
+      } else if (s.selection?.kind === 'interval') {
+        const before = nextStyleDoc.intervalOverrides.length;
+        nextStyleDoc = clearObjectStyleOverride(nextStyleDoc, {
+          kind: 'interval',
+          tierIndex: s.selection.tierIndex,
+          itemIndex: s.selection.itemIndex
+        });
+        changed = nextStyleDoc.intervalOverrides.length !== before;
+      } else if (s.selection?.kind === 'boundary') {
+        const before = nextStyleDoc.boundaryOverrides.length;
+        nextStyleDoc = clearObjectStyleOverride(nextStyleDoc, {
+          kind: 'boundary',
+          tierIndex: s.selection.tierIndex,
+          time: s.selection.time
+        });
+        nextStyleDoc = clearObjectStyleOverride(nextStyleDoc, {
+          kind: 'boundary',
+          tierIndex: null,
+          time: s.selection.time
+        });
+        changed = nextStyleDoc.boundaryOverrides.length !== before;
+      } else if (s.selection?.kind === 'spine') {
+        const before = nextStyleDoc.boundaryOverrides.length;
+        nextStyleDoc = clearObjectStyleOverride(nextStyleDoc, {
+          kind: 'boundary',
+          tierIndex: null,
+          time: s.selection.time
+        });
+        changed = nextStyleDoc.boundaryOverrides.length !== before;
+      } else if (s.selection?.kind === 'point') {
+        const before = nextStyleDoc.pointOverrides.length;
+        nextStyleDoc = clearObjectStyleOverride(nextStyleDoc, {
+          kind: 'point',
+          tierIndex: s.selection.tierIndex,
+          itemIndex: s.selection.itemIndex
+        });
+        changed = nextStyleDoc.pointOverrides.length !== before;
+      } else if (s.selection?.kind === 'tier') {
+        const tierIdx = s.selection.tierIndex;
+        const tier = s.tg.tiers[tierIdx];
+        if (tier) {
+          const idxKey = `#${tierIdx}`;
+          const nameKey = tier.name;
+          if (
+            Object.prototype.hasOwnProperty.call(s.styleDoc.tierStyles, idxKey) ||
+            (nameKey && Object.prototype.hasOwnProperty.call(s.styleDoc.tierStyles, nameKey))
+          ) {
+            nextStyleDoc = cloneStyleDocument(s.styleDoc);
+            delete nextStyleDoc.tierStyles[idxKey];
+            if (nameKey) delete nextStyleDoc.tierStyles[nameKey];
+            changed = true;
+          }
+        }
+      }
+
+      if (!changed) return s;
+
+      const nextHistory = commitToTimeline(
+        s.history,
+        {
+          type: 'style-clear',
+          title: '清除选中样式',
+          icon: 'clear'
+        },
+        {
+          tg: s.tg,
+          selection: s.selection,
+          hiddenTierIndices: s.hiddenTierIndices,
+          playRange: s.playRange,
+          styleDoc: nextStyleDoc
+        }
+      );
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+      return {
+        ...syncActivePatch(s, {
+          styleDoc: nextStyleDoc,
+          history: nextHistory,
+          collectionHistories: nextCollectionHistories,
+          isDirty: nextDirty,
+          isBlankPlaceholder: false
+        }),
+        docVersion: s.docVersion + 1
+      };
+    });
+  },
+
+  clearAllDocumentStyles: () => {
+    set((s) => {
+      if (!hasAnyCustomStyle(s.styleDoc) && s.styleDoc.showLegendInExport === true) return s;
+      const nextStyleDoc = clearAllStyles(s.styleDoc, { keepPalette: false });
+      const nextHistory = commitToTimeline(
+        s.history,
+        {
+          type: 'style-clear',
+          title: '清除全部样式',
+          icon: 'clear'
+        },
+        {
+          tg: s.tg,
+          selection: s.selection,
+          hiddenTierIndices: s.hiddenTierIndices,
+          playRange: s.playRange,
+          styleDoc: nextStyleDoc
+        }
+      );
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+      return {
+        ...syncActivePatch(s, {
+          styleDoc: nextStyleDoc,
+          history: nextHistory,
+          collectionHistories: nextCollectionHistories,
+          isDirty: nextDirty,
+          isBlankPlaceholder: false
+        }),
+        docVersion: s.docVersion + 1
+      };
+    });
+  },
+
+  upsertStyleRule: (rule) => {
+    set((s) => {
+      const nextStyleDoc = cloneStyleDocument(s.styleDoc);
+      const clonedRule: StyleRule = {
+        ...rule,
+        ...(rule.intervalStyle ? { intervalStyle: { ...rule.intervalStyle } } : {}),
+        ...(rule.pointStyle ? { pointStyle: { ...rule.pointStyle } } : {})
+      };
+      const idx = nextStyleDoc.rules.findIndex((r) => r.id === clonedRule.id);
+      if (idx >= 0) {
+        nextStyleDoc.rules[idx] = clonedRule;
+      } else {
+        nextStyleDoc.rules.push(clonedRule);
+      }
+      const nextHistory = commitToTimeline(
+        s.history,
+        {
+          type: 'style-rule',
+          title: idx >= 0 ? '更新着色规则' : '添加着色规则',
+          detail: clonedRule.name || clonedRule.pattern || clonedRule.matchKind,
+          icon: 'customize'
+        },
+        {
+          tg: s.tg,
+          selection: s.selection,
+          hiddenTierIndices: s.hiddenTierIndices,
+          playRange: s.playRange,
+          styleDoc: nextStyleDoc
+        }
+      );
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+      return {
+        ...syncActivePatch(s, {
+          styleDoc: nextStyleDoc,
+          history: nextHistory,
+          collectionHistories: nextCollectionHistories,
+          isDirty: nextDirty,
+          isBlankPlaceholder: false
+        }),
+        docVersion: s.docVersion + 1
+      };
+    });
+  },
+
+  removeStyleRule: (ruleId) => {
+    set((s) => {
+      const target = s.styleDoc.rules.find((r) => r.id === ruleId);
+      if (!target) return s;
+      const nextStyleDoc = cloneStyleDocument(s.styleDoc);
+      nextStyleDoc.rules = nextStyleDoc.rules.filter((r) => r.id !== ruleId);
+      const nextHistory = commitToTimeline(
+        s.history,
+        {
+          type: 'style-rule',
+          title: '删除着色规则',
+          detail: target.name || target.pattern || target.id,
+          icon: 'trash'
+        },
+        {
+          tg: s.tg,
+          selection: s.selection,
+          hiddenTierIndices: s.hiddenTierIndices,
+          playRange: s.playRange,
+          styleDoc: nextStyleDoc
+        }
+      );
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+      return {
+        ...syncActivePatch(s, {
+          styleDoc: nextStyleDoc,
+          history: nextHistory,
+          collectionHistories: nextCollectionHistories,
+          isDirty: nextDirty,
+          isBlankPlaceholder: false
+        }),
+        docVersion: s.docVersion + 1
+      };
+    });
+  },
+
+  toggleStyleRule: (ruleId, enabled) => {
+    set((s) => {
+      const idx = s.styleDoc.rules.findIndex((r) => r.id === ruleId);
+      if (idx < 0) return s;
+      const target = s.styleDoc.rules[idx];
+      const nextEnabled = enabled !== undefined ? Boolean(enabled) : !target.enabled;
+      if (nextEnabled === target.enabled) return s;
+      const nextStyleDoc = cloneStyleDocument(s.styleDoc);
+      nextStyleDoc.rules[idx].enabled = nextEnabled;
+      const nextHistory = commitToTimeline(
+        s.history,
+        {
+          type: 'style-rule',
+          title: nextEnabled ? '启用着色规则' : '停用着色规则',
+          detail: target.name || target.pattern || target.id,
+          icon: 'customize'
+        },
+        {
+          tg: s.tg,
+          selection: s.selection,
+          hiddenTierIndices: s.hiddenTierIndices,
+          playRange: s.playRange,
+          styleDoc: nextStyleDoc
+        }
+      );
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+      return {
+        ...syncActivePatch(s, {
+          styleDoc: nextStyleDoc,
+          history: nextHistory,
+          collectionHistories: nextCollectionHistories,
+          isDirty: nextDirty,
+          isBlankPlaceholder: false
+        }),
+        docVersion: s.docVersion + 1
+      };
+    });
+  },
+
+  applyStyleRulePreset: (presetId) => {
+    const created = createRuleFromPreset(presetId);
+    if (!created) return;
+    set((s) => {
+      const nextStyleDoc = cloneStyleDocument(s.styleDoc);
+      const existingIdx = nextStyleDoc.rules.findIndex(
+        (r) =>
+          r.matchKind === created.matchKind &&
+          r.pattern === created.pattern &&
+          (r.tierName ?? '') === (created.tierName ?? '')
+      );
+      if (existingIdx >= 0) {
+        nextStyleDoc.rules[existingIdx] = {
+          ...created,
+          id: nextStyleDoc.rules[existingIdx].id
+        };
+      } else {
+        nextStyleDoc.rules.push(created);
+      }
+      const nextHistory = commitToTimeline(
+        s.history,
+        {
+          type: 'style-rule',
+          title: '应用着色预设规则',
+          detail: created.name,
+          icon: 'customize'
+        },
+        {
+          tg: s.tg,
+          selection: s.selection,
+          hiddenTierIndices: s.hiddenTierIndices,
+          playRange: s.playRange,
+          styleDoc: nextStyleDoc
+        }
+      );
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+      return {
+        ...syncActivePatch(s, {
+          styleDoc: nextStyleDoc,
+          history: nextHistory,
+          collectionHistories: nextCollectionHistories,
+          isDirty: nextDirty,
+          isBlankPlaceholder: false
+        }),
+        docVersion: s.docVersion + 1
+      };
+    });
+  },
+
+  clearOrphanedStyles: () => {
+    set((s) => {
+      const orph = s.styleDoc.orphaned;
+      if (
+        !orph ||
+        (orph.intervals.length === 0 &&
+          orph.boundaries.length === 0 &&
+          orph.points.length === 0)
+      ) {
+        return s;
+      }
+      const nextStyleDoc = cloneStyleDocument(s.styleDoc);
+      delete nextStyleDoc.orphaned;
+      const nextHistory = commitToTimeline(
+        s.history,
+        {
+          type: 'style-clear',
+          title: '清理失配样式',
+          icon: 'clear'
+        },
+        {
+          tg: s.tg,
+          selection: s.selection,
+          hiddenTierIndices: s.hiddenTierIndices,
+          playRange: s.playRange,
+          styleDoc: nextStyleDoc
+        }
+      );
+      const nextCollectionHistories =
+        s.collectionTgs.length > 0
+          ? { ...s.collectionHistories, [s.collectionActiveIdx]: nextHistory }
+          : s.collectionHistories;
+      const nextDirty =
+        s.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextCollectionHistories, s.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+      return {
+        ...syncActivePatch(s, {
+          styleDoc: nextStyleDoc,
+          history: nextHistory,
+          collectionHistories: nextCollectionHistories,
+          isDirty: nextDirty,
+          isBlankPlaceholder: false
+        }),
+        docVersion: s.docVersion + 1
+      };
+    });
+  },
+
+  setStyleBrush: (brush) => set({ styleBrush: cloneStyleBrush(brush) }),
+
+  clearStyleBrush: () =>
+    set((s) => (s.styleBrush === null ? s : { styleBrush: null })),
+
+  loadStyleDocForTab: (tabId, styleDoc, opts) => {
+    set((s) => {
+      const target = s.tabs.find((t) => t.id === tabId);
+      if (!target) return s;
+      const isActive = tabId === s.activeTabId;
+      const nextStyleDoc = cloneStyleDocument(styleDoc);
+      const baseHistory = isActive ? s.history : target.history;
+      const baseColHistories = isActive ? s.collectionHistories : target.collectionHistories;
+      const baseTg = isActive ? s.tg : target.tg;
+      const baseSelection = isActive ? s.selection : target.selection;
+      const baseHidden = isActive ? s.hiddenTierIndices : target.hiddenTierIndices;
+      const basePlayRange = isActive ? s.playRange : target.playRange;
+
+      let nextHistory: HistoryTimeline;
+      if (opts?.markDirty) {
+        nextHistory = commitToTimeline(
+          baseHistory,
+          {
+            type: 'style-theme',
+            title: '载入样式文件',
+            icon: 'customize'
+          },
+          {
+            tg: baseTg,
+            selection: baseSelection,
+            hiddenTierIndices: baseHidden,
+            playRange: basePlayRange,
+            styleDoc: nextStyleDoc
+          }
+        );
+      } else {
+        // Silent load (companion .tgstyle.json or corpus item init): update current snapshot in-place without marking dirty
+        if (baseHistory.cursor < 0) {
+          nextHistory = {
+            ...baseHistory,
+            baseline: {
+              ...baseHistory.baseline,
+              snapshot: {
+                ...baseHistory.baseline.snapshot,
+                styleDoc: cloneStyleDocument(nextStyleDoc)
+              }
+            }
+          };
+        } else {
+          const nextEntries = baseHistory.entries.slice();
+          const cur = nextEntries[baseHistory.cursor];
+          nextEntries[baseHistory.cursor] = {
+            ...cur,
+            snapshot: {
+              ...cur.snapshot,
+              styleDoc: cloneStyleDocument(nextStyleDoc)
+            }
+          };
+          nextHistory = { ...baseHistory, entries: nextEntries };
+        }
+      }
+
+      const nextColHistories =
+        target.collectionTgs.length > 0
+          ? { ...baseColHistories, [target.collectionActiveIdx]: nextHistory }
+          : baseColHistories;
+      const nextDirty =
+        target.collectionTgs.length > 0
+          ? computeCollectionDirty(nextHistory, nextColHistories, target.collectionActiveIdx)
+          : isTimelineDirty(nextHistory);
+
+      const patch: Partial<TabRecord> = {
+        styleDoc: nextStyleDoc,
+        history: nextHistory,
+        collectionHistories: nextColHistories,
+        isDirty: nextDirty
+      };
+      const nextTabs = s.tabs.map((t) => (t.id === tabId ? { ...t, ...patch } : t));
+      if (isActive) {
+        return {
+          tabs: nextTabs,
+          styleDoc: nextStyleDoc,
+          history: nextHistory,
+          collectionHistories: nextColHistories,
+          isDirty: nextDirty,
+          docVersion: s.docVersion + 1
+        };
+      }
+      return { tabs: nextTabs };
+    });
   }
 }));

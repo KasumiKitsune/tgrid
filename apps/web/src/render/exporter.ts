@@ -29,6 +29,9 @@ import {
   estimateEmbeddedFontBytes,
   injectIpaFontsIntoSvg
 } from '../utils/ipaFontEmbed';
+import { hasAnyCustomStyle } from '../style/palettes';
+import { propagateStylesOnTierChange } from '../style/reconcileStyle';
+import type { StyleDocument } from '../style/types';
 
 export interface ExportPrefs {
   format: 'svg' | 'png';
@@ -346,6 +349,10 @@ export interface ExportSceneInput {
   maxFreq: number;
   f0RangeOverride?: F0RangeBounds | null;
   forceSpecStrategy?: string;
+  styleDoc?: StyleDocument | null;
+  bwPrintMode?: boolean;
+  showStyleLegend?: boolean;
+  embedProjectMetadata?: boolean;
 }
 
 export interface ExportRenderOutput {
@@ -398,6 +405,16 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
     tMin,
     tMax
   });
+  const isSliced =
+    tMin !== undefined ||
+    tMax !== undefined ||
+    vtg.tiers.length !== tg.tiers.length ||
+    (input.tierIndices.length > 0 && input.tierIndices.some((tierIdx, pos) => tierIdx !== pos));
+  const alignedStyleDoc: StyleDocument | null = input.styleDoc
+    ? isSliced && hasAnyCustomStyle(input.styleDoc)
+      ? propagateStylesOnTierChange(input.styleDoc, tg, vtg)
+      : input.styleDoc
+    : null;
   const ipaVariant = prefs.fontStrategy === 'serif' ? 'serif' : 'sans';
   await Promise.all([prefetchTrigraphCache(vtg, bridge), ensureIpaFontsLoaded([ipaVariant])]);
 
@@ -602,6 +619,7 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
     currentTime: 0,
     showPlayhead: false,
     dragPreview: null,
+    styleDoc: alignedStyleDoc,
     exportCtx: {
       palette: getExportPalette(prefs.palette),
       transparentBg: prefs.transparentBg,
@@ -634,9 +652,23 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
       specOpacity: cueOps.spec,
       pitchOpacity: cueOps.pitch,
       formantOpacity: cueOps.formant,
-      bandSpecResults
+      bandSpecResults,
+      bwPrintMode: input.bwPrintMode,
+      showStyleLegend: input.showStyleLegend,
+      embedProjectMetadata: prefs.format === 'svg' && Boolean(input.embedProjectMetadata),
+      metadataFilename: input.filename
     }
   });
+
+  const renderedHeight = Number(offSvg.getAttribute('height'));
+  const finalLayout: ScoreLayout =
+    Number.isFinite(renderedHeight) && renderedHeight > layout.height
+      ? { ...layout, height: renderedHeight }
+      : layout;
+  const finalScaleCheck =
+    prefs.format === 'png'
+      ? computeEffectivePngScale(finalLayout.width, finalLayout.height, prefs.pngScale)
+      : scaleCheck;
 
   let svgMarkup = '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(offSvg);
   if (prefs.roundCoords) svgMarkup = compactSvgMarkup(svgMarkup);
@@ -655,18 +687,18 @@ export async function renderOffscreenExport(input: ExportSceneInput): Promise<Ex
     const assetSum = externalAssets.reduce((acc, a) => acc + (a.data ? a.data.length : a.estimatedBytes || 0), 0);
     estimatedBytes = svgBytes + assetSum + 512;
   } else if (prefs.format === 'png') {
-    const outW = Math.round(layout.width * scaleCheck.effectiveScale);
-    const outH = Math.round(layout.height * scaleCheck.effectiveScale);
+    const outW = Math.round(finalLayout.width * finalScaleCheck.effectiveScale);
+    const outH = Math.round(finalLayout.height * finalScaleCheck.effectiveScale);
     const factor = specStrategy === 'curves-only' ? 0.06 : 0.16;
     estimatedBytes = Math.max(8192, Math.round(outW * outH * factor));
   }
 
   return {
     svgMarkup,
-    layout,
+    layout: finalLayout,
     specStrategy,
-    effectiveScale: scaleCheck.effectiveScale,
-    scaleCapped: scaleCheck.scaleCapped,
+    effectiveScale: finalScaleCheck.effectiveScale,
+    scaleCapped: finalScaleCheck.scaleCapped,
     externalAssets,
     estimatedBytes
   };

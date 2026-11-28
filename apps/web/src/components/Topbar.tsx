@@ -4,8 +4,57 @@ import { formatKeyCombo } from '../shortcuts/registry';
 import { useEditorStore } from '../store/useEditorStore';
 import type { BuiltinSampleId } from '../data/samples';
 import { CorpusFolderIcon } from '../corpus/corpusIcons';
-import { BrandLogoIcon, CloseIcon, TGridIcon, UiIcon } from './Icons';
+import { CloseIcon, TGridIcon, UiIcon } from './Icons';
 import { RibbonBar } from './RibbonBar';
+
+const BrandLockupLogo: React.FC<{ height: number }> = ({ height }) => {
+  const width = Math.round((height * 352.5) / 72 * 10) / 10;
+  return (
+    <svg
+      className="brand-lockup-svg"
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="24 24 352.5 72"
+      width={width}
+      height={height}
+      fill="none"
+      aria-hidden="true"
+    >
+      <g>
+        <path
+          d="M 26.5 24 H 93.5 A 2.5 2.5 0 0 1 96 26.5 V 37.5 A 2.5 2.5 0 0 1 93.5 40 H 68 V 93.5 A 2.5 2.5 0 0 1 65.5 96 H 54.5 A 2.5 2.5 0 0 1 52 93.5 V 40 H 26.5 A 2.5 2.5 0 0 1 24 37.5 V 26.5 A 2.5 2.5 0 0 1 26.5 24 Z"
+          fill="#141413"
+        />
+        <rect x="24" y="46" width="22" height="19" rx="2.5" fill="#1E62F5" />
+        <rect x="24" y="71" width="22" height="25" rx="2.5" fill="#CBC6BC" />
+        <rect x="74" y="46" width="22" height="25" rx="2.5" fill="#CBC6BC" />
+        <rect x="74" y="77" width="22" height="19" rx="2.5" fill="#732BF5" />
+      </g>
+      <g>
+        <path
+          d="M 128 33 H 168 A 2 2 0 0 1 170 35 V 41.8 A 2 2 0 0 1 168 43.8 H 153.8 V 85 A 2 2 0 0 1 151.8 87 H 144.2 A 2 2 0 0 1 142.2 85 V 43.8 H 128 A 2 2 0 0 1 126 41.8 V 35 A 2 2 0 0 1 128 33 Z"
+          fill="#1E62F5"
+        />
+        <circle cx="191.5" cy="60" r="5.8" fill="#732BF5" />
+        <path
+          d="M 264.5 43.4 A 27.8 28.2 0 1 0 269.7 57.5 H 242.5 V 67.3 H 256.9 A 16.4 17.4 0 1 1 255.3 49.8 Z"
+          fill="#141413"
+        />
+        <path
+          d="M 282.1 48.0 H 289.7 A 1.6 1.6 0 0 1 291.3 49.6 V 54.8 C 293.8 49.6 298.0 47.2 303.5 47.2 C 304.4 47.2 305.2 47.3 305.8 47.5 V 57.5 C 304.6 57.2 303.2 57.1 301.6 57.1 C 295.2 57.1 291.5 61.0 291.5 68.2 V 85.4 A 1.6 1.6 0 0 1 289.9 87.0 H 282.1 A 1.6 1.6 0 0 1 280.5 85.4 V 49.6 A 1.6 1.6 0 0 1 282.1 48.0 Z"
+          fill="#141413"
+        />
+        <circle cx="318.5" cy="36.8" r="6.0" fill="#141413" />
+        <rect x="313.0" y="48.0" width="11.0" height="39.0" rx="1.6" fill="#141413" />
+        <path
+          fillRule="evenodd"
+          clipRule="evenodd"
+          d="M 367.1 31.0 H 374.9 A 1.6 1.6 0 0 1 376.5 32.6 V 85.4 A 1.6 1.6 0 0 1 374.9 87.0 H 367.1 A 1.6 1.6 0 0 1 365.5 85.4 V 84.8 A 20.5 20.5 0 1 1 365.5 50.2 V 32.6 A 1.6 1.6 0 0 1 367.1 31.0 Z M 355.0 56.9 A 10.2 10.6 0 1 0 355.0 78.1 A 10.2 10.6 0 1 0 355.0 56.9 Z"
+          fill="#141413"
+        />
+      </g>
+    </svg>
+  );
+};
 
 export type ExportActionKind =
   | 'save'
@@ -397,8 +446,8 @@ export const Topbar: React.FC<TopbarProps> = ({
         >
           <div className="titlebar-brand-slot" data-tauri-drag-region="">
             <span className="brand titlebar-brand" data-tauri-drag-region="">
-              <BrandLogoIcon size={15} />
-              <strong className="brand-mark">T·Grid</strong>
+              <BrandLockupLogo height={16} />
+              <span className="sr-only">T·Grid</span>
             </span>
           </div>
 
@@ -447,8 +496,8 @@ export const Topbar: React.FC<TopbarProps> = ({
       ) : (
         <div className="tabbar">
           <h1 className="brand tabbar-brand">
-            <BrandLogoIcon size={16} />
-            <strong className="brand-mark">T·Grid</strong>
+            <BrandLockupLogo height={17} />
+            <span className="sr-only">T·Grid</span>
             <span className="brand-sub">TextGrid Editor</span>
             <span className="sr-only"> — Praat TextGrid 编辑器与语音标注出图工具</span>
           </h1>

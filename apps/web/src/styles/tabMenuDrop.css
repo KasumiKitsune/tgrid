@@ -182,13 +182,62 @@
   cursor: default;
 }
 
+/* Custom Architectural Square Checkbox (Aligned with .export-check) */
 .bulk-drop-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
   margin: 0;
-  width: 14px;
-  height: 14px;
+  padding: 0;
+  width: 13px;
+  height: 13px;
   flex-shrink: 0;
-  accent-color: var(--ink);
+  border: 1px solid var(--rule-hover);
+  border-radius: 0;
+  background: var(--bg-sheet);
   cursor: inherit;
+  transition:
+    background-color 120ms var(--ease),
+    border-color 120ms var(--ease);
+}
+
+.bulk-drop-item:hover:not(.is-disabled):not(.is-open) .bulk-drop-checkbox,
+.bulk-drop-checkbox:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+
+.bulk-drop-checkbox:focus-visible {
+  outline: 1.5px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.bulk-drop-checkbox:checked {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.bulk-drop-checkbox:checked::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 1px;
+  width: 4px;
+  height: 7px;
+  border-right: 1.5px solid #FAF9F6;
+  border-bottom: 1.5px solid #FAF9F6;
+  transform: rotate(40deg);
+}
+
+.bulk-drop-checkbox:disabled {
+  background: var(--bg-subtle);
+  border-color: var(--rule);
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.bulk-drop-checkbox:disabled:checked {
+  background: var(--ink-faint);
+  border-color: var(--ink-faint);
 }
 
 .bulk-drop-item-icon {
@@ -255,9 +304,44 @@
 }
 
 .bulk-drop-ignored summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
   cursor: pointer;
   color: var(--ink-muted);
   user-select: none;
+  outline: none;
+  transition: color 120ms var(--ease);
+}
+
+.bulk-drop-ignored summary::-webkit-details-marker {
+  display: none;
+}
+
+.bulk-drop-ignored summary::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  border-right: 1.5px solid var(--ink-muted);
+  border-bottom: 1.5px solid var(--ink-muted);
+  transform: rotate(-45deg);
+  transition: transform 140ms var(--ease), border-color 120ms var(--ease);
+}
+
+.bulk-drop-ignored[open] summary::before {
+  transform: rotate(45deg);
+  border-color: var(--ink);
+}
+
+.bulk-drop-ignored summary:hover {
+  color: var(--ink);
+}
+
+.bulk-drop-ignored summary:focus-visible {
+  outline: 1.5px solid var(--accent-blue);
+  outline-offset: 2px;
 }
 
 .bulk-drop-ignored-list {

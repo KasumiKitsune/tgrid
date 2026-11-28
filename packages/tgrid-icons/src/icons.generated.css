@@ -1592,6 +1592,66 @@
   transform: translateX(0.85px);
 }
 
+/* Icon: formatBrush */
+.tgi.tgi-formatBrush .fbb-root {
+  transform-origin: 8px 8px;
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-formatBrush .fbb-tool {
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-formatBrush .fbb-paint-wash {
+  fill: var(--tgi-accent-bg, rgba(37, 99, 235, 0.16));
+  transform-origin: 2.3px 4.25px;
+  transform: scaleX(0);
+  opacity: 0;
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 0.2s ease;
+}
+.tgi.tgi-formatBrush .fbb-cylinder {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.35;
+  stroke-linejoin: round;
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-formatBrush .fbb-arm {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-formatBrush .fbb-handle {
+  fill: var(--tgi-neutral-bg, rgba(55, 65, 81, 0.08));
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.35;
+  stroke-linejoin: round;
+  transition: stroke 0.2s ease, fill 0.2s ease;
+}
+.tgi.tgi-formatBrush:hover .fbb-tool,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-formatBrush .fbb-tool {
+  transform: translateY(-0.65px);
+}
+.tgi.tgi-formatBrush:hover .fbb-cylinder,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-formatBrush .fbb-cylinder {
+  stroke: var(--tgi-accent, #2563eb);
+}
+.tgi.tgi-formatBrush:hover .fbb-paint-wash,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-formatBrush .fbb-paint-wash {
+  transform: scaleX(1);
+  opacity: 1;
+}
+.tgi.tgi-formatBrush:hover .fbb-arm,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-formatBrush .fbb-arm,
+.tgi.tgi-formatBrush:hover .fbb-handle,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-formatBrush .fbb-handle {
+  stroke: var(--tgi-stroke-hover, #111827);
+}
+.tgi.tgi-formatBrush:hover .fbb-handle,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-formatBrush .fbb-handle {
+  fill: rgba(17, 24, 39, 0.09);
+}
+
 /* Icon: gear */
 .tgi.tgi-gear .gear-press {
   transform-origin: 8px 8px;
@@ -3589,6 +3649,84 @@
 :where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-stepper-plus .step-p {
   stroke: var(--tgi-accent, #2563eb);
   transform: rotate(90deg) scale(1.06);
+}
+
+/* Icon: stylePalette */
+.tgi.tgi-stylePalette .spb-root {
+  transform-origin: 8px 8px;
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-stylePalette .spb-blade,
+.tgi.tgi-stylePalette .spb-cut {
+  transform-origin: 4.8px 11.1px;
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tgi.tgi-stylePalette .spb-c1 {
+  transform: rotate(0deg);
+}
+.tgi.tgi-stylePalette .spb-c2 {
+  transform: rotate(38deg);
+}
+.tgi.tgi-stylePalette .spb-c3 {
+  transform: rotate(77deg);
+}
+.tgi.tgi-stylePalette .spb-cut {
+  fill: #000000;
+  stroke: #000000;
+  stroke-width: 0.95;
+  stroke-linejoin: round;
+}
+.tgi.tgi-stylePalette .spb-stroke {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-stylePalette .spb-stroke-accent {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: var(--tgi-neutral-bg, rgba(55, 65, 81, 0.06));
+  transition: stroke 0.2s ease, fill 0.22s ease;
+}
+.tgi.tgi-stylePalette .spb-divider {
+  stroke: var(--tgi-stroke, #374151);
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  transition: stroke 0.2s ease;
+}
+.tgi.tgi-stylePalette .spb-rivet {
+  fill: var(--tgi-stroke, #374151);
+  transition: fill 0.2s ease;
+}
+.tgi.tgi-stylePalette:hover .spb-c1,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-stylePalette .spb-c1 {
+  transform: rotate(-3deg);
+}
+.tgi.tgi-stylePalette:hover .spb-c2,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-stylePalette .spb-c2 {
+  transform: rotate(45deg);
+}
+.tgi.tgi-stylePalette:hover .spb-c3,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-stylePalette .spb-c3 {
+  transform: rotate(88deg);
+}
+.tgi.tgi-stylePalette:hover .spb-stroke,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-stylePalette .spb-stroke,
+.tgi.tgi-stylePalette:hover .spb-divider,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-stylePalette .spb-divider {
+  stroke: var(--tgi-stroke-hover, #111827);
+}
+.tgi.tgi-stylePalette:hover .spb-stroke-accent,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-stylePalette .spb-stroke-accent {
+  stroke: var(--tgi-accent, #2563eb);
+  fill: var(--tgi-accent-bg, rgba(37, 99, 235, 0.14));
+}
+.tgi.tgi-stylePalette:hover .spb-rivet,
+:where(button, a, [role="button"], .tgi-trigger):not(:disabled):not([aria-disabled="true"]):hover .tgi.tgi-stylePalette .spb-rivet {
+  fill: var(--tgi-accent, #2563eb);
 }
 
 /* Icon: submenuChevron */

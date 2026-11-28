@@ -463,8 +463,8 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       },
       {
         id: 'sidebar-tabs',
-        keys: ['Alt+1', 'Alt+2', 'Alt+3', 'Alt+4', 'Alt+5'],
-        label: '直达 属性 / 层级 / 历史 / 画布与声学 / 悬浮条定制',
+        keys: ['Alt+1', 'Alt+2', 'Alt+3', 'Alt+4', 'Alt+5', 'Alt+6'],
+        label: '直达 属性 / 样式 / 层级 / 历史 / 画布与声学 / 悬浮条定制',
         icon: 'inspector',
         scope: 'all',
         rebindable: false

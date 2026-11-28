@@ -9,6 +9,7 @@ import { CustomizePanel } from './CustomizePanel';
 import { HistoryPanel } from './HistoryPanel';
 import { InspectorPanel, type InspectorPanelHandle } from './InspectorPanel';
 import { SettingsPanel } from './SettingsPanel';
+import { StylePanel } from './StylePanel';
 import { TiersPanel } from './TiersPanel';
 
 export interface RightSidebarHandle {
@@ -27,9 +28,10 @@ interface RightSidebarProps {
 
 const RAIL_ITEMS: Array<{ tab: SidebarTab; title: string; icon: IconName; tooltip: string }> = [
   { tab: 'inspector', title: '属性', icon: 'inspector', tooltip: '属性检查器 (Alt+1)' },
-  { tab: 'tiers', title: '层级', icon: 'layers', tooltip: '层级列表与管理 (Alt+2)' },
-  { tab: 'history', title: '历史', icon: 'history', tooltip: '操作历史记录 (Alt+3)' },
-  { tab: 'settings', title: '画布与声学', icon: 'waveform', tooltip: '谱面排版与声学图谱 (Alt+4)' }
+  { tab: 'style', title: '样式', icon: 'stylePalette', tooltip: '外观与学术样式 (Alt+2)' },
+  { tab: 'tiers', title: '层级', icon: 'layers', tooltip: '层级列表与管理 (Alt+3)' },
+  { tab: 'history', title: '历史', icon: 'history', tooltip: '操作历史记录 (Alt+4)' },
+  { tab: 'settings', title: '画布与声学', icon: 'waveform', tooltip: '谱面排版与声学图谱 (Alt+5)' }
 ];
 
 export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
@@ -145,6 +147,14 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
       headBadge = `${history.cursor + 1} / ${history.entries.length} 步`;
     } else if (sidebarTab === 'customize') {
       headBadge = '悬浮条 · 快捷键';
+    } else if (sidebarTab === 'style') {
+      if (multiSelection.length >= 2) headBadge = `多选 (${multiSelection.length})`;
+      else if (selection?.kind === 'interval') headBadge = '区间';
+      else if (selection?.kind === 'point') headBadge = '标点';
+      else if (selection?.kind === 'boundary') headBadge = '边界';
+      else if (selection?.kind === 'spine') headBadge = '对齐时刻';
+      else if (selection?.kind === 'tier') headBadge = '层级';
+      else headBadge = '主题';
     } else if (sidebarTab === 'inspector') {
       if (multiSelection.length >= 2) headBadge = `多选 (${multiSelection.length})`;
       else if (selection?.kind === 'interval') headBadge = '区间';
@@ -211,6 +221,7 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
                   onOpenSplitModal={onOpenSplitModal}
                 />
               )}
+              {sidebarTab === 'style' && <StylePanel />}
               {sidebarTab === 'tiers' && <TiersPanel />}
               {sidebarTab === 'history' && <HistoryPanel />}
               {sidebarTab === 'settings' && (
@@ -265,7 +276,7 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(
           <button
             type="button"
             className={`sidebar-rail-btn ${customizeModalActive ? 'active' : ''}`}
-            title="自定义悬浮条按钮与快捷键 (Alt+5)"
+            title="自定义悬浮条按钮与快捷键 (Alt+6)"
             aria-label="自定义悬浮条按钮与快捷键"
             aria-pressed={customizeModalActive}
             onClick={() => setPreferencesOpen(true, 'floating')}

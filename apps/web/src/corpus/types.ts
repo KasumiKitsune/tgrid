@@ -6,6 +6,25 @@ import type {
   TextGridFormat,
   TierKind
 } from '../bridge/types';
+import type { StyleDocument } from '../style/types.ts';
+
+export type CorpusSharedStyle = Pick<
+  StyleDocument,
+  | 'paletteId'
+  | 'bwPrintMode'
+  | 'showLegendInExport'
+  | 'swatchLabels'
+  | 'globalInterval'
+  | 'globalBoundary'
+  | 'globalPoint'
+  | 'tierStyles'
+  | 'rules'
+>;
+
+export type CorpusItemStyleOverrides = Pick<
+  StyleDocument,
+  'intervalOverrides' | 'boundaryOverrides' | 'pointOverrides' | 'orphaned'
+>;
 
 export type {
   CorpusDirScanResult,
@@ -99,6 +118,8 @@ export interface CorpusProjectFile {
   activeItemId: string | null;
   options?: Partial<CorpusOptions>;
   wordListMeta?: CorpusWordListMeta;
+  sharedStyle?: CorpusSharedStyle;
+  itemStyles?: Record<string, CorpusItemStyleOverrides>;
   items: Record<string, CorpusProjectItemPersisted>;
 }
 
@@ -158,6 +179,10 @@ export interface CorpusProjectState {
   lastSaveError?: string | null;
   /** 预留给字表导入的列配置 */
   wordListMeta?: CorpusWordListMeta;
+  /** 整库共享样式（主题色板、层级默认样式与条件着色规则） */
+  sharedStyle?: CorpusSharedStyle;
+  /** 按词条 ID 索引的对象级样式覆盖 */
+  itemStyles?: Record<string, CorpusItemStyleOverrides>;
 }
 
 export interface CorpusAudioCacheEntry {

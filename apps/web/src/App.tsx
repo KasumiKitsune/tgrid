@@ -17,7 +17,10 @@ import {
 import { corpusAudioCache } from './corpus/audioCache';
 import {
   buildTextGridFromTemplate,
+  composeCorpusStyleDocument,
   extractIpaPreview,
+  extractItemStyleOverrides,
+  extractSharedStyle,
   findPreferredSpeechIntervalIndex,
   parseProjectFile,
   reconcileProjectWithScan,
@@ -152,6 +155,15 @@ import {
   type DropIntakePlan,
   type DropOpenUnit
 } from './utils/dropIntake';
+import { hasAnyCustomStyle } from './style/palettes';
+import { reconcileStyleDocument } from './style/reconcileStyle';
+import {
+  extractProjectFromSvgText,
+  getStyleSidecarPath,
+  parseStyleSidecar,
+  serializeStyleSidecar
+} from './style/styleCodec';
+import type { ReconcileReport, StyleDocument } from './style/types';
 
 interface IncomingFilePayload {
   name: string;
@@ -202,6 +214,28 @@ function formatConflictStamp(): string {
 }
 
 const AUDIO_EXT_RE = /\.(wav|mp3|ogg|flac|m4a|aac|webm|opus)$/i;
+const STYLE_SIDECAR_RE = /\.tgstyle\.json$/i;
+const SVG_EXT_RE = /\.svg$/i;
+
+function encodeUtf8(text: string): Uint8Array {
+  return new TextEncoder().encode(text);
+}
+
+function decodeUtf8(bytes: Uint8Array): string {
+  const text = new TextDecoder('utf-8').decode(bytes);
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
+function formatStyleReconcileNote(report: ReconcileReport): string {
+  const parts: string[] = [];
+  if (report.fuzzyMatches > 0) {
+    parts.push(`自动对账找回 ${report.fuzzyMatches} 处微调标注`);
+  }
+  if (report.orphanedCount > 0) {
+    parts.push(`${report.orphanedCount} 处失配样式已暂存`);
+  }
+  return parts.join('，');
+}
 
 function getPathBaseName(filePath: string): string {
   const parts = filePath.split(/[\\/]/);
@@ -547,6 +581,48 @@ export function App() {
     [buildCorpusProjectMetaDelta]
   );
 
+  const syncActiveCorpusStyleToProject = useCallback((tabId: string): boolean => {
+    const st = useEditorStore.getState();
+    const tab = st.tabs.find((t) => t.id === tabId);
+    const corpus = tab?.kind === 'corpus' ? tab.corpus : undefined;
+    const itemId = corpus?.activeItemId ?? null;
+    if (!tab || !corpus || !itemId) return false;
+
+    const styleDoc = tabId === st.activeTabId ? st.styleDoc : tab.styleDoc;
+    const nextShared = extractSharedStyle(styleDoc);
+    const nextItemOv = extractItemStyleOverrides(styleDoc);
+    const prevShared = corpus.sharedStyle;
+    const prevItemStyles = corpus.itemStyles;
+    const prevItemOv = prevItemStyles?.[itemId];
+
+    const sharedChanged =
+      JSON.stringify(prevShared ?? null) !== JSON.stringify(nextShared ?? null);
+    const itemChanged =
+      JSON.stringify(prevItemOv ?? null) !== JSON.stringify(nextItemOv ?? null);
+    if (!sharedChanged && !itemChanged) return false;
+
+    let nextItemStyles = prevItemStyles;
+    if (itemChanged) {
+      const copy = { ...(prevItemStyles ?? {}) };
+      if (nextItemOv) {
+        copy[itemId] = nextItemOv;
+      } else {
+        delete copy[itemId];
+      }
+      nextItemStyles = Object.keys(copy).length > 0 ? copy : undefined;
+    }
+
+    useEditorStore.getState().setCorpusStyleData(
+      {
+        sharedStyle: nextShared,
+        itemStyles: nextItemStyles
+      },
+      tabId
+    );
+    corpusDraftManager.setProjectIndexDirty(corpus.projectId, true);
+    return true;
+  }, []);
+
   const stageCorpusItem = useCallback(
     (
       tabId: string,
@@ -556,6 +632,7 @@ export function App() {
         flushRecoveryNow?: boolean;
       }
     ): CorpusItemDraft | null => {
+      syncActiveCorpusStyleToProject(tabId);
       const st = useEditorStore.getState();
       const tab = st.tabs.find((t) => t.id === tabId);
       const corpus = tab?.kind === 'corpus' ? tab.corpus : undefined;
@@ -647,7 +724,12 @@ export function App() {
 
       return draft;
     },
-    [buildCorpusProjectMetaDelta, getItemBaseInfo, syncCorpusUnsavedToStore]
+    [
+      buildCorpusProjectMetaDelta,
+      getItemBaseInfo,
+      syncActiveCorpusStyleToProject,
+      syncCorpusUnsavedToStore
+    ]
   );
 
   const flushAllPendingRecovery = useCallback(() => {
@@ -1503,10 +1585,16 @@ export function App() {
       } else {
         deleteTabAudioBuffer(tabId);
       }
+      const composedCorpusStyle = composeCorpusStyleDocument(
+        latestCorpus.sharedStyle,
+        latestCorpus.itemStyles?.[itemId]
+      );
+      const { doc: reconciledCorpusStyle } = reconcileStyleDocument(composedCorpusStyle, tg);
       useEditorStore.getState().activateCorpusEntry({
         tabId,
         itemId,
         tg,
+        styleDoc: reconciledCorpusStyle,
         filename: item.tgRelPath,
         currentFilePath: tgNativePath,
         currentFileFormat: fileFormat,
@@ -1772,7 +1860,9 @@ export function App() {
           loadSeq: 0,
           saveStatus: 'idle',
           lastSaveError: null,
-          wordListMeta: reconciled.wordListMeta
+          wordListMeta: reconciled.wordListMeta,
+          ...(reconciled.sharedStyle ? { sharedStyle: reconciled.sharedStyle } : {}),
+          ...(reconciled.itemStyles ? { itemStyles: reconciled.itemStyles } : {})
         };
 
         flushActiveEdits();
@@ -2424,10 +2514,16 @@ export function App() {
           item.id,
           null
         );
+        const composedRebuildStyle = composeCorpusStyleDocument(
+          corpus.sharedStyle,
+          corpus.itemStyles?.[itemId]
+        );
+        const { doc: reconciledRebuildStyle } = reconcileStyleDocument(composedRebuildStyle, freshTg);
         useEditorStore.getState().activateCorpusEntry({
           tabId,
           itemId,
           tg: freshTg,
+          styleDoc: reconciledRebuildStyle,
           filename: item.tgRelPath,
           currentFilePath: adapter.resolveNativePath(item.tgRelPath),
           currentFileFormat: corpus.defaultSaveFormat || 'longText',
@@ -3198,6 +3294,23 @@ export function App() {
     ]
   );
 
+  const persistStyleSidecarForDesktop = useCallback(
+    async (savedPath: string, styleDoc: StyleDocument) => {
+      if (!isDesktop || !savedPath) return;
+      if (!hasAnyCustomStyle(styleDoc)) return;
+      try {
+        const sidecarPath = getStyleSidecarPath(savedPath);
+        await getPlatformBridge().writeNativeFile(
+          sidecarPath,
+          encodeUtf8(serializeStyleSidecar(styleDoc))
+        );
+      } catch {
+        // 伴生样式写入失败不阻塞主 TextGrid 保存
+      }
+    },
+    [isDesktop]
+  );
+
   const saveTabAsTextGrid = useCallback(
     async (tabId: string): Promise<boolean> => {
       const st = useEditorStore.getState();
@@ -3220,6 +3333,7 @@ export function App() {
         if (isDesktop) {
           if (tab.currentFilePath) {
             await bridge.writeNativeFile(tab.currentFilePath, bytes);
+            await persistStyleSidecarForDesktop(tab.currentFilePath, tab.styleDoc);
             markTabSaved(tabId);
             showToast(`已保存：${tab.filename}`, false, makeRevealAction(tab.currentFilePath));
             return true;
@@ -3232,6 +3346,7 @@ export function App() {
             { title: `保存 ${tab.filename}` }
           );
           if (!savedPath) return false;
+          await persistStyleSidecarForDesktop(savedPath, tab.styleDoc);
           const savedName = getPathBaseName(savedPath);
           markTabSaved(tabId, { filePath: savedPath, filename: savedName, fileFormat: fmt });
           showToast(`已保存：${savedName}`, false, makeRevealAction(savedPath));
@@ -3251,7 +3366,15 @@ export function App() {
         return false;
       }
     },
-    [flushActiveEdits, isDesktop, makeRevealAction, markTabSaved, saveCurrentCorpusEntry, showToast]
+    [
+      flushActiveEdits,
+      isDesktop,
+      makeRevealAction,
+      markTabSaved,
+      persistStyleSidecarForDesktop,
+      saveCurrentCorpusEntry,
+      showToast
+    ]
   );
 
   const saveTabAsNewFile = useCallback(
@@ -3278,6 +3401,7 @@ export function App() {
             { title: `另存为 ${tab.filename}` }
           );
           if (!savedPath) return false;
+          await persistStyleSidecarForDesktop(savedPath, tab.styleDoc);
           const savedName = getPathBaseName(savedPath);
           markTabSaved(tabId, { filePath: savedPath, filename: savedName, fileFormat: fmt });
           showToast(`已另存为：${savedName}`, false, makeRevealAction(savedPath));
@@ -3295,7 +3419,14 @@ export function App() {
         return false;
       }
     },
-    [flushActiveEdits, isDesktop, makeRevealAction, markTabSaved, showToast]
+    [
+      flushActiveEdits,
+      isDesktop,
+      makeRevealAction,
+      markTabSaved,
+      persistStyleSidecarForDesktop,
+      showToast
+    ]
   );
 
   const handleTabContextMenu = useCallback((tabId: string, e: React.MouseEvent) => {
@@ -3630,8 +3761,15 @@ export function App() {
       opts?: { replaceActiveTab?: boolean; silent?: boolean; standaloneAudioInNewTab?: boolean }
     ): Promise<string[]> => {
       const bridge = getPlatformBridge();
-      const docFiles = files.filter((f) => !AUDIO_EXT_RE.test(f.name));
+      const svgFiles = files.filter((f) => SVG_EXT_RE.test(f.name));
+      const styleFiles = files.filter((f) => STYLE_SIDECAR_RE.test(f.name));
       const audioFiles = files.filter((f) => AUDIO_EXT_RE.test(f.name));
+      const docFiles = files.filter(
+        (f) =>
+          !AUDIO_EXT_RE.test(f.name) &&
+          !STYLE_SIDECAR_RE.test(f.name) &&
+          !SVG_EXT_RE.test(f.name)
+      );
 
       const audioPriority = (name: string) => {
         const { ext } = splitFileStemAndExt(name);
@@ -3657,6 +3795,14 @@ export function App() {
         .sort((a, b) => audioPriority(a.file.name) - audioPriority(b.file.name));
       const consumedAudioIndices = new Set<number>();
 
+      const indexedStyles = styleFiles.map((f, idx) => ({
+        idx,
+        file: f,
+        stemKey: splitFileStemAndExt(f.name).stem.toLowerCase(),
+        parentKey: parentOfPath(f.path)
+      }));
+      const consumedStyleIndices = new Set<number>();
+
       const takeMatchingAudio = (docFile: IncomingFilePayload): IncomingFilePayload | null => {
         const docStem = splitFileStemAndExt(docFile.name).stem.toLowerCase();
         const docParent = parentOfPath(docFile.path);
@@ -3681,6 +3827,35 @@ export function App() {
         return null;
       };
 
+      const takeMatchingStyle = (docFile: IncomingFilePayload): IncomingFilePayload | null => {
+        const docStem = splitFileStemAndExt(docFile.name).stem.toLowerCase();
+        const docParent = parentOfPath(docFile.path);
+        const exactMatch = indexedStyles.find(
+          (s) =>
+            !consumedStyleIndices.has(s.idx) &&
+            s.stemKey === docStem &&
+            (docParent === '' || s.parentKey === '' || s.parentKey === docParent)
+        );
+        if (exactMatch) {
+          consumedStyleIndices.add(exactMatch.idx);
+          return exactMatch.file;
+        }
+        return null;
+      };
+
+      const tryApplyStyleBytesToTab = (
+        tabId: string,
+        bytes: Uint8Array,
+        tg: TextGrid,
+        markDirty: boolean
+      ): { ok: boolean; note: string } => {
+        const parsed = parseStyleSidecar(decodeUtf8(bytes));
+        if (!parsed) return { ok: false, note: '' };
+        const { doc: reconciled, report } = reconcileStyleDocument(parsed, tg);
+        useEditorStore.getState().loadStyleDocForTab(tabId, reconciled, { markDirty });
+        return { ok: true, note: formatStyleReconcileNote(report) };
+      };
+
       let replaceFirst = Boolean(opts?.replaceActiveTab);
       const silent = Boolean(opts?.silent);
       const openedTabIds: string[] = [];
@@ -3688,12 +3863,25 @@ export function App() {
       for (const file of docFiles) {
         const lower = file.name.toLowerCase();
         const matchedExplicitAudio = takeMatchingAudio(file);
+        const matchedExplicitStyle = takeMatchingStyle(file);
 
         // If desktop file path is already open in a tab, switch directly to it
         if (file.path) {
           const existing = useEditorStore.getState().findTabByPath(file.path);
           if (existing) {
             handleSwitchTab(existing.id);
+            let styleAppliedNote = '';
+            if (matchedExplicitStyle) {
+              const res = tryApplyStyleBytesToTab(
+                existing.id,
+                matchedExplicitStyle.bytes,
+                existing.tg,
+                true
+              );
+              if (res.ok) {
+                styleAppliedNote = res.note;
+              }
+            }
             if (matchedExplicitAudio) {
               try {
                 await loadAudioBytesForTab(
@@ -3706,6 +3894,12 @@ export function App() {
               } catch (err) {
                 if (!silent) showToast(`音频解码失败：${String(err)}`, true);
               }
+            } else if (matchedExplicitStyle && !silent) {
+              showToast(
+                styleAppliedNote
+                  ? `已切换至已打开标签页并载入样式（${styleAppliedNote}）`
+                  : `已切换至已打开标签页并载入样式：${matchedExplicitStyle.name}`
+              );
             } else if (!silent) {
               showToast('已切换至已打开的标签页');
             }
@@ -3802,6 +3996,42 @@ export function App() {
           }
           openedTabIds.push(targetTabId);
 
+          // 载入伴生 .tgstyle.json（显式同批拖入优先，其次桌面端磁盘自动探测）
+          let sidecarReconcileNote = '';
+          let sidecarLoaded = false;
+          if (matchedExplicitStyle) {
+            const applied = tryApplyStyleBytesToTab(
+              targetTabId,
+              matchedExplicitStyle.bytes,
+              tgs[0],
+              false
+            );
+            if (applied.ok) {
+              sidecarLoaded = true;
+              sidecarReconcileNote = applied.note;
+            }
+          } else if (isDesktop && resolvedPath) {
+            try {
+              const sidecarPath = getStyleSidecarPath(resolvedPath);
+              let sidecarBytes: Uint8Array | null = null;
+              if (typeof bridge.readNativeFileIfExists === 'function') {
+                sidecarBytes = await bridge.readNativeFileIfExists(sidecarPath);
+              } else {
+                const openedSidecar = await bridge.readNativeFile(sidecarPath);
+                sidecarBytes = openedSidecar?.bytes ?? null;
+              }
+              if (sidecarBytes && sidecarBytes.byteLength > 0) {
+                const applied = tryApplyStyleBytesToTab(targetTabId, sidecarBytes, tgs[0], false);
+                if (applied.ok) {
+                  sidecarLoaded = true;
+                  sidecarReconcileNote = applied.note;
+                }
+              }
+            } catch {
+              // 静默忽略伴生样式读取失败
+            }
+          }
+
           if (firstSound) {
             const sr = firstSound.dx > 0 ? 1 / firstSound.dx : 16000;
             const { buffer, mono } = playerRef.current!.loadFromSoundObject(
@@ -3832,7 +4062,14 @@ export function App() {
                 0
               );
               if (!silent) {
-                showToast(`已配对载入：${file.name} + ${matchedExplicitAudio.name}`);
+                const styleSuffix = sidecarReconcileNote
+                  ? `（已载入伴生样式，${sidecarReconcileNote}）`
+                  : sidecarLoaded
+                    ? '（已载入伴生样式）'
+                    : '';
+                showToast(
+                  `已配对载入：${file.name} + ${matchedExplicitAudio.name}${styleSuffix}`
+                );
               }
             } catch (err) {
               if (!silent) showToast(`音频解码失败：${String(err)}`, true);
@@ -3855,8 +4092,16 @@ export function App() {
             }
 
             if (!silent) {
-              if (autoPairedAudioName) {
-                showToast(`已自动配对加载同名音频: ${autoPairedAudioName}`);
+              if (sidecarReconcileNote) {
+                showToast(`已载入伴生样式（${sidecarReconcileNote}）`);
+              } else if (autoPairedAudioName) {
+                showToast(
+                  sidecarLoaded
+                    ? `已自动配对加载同名音频与伴生样式：${autoPairedAudioName}`
+                    : `已自动配对加载同名音频: ${autoPairedAudioName}`
+                );
+              } else if (sidecarLoaded) {
+                showToast(`已载入：${file.name}（含伴生样式）`);
               } else {
                 showToast(
                   tgs.length > 1
@@ -3868,6 +4113,94 @@ export function App() {
           }
         } catch (err) {
           if (!silent) showToast(`解析失败：${String(err)}`, true);
+        }
+      }
+
+      // 处理含 <tgrid:project> 工程元数据的 SVG 矢量图还原
+      for (const svgFile of svgFiles) {
+        try {
+          const payload = extractProjectFromSvgText(decodeUtf8(svgFile.bytes));
+          if (!payload) {
+            if (!silent) {
+              showToast('该 SVG 不含 T·Grid 工程数据，已忽略');
+            }
+            continue;
+          }
+          await prefetchTrigraphCache(payload.tg, bridge);
+          const { doc: reconciledStyle } = reconcileStyleDocument(payload.styleDoc, payload.tg);
+          const restoredFilename =
+            payload.filename || `${getBaseStem(svgFile.name)}.TextGrid`;
+
+          flushActiveEdits();
+          const st = useEditorStore.getState();
+          const curActiveTab = st.tabs.find((t) => t.id === st.activeTabId);
+          const canReuseActive =
+            (replaceFirst && curActiveTab?.kind !== 'corpus') ||
+            Boolean(
+              curActiveTab &&
+                curActiveTab.kind !== 'corpus' &&
+                curActiveTab.isBlankPlaceholder &&
+                !curActiveTab.isDirty &&
+                !curActiveTab.audioName
+            );
+          replaceFirst = false;
+
+          let targetTabId: string;
+          if (canReuseActive && curActiveTab) {
+            if (curActiveTab.audioName || curActiveTab.analysis) {
+              await evictTabAudio(curActiveTab.id);
+            }
+            setDocument(payload.tg, restoredFilename, [], 0, {
+              filePath: null,
+              fileFormat: 'longText',
+              isBlankPlaceholder: false,
+              baselineKind: 'open',
+              styleDoc: reconciledStyle
+            });
+            targetTabId = curActiveTab.id;
+            syncPlayerForTab(targetTabId);
+          } else {
+            playerRef.current?.stop(false);
+            targetTabId = useEditorStore.getState().createNewTab({
+              tg: payload.tg,
+              styleDoc: reconciledStyle,
+              filename: restoredFilename,
+              filePath: null,
+              fileFormat: 'longText',
+              isBlankPlaceholder: false,
+              baselineKind: 'open'
+            });
+            syncPlayerForTab(targetTabId);
+          }
+          openedTabIds.push(targetTabId);
+          if (!silent) {
+            showToast('已从 SVG 还原标注与样式');
+          }
+        } catch (err) {
+          if (!silent) showToast(`SVG 解析失败：${String(err)}`, true);
+        }
+      }
+
+      // 处理单独拖入（未与同批 TextGrid 配对）的 .tgstyle.json 样式包：应用到当前标签页
+      const remainingStyles = indexedStyles.filter((s) => !consumedStyleIndices.has(s.idx));
+      for (const entry of remainingStyles) {
+        const curSt = useEditorStore.getState();
+        const applied = tryApplyStyleBytesToTab(
+          curSt.activeTabId,
+          entry.file.bytes,
+          curSt.tg,
+          true
+        );
+        if (!applied.ok) {
+          if (!silent) showToast(`样式文件解析失败：${entry.file.name}`, true);
+          continue;
+        }
+        if (!silent) {
+          showToast(
+            applied.note
+              ? `已应用样式文件：${entry.file.name}（${applied.note}）`
+              : `已应用样式文件：${entry.file.name}`
+          );
         }
       }
 
@@ -3981,11 +4314,14 @@ export function App() {
   );
 
   const openDroppedUnits = useCallback(
-    async (units: DropOpenUnit[], opts?: { silent?: boolean }): Promise<number> => {
+    async (
+      units: DropOpenUnit[],
+      opts?: { silent?: boolean; standaloneStyleFiles?: DropInputEntry[] }
+    ): Promise<number> => {
       const payloads: IncomingFilePayload[] = [];
       let directAudioAttachCount = 0;
       for (const unit of units) {
-        if (unit.alreadyOpenTabId && !unit.audio) {
+        if (unit.alreadyOpenTabId && !unit.audio && !unit.styleSidecar) {
           handleSwitchTab(unit.alreadyOpenTabId);
           continue;
         }
@@ -4003,6 +4339,20 @@ export function App() {
             showToast(`读取文件「${unit.doc.name}」失败：${String(err)}`, true);
           }
         }
+        if (unit.styleSidecar) {
+          try {
+            const bytes = await readDropEntryBytes(unit.styleSidecar);
+            if (bytes) {
+              payloads.push({
+                name: unit.styleSidecar.name,
+                bytes,
+                path: unit.styleSidecar.path ?? null
+              });
+            }
+          } catch (err) {
+            showToast(`读取样式文件「${unit.styleSidecar.name}」失败：${String(err)}`, true);
+          }
+        }
         if (unit.audio) {
           try {
             const bytes = await readDropEntryBytes(unit.audio);
@@ -4016,6 +4366,22 @@ export function App() {
             }
           } catch (err) {
             showToast(`读取音频「${unit.audio.name}」失败：${String(err)}`, true);
+          }
+        }
+      }
+      if (opts?.standaloneStyleFiles && opts.standaloneStyleFiles.length > 0) {
+        for (const styleEntry of opts.standaloneStyleFiles) {
+          try {
+            const bytes = await readDropEntryBytes(styleEntry);
+            if (bytes) {
+              payloads.push({
+                name: styleEntry.name,
+                bytes,
+                path: styleEntry.path ?? null
+              });
+            }
+          } catch (err) {
+            showToast(`读取样式文件「${styleEntry.name}」失败：${String(err)}`, true);
           }
         }
       }
@@ -4047,7 +4413,7 @@ export function App() {
         bulkDropPreloadedBytesRef.current.clear();
         if (plan.unsupported.length > 0) {
           showToast(
-            `未发现可打开的 TextGrid 或音频文件（已忽略 ${plan.unsupported.length} 个不支持的文件）`
+            `未发现可打开的 TextGrid、音频或样式文件（已忽略 ${plan.unsupported.length} 个不支持的文件）`
           );
         }
         return;
@@ -4075,13 +4441,20 @@ export function App() {
       // 直接放行模式
       try {
         const silentPerFile =
-          plan.directories.length + plan.openUnits.length > 1 || plan.unsupported.length > 0;
+          plan.directories.length + plan.openUnits.length + plan.standaloneStyleFiles.length > 1 ||
+          plan.unsupported.length > 0;
         const dirCount = await openDroppedDirectories(plan.directories, { silent: silentPerFile });
-        const fileCount = await openDroppedUnits(plan.openUnits, { silent: silentPerFile });
+        const fileCount = await openDroppedUnits(plan.openUnits, {
+          silent: silentPerFile,
+          standaloneStyleFiles: plan.standaloneStyleFiles
+        });
         if (silentPerFile) {
           const openedTotal = dirCount + fileCount;
           const parts: string[] = [];
           if (openedTotal > 0) parts.push(`已打开 ${openedTotal} 项`);
+          if (plan.standaloneStyleFiles.length > 0) {
+            parts.push(`应用 ${plan.standaloneStyleFiles.length} 个样式文件`);
+          }
           if (plan.alreadyOpen.length > 0) parts.push(`跳过 ${plan.alreadyOpen.length} 个已打开项`);
           if (plan.unsupported.length > 0) parts.push(`忽略 ${plan.unsupported.length} 个不支持的文件`);
           if (parts.length > 0) {
@@ -4190,7 +4563,7 @@ export function App() {
         const opened = await getPlatformBridge().openNativeFileDialog(
           [
             {
-              name: 'Praat 标注与音频文件',
+              name: 'Praat 标注、音频与样式文件',
               extensions: [
                 'TextGrid',
                 'textgrid',
@@ -4203,7 +4576,9 @@ export function App() {
                 'mp3',
                 'ogg',
                 'flac',
-                'm4a'
+                'm4a',
+                'svg',
+                'json'
               ]
             },
             { name: '所有文件', extensions: ['*'] }
@@ -5165,7 +5540,11 @@ export function App() {
         cueMode: st.cueMode,
         tierOrder: st.tierOrder,
         maxFreq: st.maxFreq,
-        f0RangeOverride: resolveF0RangeOverride(st.f0RangeMode, st.f0RangeCustom)
+        f0RangeOverride: resolveF0RangeOverride(st.f0RangeMode, st.f0RangeCustom),
+        styleDoc: st.styleDoc,
+        bwPrintMode: st.styleDoc.bwPrintMode || prefs.palette === 'bw',
+        showStyleLegend: st.styleDoc.showLegendInExport,
+        embedProjectMetadata: true
       };
 
       try {
@@ -5274,6 +5653,7 @@ export function App() {
               { title: '另存为 TextGrid 文件' }
             );
             if (savedPath) {
+              await persistStyleSidecarForDesktop(savedPath, st.styleDoc);
               const savedName = getPathBaseName(savedPath);
               markSaved({ filePath: savedPath, filename: savedName, fileFormat: st.currentFileFormat });
               showToast(`已另存为：${savedName}`, false, makeRevealAction(savedPath));
@@ -5312,6 +5692,7 @@ export function App() {
               { title: '保存 TextGrid 文件' }
             );
             if (savedPath) {
+              await persistStyleSidecarForDesktop(savedPath, st.styleDoc);
               const savedName = getPathBaseName(savedPath);
               markSaved({ filePath: savedPath, filename: savedName, fileFormat: targetFmt });
               showToast(`已保存：${savedName}`, false, makeRevealAction(savedPath));
@@ -5390,6 +5771,7 @@ export function App() {
       isDesktop,
       makeRevealAction,
       markSaved,
+      persistStyleSidecarForDesktop,
       quickExportImage,
       saveTabAsTextGrid,
       setExportOpen,
@@ -5408,6 +5790,12 @@ export function App() {
       const lower = e.key.toLowerCase();
 
       if (e.key === 'Escape') {
+        if (useEditorStore.getState().styleBrush) {
+          e.preventDefault();
+          e.stopPropagation();
+          useEditorStore.getState().clearStyleBrush();
+          return;
+        }
         if (tabCtxMenuRef.current) {
           e.preventDefault();
           e.stopPropagation();
@@ -6383,7 +6771,7 @@ export function App() {
       <input
         ref={tgInputRef}
         type="file"
-        accept=".TextGrid,.textgrid,.Collection,.collection,.IntervalTier,.TextTier,.txt,audio/*,.wav,.mp3,.ogg,.flac,.m4a"
+        accept=".TextGrid,.textgrid,.Collection,.collection,.IntervalTier,.TextTier,.txt,.svg,.tgstyle.json,audio/*,.wav,.mp3,.ogg,.flac,.m4a"
         multiple
         style={{ display: 'none' }}
         onChange={(e) => {

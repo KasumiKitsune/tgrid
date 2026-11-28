@@ -1,18 +1,150 @@
 import type { Interval, TextGrid, TextGridFormat, Tier } from '../bridge/types';
 import {
+  DEFAULT_PALETTE_ID,
+  cloneStyleDocument,
+  createDefaultStyleDocument
+} from '../style/palettes.ts';
+import { parseStyleSidecar } from '../style/styleCodec.ts';
+import type { StyleDocument } from '../style/types.ts';
+import {
   DEFAULT_CORPUS_OPTIONS,
   DEFAULT_CORPUS_TIER_TEMPLATE,
   type CorpusDirScanResult,
   type CorpusItemRecord,
   type CorpusItemStatus,
+  type CorpusItemStyleOverrides,
   type CorpusOptions,
   type CorpusProjectFile,
   type CorpusProjectItemPersisted,
   type CorpusProjectState,
+  type CorpusSharedStyle,
   type CorpusTierTemplateItem,
   type CorpusWordListMeta,
   type VadSegment
 } from './types';
+
+function hasNonEmptyRecord(obj: object | undefined): boolean {
+  if (!obj) return false;
+  for (const val of Object.values(obj)) {
+    if (val !== undefined) {
+      if (typeof val === 'object' && val !== null) {
+        if (hasNonEmptyRecord(val)) return true;
+      } else {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+export function hasAnyCustomSharedStyle(shared?: CorpusSharedStyle | null): boolean {
+  if (!shared) return false;
+  if (shared.paletteId !== DEFAULT_PALETTE_ID) return true;
+  if (shared.bwPrintMode) return true;
+  if (shared.showLegendInExport === false) return true;
+  if (shared.rules && shared.rules.length > 0) return true;
+  if (hasNonEmptyRecord(shared.globalInterval)) return true;
+  if (hasNonEmptyRecord(shared.globalBoundary)) return true;
+  if (hasNonEmptyRecord(shared.globalPoint)) return true;
+  if (shared.swatchLabels) {
+    for (const label of Object.values(shared.swatchLabels)) {
+      if (label && label.trim().length > 0) return true;
+    }
+  }
+  if (shared.tierStyles) {
+    for (const tierStyle of Object.values(shared.tierStyles)) {
+      if (hasNonEmptyRecord(tierStyle)) return true;
+    }
+  }
+  return false;
+}
+
+export function hasAnyCustomItemStyle(itemStyle?: CorpusItemStyleOverrides | null): boolean {
+  if (!itemStyle) return false;
+  if (itemStyle.intervalOverrides && itemStyle.intervalOverrides.length > 0) return true;
+  if (itemStyle.boundaryOverrides && itemStyle.boundaryOverrides.length > 0) return true;
+  if (itemStyle.pointOverrides && itemStyle.pointOverrides.length > 0) return true;
+  if (
+    itemStyle.orphaned &&
+    (itemStyle.orphaned.intervals.length > 0 ||
+      itemStyle.orphaned.boundaries.length > 0 ||
+      itemStyle.orphaned.points.length > 0)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function extractSharedStyle(doc: StyleDocument): CorpusSharedStyle | undefined {
+  const cloned = cloneStyleDocument(doc);
+  const shared: CorpusSharedStyle = {
+    paletteId: cloned.paletteId,
+    bwPrintMode: cloned.bwPrintMode,
+    showLegendInExport: cloned.showLegendInExport,
+    swatchLabels: cloned.swatchLabels,
+    tierStyles: cloned.tierStyles,
+    rules: cloned.rules,
+    ...(cloned.globalInterval && hasNonEmptyRecord(cloned.globalInterval)
+      ? { globalInterval: cloned.globalInterval }
+      : {}),
+    ...(cloned.globalBoundary && hasNonEmptyRecord(cloned.globalBoundary)
+      ? { globalBoundary: cloned.globalBoundary }
+      : {}),
+    ...(cloned.globalPoint && hasNonEmptyRecord(cloned.globalPoint)
+      ? { globalPoint: cloned.globalPoint }
+      : {})
+  };
+  return hasAnyCustomSharedStyle(shared) ? shared : undefined;
+}
+
+export function extractItemStyleOverrides(
+  doc: StyleDocument
+): CorpusItemStyleOverrides | undefined {
+  const cloned = cloneStyleDocument(doc);
+  const ov: CorpusItemStyleOverrides = {
+    intervalOverrides: cloned.intervalOverrides,
+    boundaryOverrides: cloned.boundaryOverrides,
+    pointOverrides: cloned.pointOverrides,
+    ...(cloned.orphaned &&
+    (cloned.orphaned.intervals.length > 0 ||
+      cloned.orphaned.boundaries.length > 0 ||
+      cloned.orphaned.points.length > 0)
+      ? { orphaned: cloned.orphaned }
+      : {})
+  };
+  return hasAnyCustomItemStyle(ov) ? ov : undefined;
+}
+
+export function composeCorpusStyleDocument(
+  sharedStyle?: CorpusSharedStyle | null,
+  itemStyle?: CorpusItemStyleOverrides | null
+): StyleDocument {
+  const base = createDefaultStyleDocument(sharedStyle?.paletteId ?? DEFAULT_PALETTE_ID);
+  if (sharedStyle) {
+    base.paletteId = sharedStyle.paletteId;
+    base.bwPrintMode = Boolean(sharedStyle.bwPrintMode);
+    base.showLegendInExport = sharedStyle.showLegendInExport ?? true;
+    base.swatchLabels = { ...(sharedStyle.swatchLabels ?? {}) };
+    if (sharedStyle.globalInterval) base.globalInterval = { ...sharedStyle.globalInterval };
+    if (sharedStyle.globalBoundary) base.globalBoundary = { ...sharedStyle.globalBoundary };
+    if (sharedStyle.globalPoint) base.globalPoint = { ...sharedStyle.globalPoint };
+    base.tierStyles = { ...(sharedStyle.tierStyles ?? {}) };
+    base.rules = [...(sharedStyle.rules ?? [])];
+  }
+  if (itemStyle) {
+    base.intervalOverrides = [...(itemStyle.intervalOverrides ?? [])];
+    base.boundaryOverrides = [...(itemStyle.boundaryOverrides ?? [])];
+    base.pointOverrides = [...(itemStyle.pointOverrides ?? [])];
+    if (itemStyle.orphaned) {
+      base.orphaned = {
+        intervals: [...(itemStyle.orphaned.intervals ?? [])],
+        boundaries: [...(itemStyle.orphaned.boundaries ?? [])],
+        points: [...(itemStyle.orphaned.points ?? [])]
+      };
+    }
+  }
+  return cloneStyleDocument(base);
+}
 
 const VALID_STATUSES = new Set<CorpusItemStatus>(['todo', 'done', 'doubt', 'trash']);
 const VALID_SAVE_FORMATS = new Set<TextGridFormat>([
@@ -189,6 +321,32 @@ export function parseProjectFile(bytes: Uint8Array): CorpusProjectFile | null {
           }
         : undefined;
 
+    let sharedStyle: CorpusSharedStyle | undefined;
+    if (parsed.sharedStyle && typeof parsed.sharedStyle === 'object' && !Array.isArray(parsed.sharedStyle)) {
+      const sanitized = parseStyleSidecar(parsed.sharedStyle);
+      if (sanitized) {
+        sharedStyle = extractSharedStyle(sanitized);
+      }
+    }
+
+    let itemStyles: Record<string, CorpusItemStyleOverrides> | undefined;
+    if (parsed.itemStyles && typeof parsed.itemStyles === 'object' && !Array.isArray(parsed.itemStyles)) {
+      const collected: Record<string, CorpusItemStyleOverrides> = {};
+      for (const [rawKey, rawVal] of Object.entries(parsed.itemStyles as Record<string, unknown>)) {
+        const id = rawKey.trim().toLowerCase();
+        if (!id || !rawVal || typeof rawVal !== 'object' || Array.isArray(rawVal)) continue;
+        const sanitized = parseStyleSidecar(rawVal);
+        if (!sanitized) continue;
+        const extracted = extractItemStyleOverrides(sanitized);
+        if (extracted) {
+          collected[id] = extracted;
+        }
+      }
+      if (Object.keys(collected).length > 0) {
+        itemStyles = collected;
+      }
+    }
+
     return {
       schemaVersion: 1,
       projectName: typeof parsed.projectName === 'string' ? parsed.projectName : '',
@@ -199,6 +357,8 @@ export function parseProjectFile(bytes: Uint8Array): CorpusProjectFile | null {
       activeItemId: typeof parsed.activeItemId === 'string' ? parsed.activeItemId : null,
       options,
       wordListMeta,
+      ...(sharedStyle ? { sharedStyle } : {}),
+      ...(itemStyles ? { itemStyles } : {}),
       items
     };
   } catch {
@@ -227,6 +387,24 @@ export function serializeProjectFile(state: CorpusProjectState): Uint8Array {
     items[item.id] = persisted;
   }
 
+  const cleanedSharedStyle = state.sharedStyle
+    ? extractSharedStyle(composeCorpusStyleDocument(state.sharedStyle, null))
+    : undefined;
+
+  let cleanedItemStyles: Record<string, CorpusItemStyleOverrides> | undefined;
+  if (state.itemStyles) {
+    const out: Record<string, CorpusItemStyleOverrides> = {};
+    for (const [rawId, ov] of Object.entries(state.itemStyles)) {
+      const id = rawId.trim().toLowerCase();
+      if (!id || !hasAnyCustomItemStyle(ov)) continue;
+      const extracted = extractItemStyleOverrides(composeCorpusStyleDocument(null, ov));
+      if (extracted) out[id] = extracted;
+    }
+    if (Object.keys(out).length > 0) {
+      cleanedItemStyles = out;
+    }
+  }
+
   const file: CorpusProjectFile = {
     schemaVersion: 1,
     projectName: state.projectName,
@@ -240,6 +418,8 @@ export function serializeProjectFile(state: CorpusProjectState): Uint8Array {
       targetTierIndex: state.options.targetTierIndex
     },
     ...(state.wordListMeta ? { wordListMeta: state.wordListMeta } : {}),
+    ...(cleanedSharedStyle ? { sharedStyle: cleanedSharedStyle } : {}),
+    ...(cleanedItemStyles ? { itemStyles: cleanedItemStyles } : {}),
     items
   };
 
@@ -268,6 +448,8 @@ export interface ReconciledCorpusProject {
   activeItemId: string | null;
   options: CorpusOptions;
   wordListMeta?: CorpusWordListMeta;
+  sharedStyle?: CorpusSharedStyle;
+  itemStyles?: Record<string, CorpusItemStyleOverrides>;
 }
 
 /**
@@ -437,6 +619,19 @@ export function reconcileProjectWithScan(
     activeItemId = firstTodo?.id ?? firstValid?.id ?? null;
   }
 
+  let preservedItemStyles: Record<string, CorpusItemStyleOverrides> | undefined;
+  if (existing?.itemStyles) {
+    const out: Record<string, CorpusItemStyleOverrides> = {};
+    for (const [id, ov] of Object.entries(existing.itemStyles)) {
+      if (itemMap[id] && hasAnyCustomItemStyle(ov)) {
+        out[id] = ov;
+      }
+    }
+    if (Object.keys(out).length > 0) {
+      preservedItemStyles = out;
+    }
+  }
+
   return {
     projectName: existing?.projectName?.trim() || scan.dirName || '语料文件夹',
     defaultSaveFormat: existing?.defaultSaveFormat ?? 'longText',
@@ -445,7 +640,11 @@ export function reconcileProjectWithScan(
     itemMap,
     activeItemId,
     options,
-    wordListMeta: existing?.wordListMeta
+    wordListMeta: existing?.wordListMeta,
+    ...(existing?.sharedStyle && hasAnyCustomSharedStyle(existing.sharedStyle)
+      ? { sharedStyle: existing.sharedStyle }
+      : {}),
+    ...(preservedItemStyles ? { itemStyles: preservedItemStyles } : {})
   };
 }
 

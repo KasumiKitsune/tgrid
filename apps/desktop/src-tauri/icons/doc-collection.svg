@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="s2c-paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FCFBF7" />
+      <stop offset="100%" stop-color="#F0ECE3" />
+    </linearGradient>
+    <linearGradient id="s2c-spine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5B21B6" />
+      <stop offset="100%" stop-color="#6D28D9" />
+    </linearGradient>
+    <clipPath id="s2c-sheet-clip">
+      <path d="M 63 22 H 182 L 224 64 V 237 A 5 5 0 0 1 219 242 H 63 A 5 5 0 0 1 58 237 V 27 A 5 5 0 0 1 63 22 Z" />
+    </clipPath>
+    <filter id="s2c-sheet-shadow" x="-10%" y="-8%" width="122%" height="122%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#141413" flood-opacity="0.14" />
+    </filter>
+    <filter id="s2c-badge-shadow" x="-14%" y="-16%" width="128%" height="142%">
+      <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#1E1B4B" flood-opacity="0.26" />
+    </filter>
+  </defs>
+
+  <!-- Layer 0: Clean stacked back sheet signifying multi-object Collection archive -->
+  <path d="M 79 10 H 198 L 238 50 V 221 A 5 5 0 0 1 233 226 H 79 A 5 5 0 0 1 74 221 V 15 A 5 5 0 0 1 79 10 Z"
+        fill="#E8E4DA" stroke="#68645B" stroke-width="4.8" stroke-linejoin="round" />
+
+  <!-- Layer 1: Front document sheet shadow + clipped interior fills -->
+  <path d="M 63 22 H 182 L 224 64 V 237 A 5 5 0 0 1 219 242 H 63 A 5 5 0 0 1 58 237 V 27 A 5 5 0 0 1 63 22 Z"
+        fill="#FCFBF7" filter="url(#s2c-sheet-shadow)" />
+
+  <g clip-path="url(#s2c-sheet-clip)">
+    <rect x="58" y="22" width="166" height="220" fill="url(#s2c-paper)" />
+    <!-- Left full-height violet binding spine -->
+    <rect x="58" y="22" width="26" height="220" fill="url(#s2c-spine)" />
+    <line x1="84" y1="22" x2="84" y2="242" stroke="#18181B" stroke-width="2" opacity="0.10" />
+
+    <!-- Subtle top-right fold cast shadow (ends at y=74) -->
+    <path d="M 182 64 H 224 V 74 Z" fill="#18181B" opacity="0.09" />
+    <path d="M 182 22 V 59 A 5 5 0 0 0 187 64 H 224 Z" fill="#E3DED2" />
+
+    <!-- Layer 2: Sound (Waveform) + TextGrid (Annotation Tier) paired inside safe zone (x:102..204, y:76..135) -->
+    <!-- Top object: Minimalist acoustic Sound waveform -->
+    <line x1="102" y1="91" x2="204" y2="91" stroke="#CFCAC0" stroke-width="2" />
+    <rect x="104.5" y="86" width="7" height="10" rx="1.5" fill="#ABA599" />
+    <rect x="119.5" y="81" width="7" height="20" rx="1.5" fill="#7C3AED" />
+    <rect x="134.5" y="76" width="7" height="30" rx="1.5" fill="#7C3AED" />
+    <rect x="149.5" y="79" width="7" height="24" rx="1.5" fill="#7C3AED" />
+    <rect x="164.5" y="84" width="7" height="14" rx="1.5" fill="#7C3AED" />
+    <rect x="179.5" y="83" width="7" height="16" rx="1.5" fill="#ABA599" />
+    <rect x="194.5" y="87" width="7" height="8" rx="1.5" fill="#ABA599" />
+
+    <!-- Bottom object: Paired TextGrid segmentation tier aligned beneath active vocalic pulse -->
+    <rect x="102" y="115" width="14" height="16" fill="#DDD8CC" />
+    <rect x="116" y="115" width="60" height="16" fill="#2563EB" />
+    <rect x="176" y="115" width="28" height="16" fill="#DDD8CC" />
+    <line x1="116" y1="111" x2="116" y2="135" stroke="#18181B" stroke-width="4" />
+    <line x1="176" y1="111" x2="176" y2="135" stroke="#18181B" stroke-width="4" />
+  </g>
+
+  <!-- Layer 3: Unified crisp linework (inner fold L-crease + single outer border) -->
+  <path d="M 182 22 V 59 A 5 5 0 0 0 187 64 H 224"
+        fill="none" stroke="#45423B" stroke-width="5" stroke-linejoin="round" />
+  <path d="M 63 22 H 182 L 224 64 V 237 A 5 5 0 0 1 219 242 H 63 A 5 5 0 0 1 58 237 V 27 A 5 5 0 0 1 63 22 Z"
+        fill="none" stroke="#45423B" stroke-width="5.5" stroke-linejoin="round" />
+
+  <!-- Layer 4 (Topmost): Oversized protruding COL index plate -->
+  <g filter="url(#s2c-badge-shadow)">
+    <rect x="18" y="146" width="134" height="76" rx="4" fill="#7C3AED" stroke="#4C1D95" stroke-width="3" />
+    <!-- Bold geometric COL vector lettering (centered optically) -->
+    <g transform="translate(34.0, 163.2) scale(1.04)" fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="butt" stroke-linejoin="miter">
+      <path d="M 24.8 8.5 A 9 9 0 0 0 17 4 H 15 A 9 9 0 0 0 6 13 V 27 A 9 9 0 0 0 15 36 H 17 A 9 9 0 0 0 24.8 31.5" />
+      <rect x="38" y="4" width="23" height="32" rx="10" />
+      <path d="M 76 0 V 36 H 96" />
+    </g>
+  </g>
+</svg>

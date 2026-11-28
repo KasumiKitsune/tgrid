@@ -11,6 +11,7 @@ import {
   type RichTextLayout
 } from '../layout/richText';
 import {
+  SVG_NS,
   WARM_PALETTE,
   renderBand0AxisLabels,
   renderEmbeddedLegendSVG,
@@ -19,6 +20,26 @@ import {
 } from '../layout/legendCore';
 import { elasticXInBand, type BandLayout, type ScoreLayout } from '../layout/computeLayout';
 import type { F0RangeBounds } from '../utils/f0Range';
+import { createDefaultStyleDocument, hasAnyCustomStyle } from '../style/palettes';
+import {
+  buildStyleLegendItems,
+  buildSvgPatternDefs,
+  collectUsedPatternSpecs,
+  makeSvgPatternId,
+  resolveBoundaryStyle,
+  resolveIntervalStyle,
+  resolvePointStyle,
+  resolveTierStyle
+} from '../style/resolveStyle';
+import { buildSvgProjectMetadataXml } from '../style/styleCodec';
+import type {
+  LineDash,
+  PointShape,
+  ResolvedBoundaryStyle,
+  StyleDocument,
+  StyleLegendItem,
+  SvgPatternSpec
+} from '../style/types';
 
 export type EditorSelection =
   | { kind: 'interval'; tierIndex: number; itemIndex: number; bandIndex?: number }
@@ -134,6 +155,10 @@ export interface RenderScoreExportContext {
   pitchOpacity: number;
   formantOpacity: number;
   bandSpecResults: Map<number, BandSpecRenderResult>;
+  bwPrintMode?: boolean;
+  showStyleLegend?: boolean;
+  embedProjectMetadata?: boolean;
+  metadataFilename?: string;
 }
 
 export interface RenderScoreInput {
@@ -155,6 +180,204 @@ export interface RenderScoreInput {
   intervalDragPreview?: IntervalDragPreviewState | null;
   screenSpecUrls?: Map<number, string>;
   exportCtx?: RenderScoreExportContext | null;
+  styleDoc?: StyleDocument | null;
+  showStyleLegendPreview?: boolean;
+}
+
+function dashArrayFor(dash: LineDash | undefined, sScale = 1): string | undefined {
+  if (!dash || dash === 'solid') return undefined;
+  if (dash === 'dashed') {
+    return sScale === 1
+      ? '5,3'
+      : `${Number((5 * sScale).toFixed(2))},${Number((3 * sScale).toFixed(2))}`;
+  }
+  if (dash === 'dotted') {
+    return sScale === 1
+      ? '1.5,2.5'
+      : `${Number((1.5 * sScale).toFixed(2))},${Number((2.5 * sScale).toFixed(2))}`;
+  }
+  return undefined;
+}
+
+function renderPointMarkerSVG(
+  parent: Element,
+  cx: number,
+  cy: number,
+  shape: PointShape,
+  radius: number,
+  opts: {
+    fill: string;
+    stroke: string;
+    strokeWidth: number;
+    className?: string;
+    legendKey?: string;
+  }
+): SVGElement {
+  const baseAttrs: Record<string, string | number | undefined> = {
+    ...(opts.className ? { class: opts.className } : {}),
+    ...(opts.legendKey ? { 'data-legend-keys': opts.legendKey } : {})
+  };
+  const r = Math.max(1.5, radius);
+
+  switch (shape) {
+    case 'circle':
+      return svgEl(
+        'circle',
+        {
+          ...baseAttrs,
+          cx,
+          cy,
+          r,
+          fill: opts.fill,
+          stroke: opts.stroke,
+          'stroke-width': opts.strokeWidth
+        },
+        parent
+      );
+    case 'square': {
+      const s = Number((r * 0.88).toFixed(2));
+      return svgEl(
+        'rect',
+        {
+          ...baseAttrs,
+          x: cx - s,
+          y: cy - s,
+          width: s * 2,
+          height: s * 2,
+          fill: opts.fill,
+          stroke: opts.stroke,
+          'stroke-width': opts.strokeWidth
+        },
+        parent
+      );
+    }
+    case 'triangle': {
+      const topY = cy - r * 1.12;
+      const botY = cy + r * 0.82;
+      const halfW = r * 1.05;
+      return svgEl(
+        'polygon',
+        {
+          ...baseAttrs,
+          points: `${cx},${topY} ${cx + halfW},${botY} ${cx - halfW},${botY}`,
+          fill: opts.fill,
+          stroke: opts.stroke,
+          'stroke-width': opts.strokeWidth
+        },
+        parent
+      );
+    }
+    case 'cross': {
+      const s = Number((r * 0.85).toFixed(2));
+      return svgEl(
+        'path',
+        {
+          ...baseAttrs,
+          d: `M${cx - s},${cy - s} L${cx + s},${cy + s} M${cx + s},${cy - s} L${cx - s},${cy + s}`,
+          fill: 'none',
+          stroke: opts.stroke,
+          'stroke-width': Math.max(1.5, opts.strokeWidth),
+          'stroke-linecap': 'round'
+        },
+        parent
+      );
+    }
+    case 'diamond':
+    default:
+      return svgEl(
+        'polygon',
+        {
+          ...baseAttrs,
+          points: `${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}`,
+          fill: opts.fill,
+          stroke: opts.stroke,
+          'stroke-width': opts.strokeWidth
+        },
+        parent
+      );
+  }
+}
+
+interface StyleLegendPositionedItem {
+  item: StyleLegendItem;
+  x: number;
+  y: number;
+  swatchX: number;
+  swatchY: number;
+  labelX: number;
+  labelY: number;
+}
+
+interface ComputedStyleLegendLayout {
+  ruleY: number;
+  boxX: number;
+  boxW: number;
+  itemFontSize: number;
+  swatchW: number;
+  swatchH: number;
+  extraHeight: number;
+  entries: StyleLegendPositionedItem[];
+}
+
+function computeStyleLegendLayout(
+  items: readonly StyleLegendItem[],
+  layout: ScoreLayout,
+  fScale: number
+): ComputedStyleLegendLayout | null {
+  if (items.length === 0) return null;
+  const boxX = layout.padX;
+  const innerAvailW = Math.max(180, layout.width - layout.padX * 2);
+  const boxW = layout.width > 1200 ? Math.min(840, innerAvailW) : innerAvailW;
+  const itemFontSize = Number((9 * fScale).toFixed(2));
+  const itemFont = `${itemFontSize}px ${SANS_FONT_STACK}`;
+  const swatchW = 14;
+  const swatchH = 10;
+  const swatchGap = 5;
+  const itemGapX = 14;
+  const rowH = Math.ceil(16 * fScale);
+
+  const baseBottom = layout.height - layout.padBottom;
+  const ruleY = baseBottom + 8;
+  const rowsTopY = ruleY + 9;
+
+  let curX = boxX;
+  let curRow = 0;
+  const entries: StyleLegendPositionedItem[] = [];
+
+  for (const item of items) {
+    const labelW = Math.ceil(measurePx(item.label, itemFont));
+    const entryW = swatchW + swatchGap + labelW;
+    if (curX > boxX && curX + entryW > boxX + boxW) {
+      curX = boxX;
+      curRow += 1;
+    }
+    const rowY = rowsTopY + curRow * rowH;
+    entries.push({
+      item,
+      x: curX,
+      y: rowY,
+      swatchX: curX,
+      swatchY: rowY + Math.max(0, (rowH - swatchH) / 2),
+      labelX: curX + swatchW + swatchGap,
+      labelY: rowY + rowH / 2 + itemFontSize * 0.34
+    });
+    curX += entryW + itemGapX;
+  }
+
+  const totalRows = curRow + 1;
+  const contentEndY = rowsTopY + totalRows * rowH;
+  const extraHeight = Math.ceil(contentEndY + 6 - baseBottom);
+
+  return {
+    ruleY,
+    boxX,
+    boxW,
+    itemFontSize,
+    swatchW,
+    swatchH,
+    extraHeight,
+    entries
+  };
 }
 
 function truncateTierNameMiddle(name: string, maxW: number, font: string): string {
@@ -198,7 +421,12 @@ function renderRichTextSVG(
     palette: ScorePalette;
     fontScale: number;
   } | null,
-  textScale = 1
+  textScale = 1,
+  textStyle?: {
+    color?: string;
+    fontWeight?: 'normal' | 'bold';
+    fontStyle?: 'normal' | 'italic';
+  } | null
 ): void {
   if (!rich) return;
   const isExport = Boolean(styleOpts?.isExport);
@@ -212,6 +440,9 @@ function renderRichTextSVG(
   const glossSize = Number((11.2 * fScale).toFixed(2));
   const glossRawSize = Number((10.2 * fScale).toFixed(2));
   const ctrlSize = Number((9.5 * fScale).toFixed(2));
+  const customColor = textStyle?.color;
+  const customWeight = textStyle?.fontWeight === 'bold' ? 'bold' : undefined;
+  const customStyle = textStyle?.fontStyle === 'italic' ? 'italic' : undefined;
   const textWrap = svgEl('g', isExport ? {} : { 'data-text-node': '1' }, parent);
   let curY = y;
 
@@ -230,7 +461,10 @@ function renderRichTextSVG(
           'text-anchor': align,
           'font-family': fontFamily,
           'font-size': String(glossSize),
-          fill: pal.gloss,
+          fill: customColor || pal.gloss,
+          ...(customColor ? { opacity: '0.84' } : {}),
+          ...(customWeight ? { 'font-weight': customWeight } : {}),
+          ...(customStyle ? { 'font-style': customStyle } : {}),
           ...(isExport ? {} : { 'data-legend-keys': 'trigraph' })
         },
         textWrap
@@ -250,7 +484,9 @@ function renderRichTextSVG(
         'text-anchor': align,
         'font-family': fontFamily,
         'font-size': String(effSize),
-        'xml:space': 'preserve'
+        'xml:space': 'preserve',
+        ...(customWeight ? { 'font-weight': customWeight } : {}),
+        ...(customStyle ? { 'font-style': customStyle } : {})
       },
       textWrap
     );
@@ -261,7 +497,7 @@ function renderRichTextSVG(
         tx
       );
       ts.textContent = tok.str;
-      if (tok.kind === 'text') ts.setAttribute('fill', pal.ink);
+      if (tok.kind === 'text') ts.setAttribute('fill', customColor || pal.ink);
       else if (tok.kind === 'wrap') {
         ts.setAttribute('fill', pal.isBw ? pal.meta : pal.faint);
         ts.setAttribute('font-family', symbolFamily);
@@ -289,8 +525,8 @@ function renderRichTextSVG(
           'text-anchor': align,
           'font-family': monoFamily,
           'font-size': String(glossRawSize),
-          fill: pal.gloss,
-          opacity: '0.88',
+          fill: customColor || pal.gloss,
+          opacity: customColor ? '0.78' : '0.88',
           ...(isExport ? {} : { 'data-legend-keys': 'trigraph' })
         },
         textWrap
@@ -1523,14 +1759,12 @@ export function renderInteractiveOverlay(
 export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): void {
   const { tg, layout, hasAudio, audioBuffer, audioOffset, analysis, maxFreq, mode, exportCtx } = input;
   while (svg.firstChild) svg.removeChild(svg.firstChild);
-  svg.setAttribute('width', String(layout.width));
-  svg.setAttribute('height', String(layout.height));
-  svg.setAttribute('viewBox', `0 0 ${layout.width} ${layout.height}`);
 
   const isExp = Boolean(exportCtx);
   const sem = Boolean(exportCtx?.semanticGroups);
   const pal = exportCtx?.palette || WARM_PALETTE;
   const pfx = isExp ? exportCtx?.idPrefix || '' : '';
+  const patPrefix = `${pfx}tg-pat`;
   const transparentBg = Boolean(exportCtx?.transparentBg);
   const hideMeta = Boolean(exportCtx?.hideMetaSymbols);
   const hideStretch = Boolean(exportCtx?.hideStretchCues);
@@ -1540,6 +1774,56 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
   const sansFont = exportCtx?.sansFontFamily || SANS_FONT_STACK;
   const monoFont = exportCtx?.monoFontFamily || MONO_FONT_STACK;
   const symbolFont = exportCtx?.symbolFontFamily || SYMBOL_FONT_STACK;
+
+  const rawStyleDoc = input.styleDoc ?? null;
+  const effectiveStyleDoc: StyleDocument | null = rawStyleDoc
+    ? exportCtx?.bwPrintMode !== undefined && exportCtx.bwPrintMode !== rawStyleDoc.bwPrintMode
+      ? { ...rawStyleDoc, bwPrintMode: exportCtx.bwPrintMode }
+      : rawStyleDoc
+    : null;
+  const hasStyle = Boolean(effectiveStyleDoc && hasAnyCustomStyle(effectiveStyleDoc));
+
+  const shouldShowStyleLegend = isExp
+    ? (exportCtx?.showStyleLegend ?? effectiveStyleDoc?.showLegendInExport ?? false)
+    : Boolean(input.showStyleLegendPreview);
+  const styleLegendItems: StyleLegendItem[] =
+    shouldShowStyleLegend && effectiveStyleDoc
+      ? buildStyleLegendItems(effectiveStyleDoc, tg)
+      : [];
+  const styleLegendLayout =
+    styleLegendItems.length > 0
+      ? computeStyleLegendLayout(styleLegendItems, layout, fScale)
+      : null;
+
+  const finalHeight = styleLegendLayout
+    ? Math.ceil(layout.height + styleLegendLayout.extraHeight)
+    : layout.height;
+
+  svg.setAttribute('width', String(layout.width));
+  svg.setAttribute('height', String(finalHeight));
+  svg.setAttribute('viewBox', `0 0 ${layout.width} ${finalHeight}`);
+
+  // W3C <metadata> project embedding (inserted before <defs>)
+  if (isExp && exportCtx?.embedProjectMetadata) {
+    const metadataXml = buildSvgProjectMetadataXml(
+      tg,
+      effectiveStyleDoc ?? createDefaultStyleDocument(),
+      { filename: exportCtx.metadataFilename }
+    );
+    try {
+      const parsedMeta = new DOMParser().parseFromString(
+        `<svg xmlns="${SVG_NS}">${metadataXml}</svg>`,
+        'image/svg+xml'
+      );
+      const metaNode = parsedMeta.documentElement.firstElementChild;
+      if (metaNode && metaNode.localName === 'metadata' && !parsedMeta.querySelector('parsererror')) {
+        svg.appendChild(svg.ownerDocument.importNode(metaNode, true));
+      }
+    } catch {
+      // Ignore XML parsing errors in non-DOM environments
+    }
+  }
+
   const richStyle = isExp
     ? {
         isExport: true,
@@ -1575,6 +1859,49 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
   const pOvl = svgEl('pattern', { id: `${pfx}pat-ovl`, width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(-45)' }, defs);
   svgEl('line', { x1: 0, y1: 0, x2: 0, y2: 6, stroke: pal.ovlStroke, 'stroke-width': 1.2, opacity: pal.isBw ? 0.42 : 0.28 }, pOvl);
 
+  // Inject used vector style <pattern> definitions into <defs>
+  if (effectiveStyleDoc && (hasStyle || styleLegendItems.length > 0)) {
+    const patternSpecs: SvgPatternSpec[] = collectUsedPatternSpecs(effectiveStyleDoc, tg, patPrefix);
+    const seenPatIds = new Set(patternSpecs.map((s) => s.id));
+    for (const item of styleLegendItems) {
+      if (item.pattern === 'none') continue;
+      const pid = makeSvgPatternId(
+        item.pattern,
+        item.fill,
+        item.patternColor,
+        item.fillOpacity,
+        patPrefix
+      );
+      if (!seenPatIds.has(pid)) {
+        seenPatIds.add(pid);
+        patternSpecs.push({
+          id: pid,
+          kind: item.pattern,
+          bgColor: item.fill,
+          fgColor: item.patternColor,
+          opacity: item.fillOpacity
+        });
+      }
+    }
+    const patMarkup = buildSvgPatternDefs(patternSpecs, patPrefix);
+    if (patMarkup) {
+      try {
+        const parsedPat = new DOMParser().parseFromString(
+          `<svg xmlns="${SVG_NS}"><defs>${patMarkup}</defs></svg>`,
+          'image/svg+xml'
+        );
+        const parsedDefs = parsedPat.documentElement.firstElementChild;
+        if (parsedDefs && !parsedPat.querySelector('parsererror')) {
+          for (const child of Array.from(parsedDefs.children)) {
+            defs.appendChild(svg.ownerDocument.importNode(child, true));
+          }
+        }
+      } catch {
+        // Ignore XML parsing errors in non-DOM environments
+      }
+    }
+  }
+
   if (isExp && layout.legendLayout?.needsSpecGrad) {
     const lg = svgEl('linearGradient', { id: `${pfx}legend-spec-grad`, x1: '0%', y1: '0%', x2: '100%', y2: '0%' }, defs);
     svgEl('stop', { offset: '0%', 'stop-color': pal.isBw ? '#F5F5F5' : '#F4F2EC' }, lg);
@@ -1583,7 +1910,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
   }
 
   if (!transparentBg) {
-    const bgAttrs: Record<string, string | number> = { x: 0, y: 0, width: layout.width, height: layout.height, fill: pal.paper };
+    const bgAttrs: Record<string, string | number> = { x: 0, y: 0, width: layout.width, height: finalHeight, fill: pal.paper };
     if (isExp && sem) bgAttrs.id = 'export-backdrop';
     svgEl('rect', bgAttrs, svg);
   }
@@ -1823,13 +2150,24 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
         if (!tl || tl.meta.kind !== 'textTier') continue;
         for (const vp of tl.visiblePts || []) {
           const lx = band.linearXForTime(vp.pt.number);
-          svgEl('polygon', {
-            points: `${lx},${band.specY - 3} ${lx + 3},${band.specY} ${lx},${band.specY + 3} ${lx - 3},${band.specY}`,
-            fill: vp.rich ? pal.pitch : pal.paper,
-            stroke: pal.pitch,
-            'stroke-width': sw(1),
-            ...(isExp ? {} : { 'data-legend-keys': vp.rich ? 'labeled-point' : 'empty-point' })
-          }, specG);
+          const ptStyle = hasStyle ? resolvePointStyle(effectiveStyleDoc!, tg, tl.tierIndex, vp.pt.origIdx) : null;
+          if (ptStyle?.hasCustom) {
+            const topR = Math.min(4, Math.max(2.4, ptStyle.size * 0.72));
+            renderPointMarkerSVG(specG, lx, band.specY, ptStyle.shape, topR, {
+              fill: ptStyle.shape === 'cross' ? 'none' : vp.rich ? ptStyle.color : pal.paper,
+              stroke: ptStyle.color,
+              strokeWidth: sw(ptStyle.shape === 'cross' ? 1.5 : 1),
+              legendKey: isExp ? undefined : vp.rich ? 'labeled-point' : 'empty-point'
+            });
+          } else {
+            svgEl('polygon', {
+              points: `${lx},${band.specY - 3} ${lx + 3},${band.specY} ${lx},${band.specY + 3} ${lx - 3},${band.specY}`,
+              fill: vp.rich ? pal.pitch : pal.paper,
+              stroke: pal.pitch,
+              'stroke-width': sw(1),
+              ...(isExp ? {} : { 'data-legend-keys': vp.rich ? 'labeled-point' : 'empty-point' })
+            }, specG);
+          }
         }
       }
 
@@ -2295,6 +2633,24 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
     }
 
     // D. Multi-Tier Tracks
+    const acousticExtMap = new Map<
+      string,
+      { time: number; elX: number; tierTopY: number; style: ResolvedBoundaryStyle }
+    >();
+    const recordAcousticExt = (
+      bt: number,
+      elX: number,
+      tierTopY: number,
+      bStyle: ResolvedBoundaryStyle
+    ) => {
+      if (!bStyle.extendToAcoustic) return;
+      const key = `${Math.round(bt * 1e6)}|${bStyle.strokeColor}|${bStyle.strokeWidth}|${bStyle.strokeDash}`;
+      const existing = acousticExtMap.get(key);
+      if (!existing || tierTopY > existing.tierTopY) {
+        acousticExtMap.set(key, { time: bt, elX, tierTopY, style: bStyle });
+      }
+    };
+
     for (const ti of band.displayOrder) {
       const tl = band.tiersLayout[ti];
       if (!tl) continue;
@@ -2303,6 +2659,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
       const accent = pal.tierAccents[(displayNum - 1) % pal.tierAccents.length];
       const tierSlug = safeId(tier.name || `tier-${displayNum}`);
       const tG = svgEl('g', isExp ? (sem ? { id: `band-${bNum}-tier-${displayNum}-${tierSlug}` } : {}) : { 'data-tier': ti }, bG);
+      const tierStyle = hasStyle ? resolveTierStyle(effectiveStyleDoc!, tg, ti) : null;
 
       // Left Tier Header
       const hb = tl.headerBox;
@@ -2310,15 +2667,19 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
       if (!isExp) {
         svgEl('title', {}, hdrG).textContent = `${displayNum}. ${tier.name || '(空层名)'} [${tier.kind === 'intervalTier' ? 'IntervalTier' : 'TextTier'}]`;
         svgEl('rect', { class: 'hdr-hit', x: 0, y: tl.y, width: band.originX, height: tl.h, fill: 'transparent', 'data-ui-only': '1' }, hdrG);
-        svgEl('rect', { class: 'hdr-bg', x: hb.x, y: hb.y, width: hb.w, height: hb.h, fill: 'transparent' }, hdrG);
+        svgEl('rect', { class: 'hdr-bg', x: hb.x, y: hb.y, width: hb.w, height: hb.h, fill: tierStyle?.labelBg || 'transparent' }, hdrG);
         svgEl('rect', { class: 'hdr-accent', x: hb.x, y: hb.y, width: 2.5, height: hb.h, fill: accent, 'data-ui-only': '1' }, hdrG);
+      } else if (tierStyle?.labelBg) {
+        svgEl('rect', { x: hb.x, y: hb.y, width: hb.w, height: hb.h, fill: tierStyle.labelBg }, hdrG);
       }
 
       const midY = tl.midY;
       const numRightX = hb.x + (layout.isTinyView ? 14 : 20);
       svgEl('text', {
         x: numRightX, y: midY + 4, 'text-anchor': 'end',
-        'font-family': monoFont, 'font-size': fs(layout.isTinyView ? 9.5 : 10.5), fill: pal.mutedAlt
+        'font-family': monoFont, 'font-size': fs(layout.isTinyView ? 9.5 : 10.5),
+        fill: tierStyle?.labelColor || pal.mutedAlt,
+        ...(tierStyle?.labelColor ? { opacity: '0.72' } : {})
       }, hdrG).textContent = String(displayNum);
 
       const gx = hb.x + (layout.isTinyView ? 19 : 27);
@@ -2327,7 +2688,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
         svgEl('line', { x1: gx + 6, y1: midY - 4.5, x2: gx + 6, y2: midY + 4.5, stroke: accent, 'stroke-width': sw(1.1) }, hdrG);
       } else {
         svgEl('line', { x1: gx - 1, y1: midY, x2: gx + 13, y2: midY, stroke: pal.wire, 'stroke-width': sw(1.1) }, hdrG);
-        svgEl('polygon', { points: `${gx + 6},${midY - 3.5} ${gx + 9.5},${midY} ${gx + 6},${midY + 3.5} ${gx + 2.5},${midY}`, fill: pal.ink }, hdrG);
+        svgEl('polygon', { points: `${gx + 6},${midY - 3.5} ${gx + 9.5},${midY} ${gx + 6},${midY + 3.5} ${gx + 2.5},${midY}`, fill: tierStyle?.labelColor || pal.ink }, hdrG);
       }
 
       const nameX = gx + (layout.isTinyView ? 16 : 19);
@@ -2338,7 +2699,7 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
         if (tier.name === '') {
           if (!hideMeta) {
             svgEl('text', {
-              x: nameX, y: midY + 4, 'font-family': symbolFont, 'font-size': fs(isPrimaryBand ? 11.5 : 10.5), fill: pal.meta, opacity: isPrimaryBand ? '1' : '0.75',
+              x: nameX, y: midY + 4, 'font-family': symbolFont, 'font-size': fs(isPrimaryBand ? 11.5 : 10.5), fill: tierStyle?.labelColor || pal.meta, opacity: isPrimaryBand ? '1' : '0.75',
               ...(isExp ? {} : { 'data-legend-keys': 'meta-symbols' })
             }, nameWrap).textContent = '∅';
           }
@@ -2349,7 +2710,8 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
           svgEl('text', {
             x: nameX, y: midY + 4, 'font-family': sansFont,
             'font-size': String(Number(namePxSize.toFixed(2))), 'font-weight': '500',
-            fill: isPrimaryBand ? pal.ink : pal.muted
+            fill: tierStyle?.labelColor || (isPrimaryBand ? pal.ink : pal.muted),
+            ...(tierStyle?.labelColor && !isPrimaryBand ? { opacity: '0.82' } : {})
           }, nameWrap).textContent = displayName;
         }
       }
@@ -2381,11 +2743,24 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
           }
 
           let ivClipCounter = 0;
+          const tierCustomBoundaries = new Map<
+            string,
+            { x: number; y0: number; y1: number; style: ResolvedBoundaryStyle }
+          >();
           for (const vi of tl.visibleIvs || []) {
             const iv = vi.iv;
             const ly = tl.y + (tl.laneOffsets?.[iv.lane] || 0);
             const lh = tl.laneHeights?.[iv.lane] || tl.h;
             const isEmpty = iv.text === '';
+            const ivStyle = hasStyle ? resolveIntervalStyle(effectiveStyleDoc!, tg, ti, iv.origIdx) : null;
+            const ivTextStyle =
+              ivStyle?.hasCustom && ivStyle.hasCustomText
+                ? {
+                    color: ivStyle.textColor,
+                    fontWeight: ivStyle.fontWeight,
+                    fontStyle: ivStyle.fontStyle
+                  }
+                : null;
 
             const ivG = svgEl('g', isExp ? {} : {
               'data-role': 'interval', 'data-tier': ti, 'data-idx': iv.origIdx, 'data-band': band.bandIndex,
@@ -2399,9 +2774,40 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             }
 
             const cellBg = transparentBg ? 'none' : isEmpty ? pal.emptyCell : pal.cellFill;
-            if (cellBg !== 'none') svgEl('rect', { x: vi.x0, y: ly, width: vi.w, height: lh, fill: cellBg }, ivG);
+            const customFillActive = Boolean(ivStyle?.hasCustom && ivStyle.hasCustomFill);
+            if (!customFillActive || (ivStyle!.fillOpacity < 0.999 && cellBg !== 'none')) {
+              if (cellBg !== 'none') svgEl('rect', { x: vi.x0, y: ly, width: vi.w, height: lh, fill: cellBg }, ivG);
+            }
+            if (customFillActive && ivStyle) {
+              if (ivStyle.pattern === 'none') {
+                const fillRectAttrs: Record<string, string | number> = {
+                  x: vi.x0,
+                  y: ly,
+                  width: vi.w,
+                  height: lh,
+                  fill: ivStyle.fill
+                };
+                if (ivStyle.fillOpacity < 0.999) fillRectAttrs['fill-opacity'] = ivStyle.fillOpacity;
+                svgEl('rect', fillRectAttrs, ivG);
+              } else {
+                if (ivStyle.fillOpacity >= 0.999) {
+                  svgEl('rect', { x: vi.x0, y: ly, width: vi.w, height: lh, fill: ivStyle.fill }, ivG);
+                }
+                const patId = makeSvgPatternId(
+                  ivStyle.pattern,
+                  ivStyle.fill,
+                  ivStyle.patternColor,
+                  ivStyle.fillOpacity,
+                  patPrefix
+                );
+                svgEl('rect', { x: vi.x0, y: ly, width: vi.w, height: lh, fill: `url(#${patId})` }, ivG);
+              }
+            }
             if (!isExp) svgEl('rect', { class: 'iv-hover', x: vi.x0, y: ly, width: vi.w, height: lh, fill: 'rgba(29, 78, 216, 0.055)', 'data-ui-only': '1' }, ivG);
-            if (!isEmpty) svgEl('rect', { x: vi.x0, y: ly, width: vi.w, height: 2 * sScale, fill: accent, opacity: pal.isBw ? 0.85 : 0.72 }, ivG);
+            if (!isEmpty && !(ivStyle?.hasCustom && ivStyle.hasCustomBorder)) {
+              const barColor = customFillActive && ivStyle ? ivStyle.borderColor : accent;
+              svgEl('rect', { x: vi.x0, y: ly, width: vi.w, height: 2 * sScale, fill: barColor, opacity: pal.isBw ? 0.85 : 0.72 }, ivG);
+            }
 
             if (!hideStretch && vi.isStretched && vi.w >= 14) {
               const yB = ly + lh - 2.5;
@@ -2414,6 +2820,29 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
 
             svgEl('line', { x1: vi.x0, y1: ly, x2: vi.x1, y2: ly, stroke: pal.border, 'stroke-width': sw(1) }, ivG);
             svgEl('line', { x1: vi.x0, y1: ly + lh, x2: vi.x1, y2: ly + lh, stroke: pal.border, 'stroke-width': sw(1) }, ivG);
+
+            if (ivStyle?.hasCustom && ivStyle.hasCustomBorder && ivStyle.borderWidth > 0) {
+              const bw = sw(ivStyle.borderWidth);
+              const inset = Math.max(0.5, bw / 2);
+              if (vi.w > inset * 2 && lh > inset * 2) {
+                const bDash = dashArrayFor(ivStyle.borderDash, sScale);
+                svgEl(
+                  'rect',
+                  {
+                    x: vi.x0 + inset,
+                    y: ly + inset,
+                    width: Math.max(0.5, vi.w - inset * 2),
+                    height: Math.max(0.5, lh - inset * 2),
+                    fill: 'none',
+                    stroke: ivStyle.borderColor,
+                    'stroke-width': bw,
+                    ...(bDash ? { 'stroke-dasharray': bDash } : {}),
+                    ...(isExp ? {} : { 'pointer-events': 'none' })
+                  },
+                  ivG
+                );
+              }
+            }
 
             if (isEmpty) {
               const formatSilenceDur = (dt: number): string => {
@@ -2483,7 +2912,14 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             }
 
             if (!vi.clippedLeft) {
-              svgEl('line', { x1: vi.x0, y1: ly, x2: vi.x0, y2: ly + lh, stroke: pal.ink, 'stroke-width': sw(1.1) }, ivG);
+              const leftBStyle = hasStyle ? resolveBoundaryStyle(effectiveStyleDoc!, tg, ti, iv.xmin) : null;
+              if (leftBStyle?.hasCustom) {
+                const bKey = `${iv.lane}:${Math.round(iv.xmin * 1e6)}`;
+                tierCustomBoundaries.set(bKey, { x: vi.x0, y0: ly, y1: ly + lh, style: leftBStyle });
+                recordAcousticExt(iv.xmin, vi.x0, tl.y, leftBStyle);
+              } else {
+                svgEl('line', { x1: vi.x0, y1: ly, x2: vi.x0, y2: ly + lh, stroke: pal.ink, 'stroke-width': sw(1.1) }, ivG);
+              }
             } else {
               const tieY = ly + lh / 2;
               const contTarget = isExp ? ivG : svgEl('g', { 'data-legend-keys': 'continuation', 'pointer-events': 'none' }, ivG);
@@ -2507,7 +2943,21 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
                 }
                 const ghostW = measurePx(ghostStr, ghostFont);
                 if (ghostW <= availGhostW + 2) {
-                  svgEl('text', { x: vi.x0 + 8.5, y: tieY + 4, 'text-anchor': 'start', 'font-family': fontFamily, 'font-size': fs(11), 'font-style': 'italic', fill: pal.muted }, contTarget).textContent = ghostStr;
+                  svgEl(
+                    'text',
+                    {
+                      x: vi.x0 + 8.5,
+                      y: tieY + 4,
+                      'text-anchor': 'start',
+                      'font-family': fontFamily,
+                      'font-size': fs(11),
+                      'font-style': 'italic',
+                      ...(ivTextStyle?.fontWeight === 'bold' ? { 'font-weight': 'bold' } : {}),
+                      fill: ivTextStyle?.color || pal.muted,
+                      ...(ivTextStyle?.color ? { opacity: '0.78' } : {})
+                    },
+                    contTarget
+                  ).textContent = ghostStr;
                   const railStart = vi.x0 + 8.5 + ghostW + 6;
                   const railEnd = vi.x1 - (vi.clippedRight ? 9 : 6);
                   if (railEnd - railStart >= 10) svgEl('line', { x1: railStart, y1: tieY, x2: railEnd, y2: tieY, stroke: pal.anchorStroke, 'stroke-width': sw(0.85), 'stroke-dasharray': '2 2' }, contTarget);
@@ -2521,7 +2971,14 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
             }
 
             if (!vi.clippedRight) {
-              svgEl('line', { x1: vi.x1, y1: ly, x2: vi.x1, y2: ly + lh, stroke: pal.ink, 'stroke-width': sw(1.1) }, ivG);
+              const rightBStyle = hasStyle ? resolveBoundaryStyle(effectiveStyleDoc!, tg, ti, iv.xmax) : null;
+              if (rightBStyle?.hasCustom) {
+                const bKey = `${iv.lane}:${Math.round(iv.xmax * 1e6)}`;
+                tierCustomBoundaries.set(bKey, { x: vi.x1, y0: ly, y1: ly + lh, style: rightBStyle });
+                recordAcousticExt(iv.xmax, vi.x1, tl.y, rightBStyle);
+              } else {
+                svgEl('line', { x1: vi.x1, y1: ly, x2: vi.x1, y2: ly + lh, stroke: pal.ink, 'stroke-width': sw(1.1) }, ivG);
+              }
             } else {
               const tieY = ly + lh / 2;
               svgEl('polygon', {
@@ -2565,10 +3022,34 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
                   height: Math.max(1, lh - 2)
                 }, icp);
                 const clipWrap = svgEl('g', { 'clip-path': `url(#${cid})` }, ivG);
-                renderRichTextSVG(clipWrap, vi.rich, textCenterX, drawY, 'middle', 12.5, richStyle, fitScale);
+                renderRichTextSVG(clipWrap, vi.rich, textCenterX, drawY, 'middle', 12.5, richStyle, fitScale, ivTextStyle);
               } else {
-                renderRichTextSVG(ivG, vi.rich, textCenterX, drawY, 'middle', 12.5, richStyle, fitScale);
+                renderRichTextSVG(ivG, vi.rich, textCenterX, drawY, 'middle', 12.5, richStyle, fitScale, ivTextStyle);
               }
+            }
+          }
+
+          if (tierCustomBoundaries.size > 0) {
+            const bndOverlayG = svgEl(
+              'g',
+              isExp ? {} : { 'pointer-events': 'none' },
+              tG
+            );
+            for (const bnd of tierCustomBoundaries.values()) {
+              const dash = dashArrayFor(bnd.style.strokeDash, sScale);
+              svgEl(
+                'line',
+                {
+                  x1: bnd.x,
+                  y1: bnd.y0,
+                  x2: bnd.x,
+                  y2: bnd.y1,
+                  stroke: bnd.style.strokeColor,
+                  'stroke-width': sw(Math.max(0.5, bnd.style.strokeWidth)),
+                  ...(dash ? { 'stroke-dasharray': dash } : {})
+                },
+                bndOverlayG
+              );
             }
           }
 
@@ -2580,10 +3061,12 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
           }
 
           for (const vz of tl.visibleZeros || []) {
+            const zStyle = hasStyle ? resolveIntervalStyle(effectiveStyleDoc!, tg, ti, vz.iv.origIdx) : null;
             const zG = svgEl('g', isExp ? {} : { 'data-role': 'interval', 'data-tier': ti, 'data-idx': vz.iv.origIdx, 'data-band': band.bandIndex, 'data-legend-keys': 'zero-dur' }, tG);
             const cx = vz.x;
             const cy = tl.y + tl.h / 2;
-            const zeroStroke = pal.isBw ? '#333333' : pal.amber;
+            const zeroStroke = zStyle?.hasCustomBorder ? zStyle.borderColor : pal.isBw ? '#333333' : pal.amber;
+            const zeroBg = zStyle?.hasCustomFill ? zStyle.fill : pal.zeroBg;
             svgEl('polygon', { points: `${cx},${tl.y} ${cx + 5},${cy} ${cx},${tl.y + tl.h} ${cx - 5},${cy}`, fill: pal.paper, stroke: zeroStroke, 'stroke-width': sw(1.3) }, zG);
             if (vz.rich) {
               const bw = vz.rich.width + 8;
@@ -2593,8 +3076,20 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
               let bx = cx - bw / 2;
               if (bx + bw > bandRight) bx = bandRight - bw;
               if (bx < bandLeft) bx = bandLeft;
-              svgEl('rect', { x: bx, y: cy - bh / 2, width: bw, height: bh, fill: pal.zeroBg, stroke: zeroStroke, 'stroke-width': sw(1) }, zG);
-              renderRichTextSVG(zG, vz.rich, bx + bw / 2, cy - vz.rich.height / 2, 'middle', 11, richStyle);
+              svgEl('rect', { x: bx, y: cy - bh / 2, width: bw, height: bh, fill: zeroBg, stroke: zeroStroke, 'stroke-width': sw(1) }, zG);
+              renderRichTextSVG(
+                zG,
+                vz.rich,
+                bx + bw / 2,
+                cy - vz.rich.height / 2,
+                'middle',
+                11,
+                richStyle,
+                1,
+                zStyle?.hasCustom && zStyle.hasCustomText
+                  ? { color: zStyle.textColor, fontWeight: zStyle.fontWeight, fontStyle: zStyle.fontStyle }
+                  : null
+              );
             }
           }
 
@@ -2660,7 +3155,8 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
           const pt = vp.pt;
           const px = vp.x;
           const isOutOfBounds = (Number.isFinite(tier.xmin) && pt.number < tier.xmin) || (Number.isFinite(tier.xmax) && pt.number > tier.xmax);
-          const strokeCol = isOutOfBounds ? pal.amber : pal.ink;
+          const ptStyle = hasStyle ? resolvePointStyle(effectiveStyleDoc!, tg, ti, pt.origIdx) : null;
+          const strokeCol = isOutOfBounds ? pal.amber : ptStyle?.hasCustom ? ptStyle.color : pal.ink;
 
           const pG = svgEl('g', isExp ? {} : {
             'data-role': 'point', 'data-tier': ti, 'data-idx': pt.origIdx, 'data-band': band.bandIndex,
@@ -2671,11 +3167,21 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
           }
           if (!vp.rich) {
             if (!isExp) svgEl('rect', { x: px - 8, y: wy - 8, width: 16, height: 16, fill: 'transparent', 'data-ui-only': '1' }, pG);
-            svgEl('polygon', {
-              ...(isExp ? {} : { class: 'pt-diamond hollow' }),
-              points: `${px},${wy - 4.5} ${px + 4.5},${wy} ${px},${wy + 4.5} ${px - 4.5},${wy}`,
-              fill: pal.paper, stroke: strokeCol, 'stroke-width': sw(1.3)
-            }, pG);
+            if (ptStyle?.hasCustom) {
+              const r = Math.max(2, Math.min(10, ptStyle.size));
+              renderPointMarkerSVG(pG, px, wy, ptStyle.shape, r, {
+                fill: ptStyle.shape === 'cross' ? 'none' : pal.paper,
+                stroke: strokeCol,
+                strokeWidth: sw(ptStyle.shape === 'cross' ? 1.8 : 1.3),
+                className: isExp ? undefined : 'pt-diamond hollow'
+              });
+            } else {
+              svgEl('polygon', {
+                ...(isExp ? {} : { class: 'pt-diamond hollow' }),
+                points: `${px},${wy - 4.5} ${px + 4.5},${wy} ${px},${wy + 4.5} ${px - 4.5},${wy}`,
+                fill: pal.paper, stroke: strokeCol, 'stroke-width': sw(1.3)
+              }, pG);
+            }
           } else {
             const boxY = tl.y + (tl.levelY?.[vp.level] || 0);
             const stemTargetX =
@@ -2683,10 +3189,61 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
                 ? Math.max(vp.bx + 1, Math.min(vp.bx + vp.boxW - 1, px))
                 : vp.bx + vp.boxW / 2;
             if (!isExp) svgEl('rect', { x: px - 7, y: wy - 7, width: 14, height: 14, fill: 'transparent', 'data-ui-only': '1' }, pG);
-            svgEl('line', { ...(isExp ? {} : { class: 'pt-stem' }), x1: px, y1: wy + 3.5, x2: stemTargetX, y2: boxY, stroke: strokeCol, 'stroke-width': sw(1) }, pG);
-            svgEl('polygon', { ...(isExp ? {} : { class: 'pt-diamond' }), points: `${px},${wy - 4} ${px + 4},${wy} ${px},${wy + 4} ${px - 4},${wy}`, fill: strokeCol, stroke: strokeCol, 'stroke-width': sw(0.8) }, pG);
-            svgEl('rect', { ...(isExp ? {} : { class: 'pt-flag' }), x: vp.bx, y: boxY, width: vp.boxW, height: vp.boxH, fill: pal.paper, stroke: strokeCol, 'stroke-width': sw(1) }, pG);
-            renderRichTextSVG(pG, vp.rich, vp.bx + vp.boxW / 2, boxY + (vp.boxH - vp.rich.height) / 2, 'middle', 11.5, richStyle);
+            if (ptStyle?.hasCustom) {
+              const r = Math.max(2, Math.min(10, ptStyle.size));
+              const stemCol = isOutOfBounds ? pal.amber : ptStyle.stemColor;
+              const stemDash = dashArrayFor(ptStyle.stemDash, sScale);
+              svgEl(
+                'line',
+                {
+                  ...(isExp ? {} : { class: 'pt-stem' }),
+                  x1: px,
+                  y1: wy + Math.max(2.5, r * 0.85),
+                  x2: stemTargetX,
+                  y2: boxY,
+                  stroke: stemCol,
+                  'stroke-width': sw(1),
+                  ...(stemDash ? { 'stroke-dasharray': stemDash } : {})
+                },
+                pG
+              );
+              renderPointMarkerSVG(pG, px, wy, ptStyle.shape, r, {
+                fill: ptStyle.shape === 'cross' ? 'none' : strokeCol,
+                stroke: strokeCol,
+                strokeWidth: sw(ptStyle.shape === 'cross' ? 1.8 : 0.8),
+                className: isExp ? undefined : 'pt-diamond'
+              });
+              svgEl(
+                'rect',
+                {
+                  ...(isExp ? {} : { class: 'pt-flag' }),
+                  x: vp.bx,
+                  y: boxY,
+                  width: vp.boxW,
+                  height: vp.boxH,
+                  fill: pal.paper,
+                  stroke: stemCol,
+                  'stroke-width': sw(1)
+                },
+                pG
+              );
+              renderRichTextSVG(
+                pG,
+                vp.rich,
+                vp.bx + vp.boxW / 2,
+                boxY + (vp.boxH - vp.rich.height) / 2,
+                'middle',
+                11.5,
+                richStyle,
+                1,
+                { color: ptStyle.textColor, fontWeight: ptStyle.fontWeight }
+              );
+            } else {
+              svgEl('line', { ...(isExp ? {} : { class: 'pt-stem' }), x1: px, y1: wy + 3.5, x2: stemTargetX, y2: boxY, stroke: strokeCol, 'stroke-width': sw(1) }, pG);
+              svgEl('polygon', { ...(isExp ? {} : { class: 'pt-diamond' }), points: `${px},${wy - 4} ${px + 4},${wy} ${px},${wy + 4} ${px - 4},${wy}`, fill: strokeCol, stroke: strokeCol, 'stroke-width': sw(0.8) }, pG);
+              svgEl('rect', { ...(isExp ? {} : { class: 'pt-flag' }), x: vp.bx, y: boxY, width: vp.boxW, height: vp.boxH, fill: pal.paper, stroke: strokeCol, 'stroke-width': sw(1) }, pG);
+              renderRichTextSVG(pG, vp.rich, vp.bx + vp.boxW / 2, boxY + (vp.boxH - vp.rich.height) / 2, 'middle', 11.5, richStyle);
+            }
           }
         }
       }
@@ -2720,6 +3277,133 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
         svgEl('path', { d: `M${cx - 5},${tl.y} L${cx},${tl.y} L${cx},${tl.y + tl.h} L${cx - 5},${tl.y + tl.h}`, fill: 'none', stroke: pal.isBw ? pal.ink : pal.amber, 'stroke-width': sw(2), ...(isExp ? {} : { 'data-legend-keys': 'ood' }) }, tG);
       }
     }
+
+    // Shared aligned-time boundary overrides extending to acoustic zone
+    if (hasStyle && effectiveStyleDoc) {
+      for (const ov of effectiveStyleDoc.boundaryOverrides) {
+        if (ov.tierIndex !== null || !ov.style.extendToAcoustic) continue;
+        if (ov.time < band.startT - 1e-6 || ov.time > band.endT + 1e-6) continue;
+        const resolved = resolveBoundaryStyle(effectiveStyleDoc, tg, -1, ov.time);
+        if (!resolved.extendToAcoustic) continue;
+        const gi = layout.tToIdx.get(ov.time);
+        const elX =
+          gi !== undefined && gi >= band.startIdx && gi <= band.endIdx
+            ? band.spineCols[gi - band.startIdx].x
+            : elasticXInBand(band, ov.time);
+        recordAcousticExt(ov.time, elX, band.tiersBottomY, resolved);
+      }
+    }
+
+    // Draw upward boundary reference lines through waveform / spectrogram acoustic area
+    const hasAcousticArea = Boolean(
+      hasAudio && (band.specH > 0 || band.waveH > 0 || (audioBuffer && band.linearH > 0))
+    );
+    if (hasAcousticArea && acousticExtMap.size > 0) {
+      const acousticTopY = band.specH > 0 ? band.waveY : band.linearY;
+      const extG = svgEl(
+        'g',
+        isExp ? (sem ? { id: `band-${bNum}-boundary-guides` } : {}) : { 'pointer-events': 'none' },
+        bG
+      );
+      const spineGap = band.tiersTopY - band.neckBotY;
+      const splitForTicks = !layout.hideTicks && spineGap > 8;
+
+      for (const ext of acousticExtMap.values()) {
+        const linX = band.linearXForTime(ext.time);
+        const dash = dashArrayFor(ext.style.strokeDash, sScale);
+        const lineW = sw(Math.max(0.95, ext.style.strokeWidth));
+        // 1. Vertical guide across waveform / spectrogram / anchor strip
+        svgEl(
+          'line',
+          {
+            x1: linX,
+            y1: acousticTopY,
+            x2: linX,
+            y2: band.neckTopY,
+            stroke: ext.style.strokeColor,
+            'stroke-width': lineW,
+            ...(dash ? { 'stroke-dasharray': dash } : {}),
+            opacity: 0.78
+          },
+          extG
+        );
+        // 2. Projection neck connector from acoustic linX to annotation elX
+        svgEl(
+          'line',
+          {
+            x1: linX,
+            y1: band.neckTopY,
+            x2: ext.elX,
+            y2: band.neckBotY,
+            stroke: ext.style.strokeColor,
+            'stroke-width': sw(Math.max(0.85, ext.style.strokeWidth * 0.9)),
+            ...(dash ? { 'stroke-dasharray': dash } : {}),
+            opacity: 0.72
+          },
+          extG
+        );
+        // 3. Spine-safe docking ticks & guide down to the boundary's tier
+        if (splitForTicks) {
+          svgEl(
+            'line',
+            {
+              x1: ext.elX,
+              y1: band.neckBotY,
+              x2: ext.elX,
+              y2: band.neckBotY + 3,
+              stroke: ext.style.strokeColor,
+              'stroke-width': lineW,
+              opacity: 0.72
+            },
+            extG
+          );
+          svgEl(
+            'line',
+            {
+              x1: ext.elX,
+              y1: band.tiersTopY - 3,
+              x2: ext.elX,
+              y2: band.tiersTopY,
+              stroke: ext.style.strokeColor,
+              'stroke-width': lineW,
+              opacity: 0.72
+            },
+            extG
+          );
+          if (ext.tierTopY > band.tiersTopY + 1) {
+            svgEl(
+              'line',
+              {
+                x1: ext.elX,
+                y1: band.tiersTopY,
+                x2: ext.elX,
+                y2: ext.tierTopY,
+                stroke: ext.style.strokeColor,
+                'stroke-width': sw(Math.max(0.85, ext.style.strokeWidth * 0.85)),
+                ...(dash ? { 'stroke-dasharray': dash } : {}),
+                opacity: 0.55
+              },
+              extG
+            );
+          }
+        } else if (ext.tierTopY > band.neckBotY + 1) {
+          svgEl(
+            'line',
+            {
+              x1: ext.elX,
+              y1: band.neckBotY,
+              x2: ext.elX,
+              y2: ext.tierTopY,
+              stroke: ext.style.strokeColor,
+              'stroke-width': sw(Math.max(0.85, ext.style.strokeWidth * 0.85)),
+              ...(dash ? { 'stroke-dasharray': dash } : {}),
+              opacity: 0.6
+            },
+            extG
+          );
+        }
+      }
+    }
   }
 
   // Linear Scale Bar
@@ -2749,6 +3433,111 @@ export function renderScoreSvg(svg: SVGSVGElement, input: RenderScoreInput): voi
       monoFontFamily: monoFont,
       symbolFontFamily: symbolFont
     });
+  }
+
+  // Auto Bottom Style Legend Bar
+  if (styleLegendLayout && styleLegendLayout.entries.length > 0) {
+    const slG = svgEl(
+      'g',
+      isExp
+        ? sem
+          ? { id: 'export-style-legend' }
+          : {}
+        : { id: 'style-legend-preview', 'pointer-events': 'none' },
+      svg
+    );
+    svgEl(
+      'line',
+      {
+        x1: styleLegendLayout.boxX,
+        y1: styleLegendLayout.ruleY,
+        x2: styleLegendLayout.boxX + styleLegendLayout.boxW,
+        y2: styleLegendLayout.ruleY,
+        stroke: pal.rule,
+        'stroke-width': sw(0.75)
+      },
+      slG
+    );
+
+    for (const entry of styleLegendLayout.entries) {
+      const { item, swatchX, swatchY, labelX, labelY } = entry;
+      const w = styleLegendLayout.swatchW;
+      const h = styleLegendLayout.swatchH;
+      if (item.kind === 'point') {
+        const cy = swatchY + h / 2;
+        svgEl(
+          'line',
+          {
+            x1: swatchX,
+            y1: cy,
+            x2: swatchX + w,
+            y2: cy,
+            stroke: pal.wire,
+            'stroke-width': sw(0.9)
+          },
+          slG
+        );
+        const shape = item.pointShape ?? 'circle';
+        renderPointMarkerSVG(slG, swatchX + w / 2, cy, shape, 3.4, {
+          fill: shape === 'cross' ? 'none' : item.fill,
+          stroke: item.borderColor,
+          strokeWidth: sw(shape === 'cross' ? 1.5 : 0.9)
+        });
+      } else {
+        const dash = dashArrayFor(item.borderDash, sScale);
+        if (item.pattern !== 'none') {
+          const patId = makeSvgPatternId(
+            item.pattern,
+            item.fill,
+            item.patternColor,
+            item.fillOpacity,
+            patPrefix
+          );
+          svgEl(
+            'rect',
+            {
+              x: swatchX,
+              y: swatchY,
+              width: w,
+              height: h,
+              fill: `url(#${patId})`,
+              stroke: item.borderColor,
+              'stroke-width': sw(0.9),
+              ...(dash ? { 'stroke-dasharray': dash } : {})
+            },
+            slG
+          );
+        } else {
+          svgEl(
+            'rect',
+            {
+              x: swatchX,
+              y: swatchY,
+              width: w,
+              height: h,
+              fill: item.fill,
+              ...(item.fillOpacity < 0.999 ? { 'fill-opacity': item.fillOpacity } : {}),
+              stroke: item.borderColor,
+              'stroke-width': sw(0.9),
+              ...(dash ? { 'stroke-dasharray': dash } : {})
+            },
+            slG
+          );
+        }
+      }
+      svgEl(
+        'text',
+        {
+          x: labelX,
+          y: labelY,
+          'text-anchor': 'start',
+          'font-family': sansFont,
+          'font-size': String(styleLegendLayout.itemFontSize),
+          fill: pal.ink
+        },
+        slG
+      ).textContent = item.label;
+    }
   }
 
   // Tail embedded spectrogram <defs>

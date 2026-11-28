@@ -8,6 +8,7 @@ export const BULK_DROP_MAX_INDIVIDUAL_TABS = 20;
 
 const AUDIO_EXTENSIONS = new Set(['wav', 'mp3', 'ogg', 'flac', 'm4a', 'aac', 'webm', 'opus']);
 const DOC_EXTENSIONS = new Set(['textgrid', 'collection', 'intervaltier', 'texttier', 'txt']);
+const STYLE_SIDECAR_SUFFIX = '.tgstyle.json';
 const IGNORED_SYSTEM_NAMES = new Set(['.ds_store', 'thumbs.db', 'desktop.ini']);
 
 export interface DropDirectoryHandleLike {
@@ -42,7 +43,7 @@ export interface DropDirectoryCandidate {
   alreadyOpenTabId: string | null;
 }
 
-export type DropOpenUnitKind = 'paired' | 'doc' | 'audio';
+export type DropOpenUnitKind = 'paired' | 'doc' | 'audio' | 'svg';
 
 export interface DropOpenUnit {
   id: string;
@@ -52,6 +53,7 @@ export interface DropOpenUnit {
   size: number;
   doc?: DropInputEntry;
   audio?: DropInputEntry;
+  styleSidecar?: DropInputEntry;
   alreadyOpenTabId: string | null;
 }
 
@@ -95,11 +97,13 @@ export interface DropIntakePlan {
   totalRawCount: number;
   directories: DropDirectoryCandidate[];
   openUnits: DropOpenUnit[];
+  standaloneStyleFiles: DropInputEntry[];
   alreadyOpen: DropAlreadyOpenItem[];
   unsupported: DropUnsupportedItem[];
   pairedCount: number;
   standaloneDocCount: number;
   standaloneAudioCount: number;
+  svgCount: number;
   newDirectoryCount: number;
   estimatedNewTabs: number;
   selectableNewCount: number;
@@ -111,6 +115,13 @@ export interface DropIntakePlan {
 
 export function splitFileStemAndExt(filename: string): { stem: string; ext: string } {
   const base = filename.split(/[\\/]/).pop() || filename;
+  const lower = base.toLowerCase();
+  if (lower.endsWith(STYLE_SIDECAR_SUFFIX) && base.length > STYLE_SIDECAR_SUFFIX.length) {
+    return {
+      stem: base.slice(0, base.length - STYLE_SIDECAR_SUFFIX.length),
+      ext: 'tgstyle.json'
+    };
+  }
   const dot = base.lastIndexOf('.');
   if (dot <= 0) return { stem: base, ext: '' };
   return {
@@ -119,7 +130,9 @@ export function splitFileStemAndExt(filename: string): { stem: string; ext: stri
   };
 }
 
-export function classifyExtension(filename: string): 'doc' | 'audio' | 'unsupported' {
+export function classifyExtension(
+  filename: string
+): 'doc' | 'audio' | 'style' | 'svg' | 'unsupported' {
   const base = (filename.split(/[\\/]/).pop() || filename).trim();
   if (!base) return 'unsupported';
   const lower = base.toLowerCase();
@@ -128,6 +141,8 @@ export function classifyExtension(filename: string): 'doc' | 'audio' | 'unsuppor
   }
   const { stem, ext } = splitFileStemAndExt(base);
   if (!stem || !ext) return 'unsupported';
+  if (ext === 'tgstyle.json') return 'style';
+  if (ext === 'svg') return 'svg';
   if (AUDIO_EXTENSIONS.has(ext)) return 'audio';
   if (DOC_EXTENSIONS.has(ext)) return 'doc';
   return 'unsupported';
@@ -428,6 +443,8 @@ export function analyzeDropIntake(
   const directories: DropDirectoryCandidate[] = [];
   const docEntries: DropInputEntry[] = [];
   const audioEntries: DropInputEntry[] = [];
+  const styleEntries: DropInputEntry[] = [];
+  const svgEntries: DropInputEntry[] = [];
   const unsupported: DropUnsupportedItem[] = [];
   const alreadyOpen: DropAlreadyOpenItem[] = [];
   const seenOpenTabs = new Set<string>();
@@ -464,6 +481,10 @@ export function analyzeDropIntake(
       docEntries.push(entry);
     } else if (kind === 'audio') {
       audioEntries.push(entry);
+    } else if (kind === 'style') {
+      styleEntries.push(entry);
+    } else if (kind === 'svg') {
+      svgEntries.push(entry);
     } else {
       unsupported.push({
         id: entry.id,
@@ -473,7 +494,7 @@ export function analyzeDropIntake(
     }
   }
 
-  // 按 (parentDir, stem) 分组进行标注与音频的精准配对
+  // 按 (parentDir, stem) 分组进行标注与音频、伴生样式的精准配对
   const audioByGroup = new Map<string, DropInputEntry[]>();
   for (const a of audioEntries) {
     const key = makeGroupKey(a);
@@ -485,6 +506,14 @@ export function analyzeDropIntake(
     list.sort((a, b) => pairPriorityForAudio(a.name) - pairPriorityForAudio(b.name));
   }
 
+  const styleByGroup = new Map<string, DropInputEntry[]>();
+  for (const s of styleEntries) {
+    const key = makeGroupKey(s);
+    const list = styleByGroup.get(key) ?? [];
+    list.push(s);
+    styleByGroup.set(key, list);
+  }
+
   const sortedDocs = [...docEntries].sort((a, b) => {
     const prio = pairPriorityForDoc(a.name) - pairPriorityForDoc(b.name);
     if (prio !== 0) return prio;
@@ -493,9 +522,11 @@ export function analyzeDropIntake(
 
   const openUnits: DropOpenUnit[] = [];
   const consumedAudioIds = new Set<string>();
+  const consumedStyleIds = new Set<string>();
   let pairedCount = 0;
   let standaloneDocCount = 0;
   let standaloneAudioCount = 0;
+  let svgCount = 0;
 
   for (const doc of sortedDocs) {
     const openTabId =
@@ -514,6 +545,11 @@ export function analyzeDropIntake(
     const key = makeGroupKey(doc);
     const audioCandidates = audioByGroup.get(key);
     const matchedAudio = audioCandidates?.find((a) => !consumedAudioIds.has(a.id));
+    const styleCandidates = styleByGroup.get(key);
+    const matchedStyle = styleCandidates?.find((s) => !consumedStyleIds.has(s.id));
+    if (matchedStyle) {
+      consumedStyleIds.add(matchedStyle.id);
+    }
     const { stem } = splitFileStemAndExt(doc.name);
 
     if (matchedAudio) {
@@ -524,9 +560,10 @@ export function analyzeDropIntake(
         kind: 'paired',
         stem,
         label: `${doc.name} + ${matchedAudio.name}`,
-        size: doc.size + matchedAudio.size,
+        size: doc.size + matchedAudio.size + (matchedStyle ? matchedStyle.size : 0),
         doc,
         audio: matchedAudio,
+        ...(matchedStyle ? { styleSidecar: matchedStyle } : {}),
         alreadyOpenTabId: openTabId
       });
     } else {
@@ -536,11 +573,26 @@ export function analyzeDropIntake(
         kind: 'doc',
         stem,
         label: doc.name,
-        size: doc.size,
+        size: doc.size + (matchedStyle ? matchedStyle.size : 0),
         doc,
+        ...(matchedStyle ? { styleSidecar: matchedStyle } : {}),
         alreadyOpenTabId: openTabId
       });
     }
+  }
+
+  for (const svg of svgEntries) {
+    const { stem } = splitFileStemAndExt(svg.name);
+    svgCount += 1;
+    openUnits.push({
+      id: `svg_${svg.id}`,
+      kind: 'svg',
+      stem,
+      label: svg.name,
+      size: svg.size,
+      doc: svg,
+      alreadyOpenTabId: null
+    });
   }
 
   for (const audio of audioEntries) {
@@ -558,9 +610,12 @@ export function analyzeDropIntake(
     });
   }
 
+  const standaloneStyleFiles = styleEntries.filter((s) => !consumedStyleIds.has(s.id));
+
   // 按文件名排序展示，配对项和独立文档靠前
   openUnits.sort((a, b) => {
-    const order = (k: DropOpenUnitKind) => (k === 'paired' ? 0 : k === 'doc' ? 1 : 2);
+    const order = (k: DropOpenUnitKind) =>
+      k === 'paired' ? 0 : k === 'doc' ? 1 : k === 'svg' ? 2 : 3;
     const diff = order(a.kind) - order(b.kind);
     if (diff !== 0) return diff;
     return a.label.toLowerCase().localeCompare(b.label.toLowerCase());
@@ -568,7 +623,9 @@ export function analyzeDropIntake(
 
   const newDirectories = directories.filter((d) => !d.alreadyOpenTabId);
   const newUnits = openUnits.filter((u) => !u.alreadyOpenTabId);
-  const newDocOrPairedUnits = newUnits.filter((u) => u.kind === 'paired' || u.kind === 'doc');
+  const newDocOrPairedUnits = newUnits.filter(
+    (u) => u.kind === 'paired' || u.kind === 'doc' || u.kind === 'svg'
+  );
   const newStandaloneAudios = newUnits.filter((u) => u.kind === 'audio');
 
   // 计算预计新增独立标签页数量：
@@ -634,8 +691,10 @@ export function analyzeDropIntake(
   }
 
   // 判定决策：empty / switch-existing / direct / confirm
-  const hasAnyValid = directories.length > 0 || openUnits.length > 0;
-  const hasAnyNew = newDirectories.length > 0 || newUnits.length > 0;
+  const hasAnyValid =
+    directories.length > 0 || openUnits.length > 0 || standaloneStyleFiles.length > 0;
+  const hasAnyNew =
+    newDirectories.length > 0 || newUnits.length > 0 || standaloneStyleFiles.length > 0;
   const triggerReasons: string[] = [];
 
   if (!hasAnyValid) {
@@ -643,11 +702,13 @@ export function analyzeDropIntake(
       totalRawCount,
       directories,
       openUnits,
+      standaloneStyleFiles,
       alreadyOpen,
       unsupported,
       pairedCount,
       standaloneDocCount,
       standaloneAudioCount,
+      svgCount,
       newDirectoryCount: newDirectories.length,
       estimatedNewTabs,
       selectableNewCount,
@@ -658,20 +719,30 @@ export function analyzeDropIntake(
     };
   }
 
-  // 全部有效项都已经在标签栏中打开（且没有需要额外加载的新音频或待挂载音频）
+  // 全部有效项都已经在标签栏中打开（且没有需要额外加载的新音频或待挂载样式）
   const hasNewAudioForAlreadyOpen = openUnits.some(
     (u) => u.alreadyOpenTabId && u.kind === 'paired' && Boolean(u.audio)
   );
-  if (!hasAnyNew && alreadyOpen.length > 0 && !hasNewAudioForAlreadyOpen) {
+  const hasNewStyleForAlreadyOpen = openUnits.some(
+    (u) => u.alreadyOpenTabId && Boolean(u.styleSidecar)
+  );
+  if (
+    !hasAnyNew &&
+    alreadyOpen.length > 0 &&
+    !hasNewAudioForAlreadyOpen &&
+    !hasNewStyleForAlreadyOpen
+  ) {
     return {
       totalRawCount,
       directories,
       openUnits,
+      standaloneStyleFiles,
       alreadyOpen,
       unsupported,
       pairedCount,
       standaloneDocCount,
       standaloneAudioCount,
+      svgCount,
       newDirectoryCount: 0,
       estimatedNewTabs: 0,
       selectableNewCount: 0,
@@ -701,11 +772,13 @@ export function analyzeDropIntake(
     totalRawCount,
     directories,
     openUnits,
+    standaloneStyleFiles,
     alreadyOpen,
     unsupported,
     pairedCount,
     standaloneDocCount,
     standaloneAudioCount,
+    svgCount,
     newDirectoryCount: newDirectories.length,
     estimatedNewTabs,
     selectableNewCount,

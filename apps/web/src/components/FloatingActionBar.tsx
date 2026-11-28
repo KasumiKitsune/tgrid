@@ -31,6 +31,22 @@ import type { MultiSelectionAnalysis } from '../utils/multiSelection';
 import { formatAlignMicroFeedback } from '../utils/qaDiagnostics';
 import { inferSmartSplit, type SmartSplitCandidate } from '../utils/smartSplit';
 import { getViewportZoom } from '../utils/uiScale';
+import { getPalette } from '../style/palettes';
+import {
+  TIME_MATCH_EPS,
+  resolveBoundaryStyle,
+  resolveIntervalStyle,
+  resolvePointStyle
+} from '../style/resolveStyle';
+import type {
+  BoundaryStylePatch,
+  IntervalStylePatch,
+  PatternKind,
+  PointStylePatch,
+  ResolvedBoundaryStyle,
+  StyleDocument,
+  SwatchSpec
+} from '../style/types';
 import { ChevronIcon, CloseIcon, UiIcon } from './Icons';
 import { ScrubNumberInput } from './ScrubNumberInput';
 import '../styles/floatingBar.css';
@@ -64,7 +80,149 @@ export interface FloatingActionBarProps {
   onOpenSplitModal: (tierIndex: number, itemIndex: number) => void;
 }
 
-type PopoverId = 'time' | 'split' | 'align' | 'project' | 'duplicate' | 'more';
+type PopoverId = 'time' | 'split' | 'align' | 'project' | 'duplicate' | 'style' | 'more';
+
+const PATTERN_LABEL_ZH: Record<PatternKind, string> = {
+  none: '纯灰填充',
+  'hatch-diag': '右斜细纹',
+  'hatch-back': '左斜细纹',
+  crosshatch: '交叉网纹',
+  dots: '均匀圆点',
+  'stripes-v': '竖向条纹',
+  'stripes-h': '横向条纹'
+};
+
+function extractIntervalBrushPatch(
+  styleDoc: StyleDocument,
+  tg: TextGrid,
+  tierIndex: number,
+  itemIndex: number
+): IntervalStylePatch | null {
+  const resolved = resolveIntervalStyle(styleDoc, tg, tierIndex, itemIndex);
+  if (!resolved.hasCustom) return null;
+  const ov = styleDoc.intervalOverrides.find(
+    (o) => o.tierIndex === tierIndex && o.itemIndex === itemIndex
+  );
+  const patch: IntervalStylePatch = {};
+  if (resolved.swatchId) {
+    patch.swatchId = resolved.swatchId;
+  }
+  if (ov?.style.fillColor !== undefined) {
+    patch.fillColor = ov.style.fillColor;
+  } else if (!resolved.swatchId && resolved.hasCustomFill) {
+    patch.fillColor = resolved.fill;
+  }
+  if (resolved.fillOpacity !== 1) patch.fillOpacity = resolved.fillOpacity;
+  if (ov?.style.pattern !== undefined) {
+    patch.pattern = ov.style.pattern;
+  } else if (resolved.pattern !== 'none' && !styleDoc.bwPrintMode) {
+    patch.pattern = resolved.pattern;
+  }
+  if (ov?.style.borderColor !== undefined) {
+    patch.borderColor = ov.style.borderColor;
+  } else if (!resolved.swatchId && resolved.hasCustomBorder) {
+    patch.borderColor = resolved.borderColor;
+  }
+  if (resolved.borderWidth !== 1) patch.borderWidth = resolved.borderWidth;
+  if (resolved.borderDash !== 'solid') patch.borderDash = resolved.borderDash;
+  if (ov?.style.textColor !== undefined) {
+    patch.textColor = ov.style.textColor;
+  } else if (!resolved.swatchId && resolved.hasCustomText) {
+    patch.textColor = resolved.textColor;
+  }
+  if (resolved.fontWeight !== 'normal') patch.fontWeight = resolved.fontWeight;
+  if (resolved.fontStyle !== 'normal') patch.fontStyle = resolved.fontStyle;
+  return Object.keys(patch).length > 0 ? patch : null;
+}
+
+function resolveBoundaryStyleForFloating(
+  styleDoc: StyleDocument,
+  tg: TextGrid,
+  tierIndex: number | null,
+  time: number
+): ResolvedBoundaryStyle {
+  if (tierIndex !== null) {
+    return resolveBoundaryStyle(styleDoc, tg, tierIndex, time);
+  }
+  const sharedOv = styleDoc.boundaryOverrides.find(
+    (o) => o.tierIndex === null && Math.abs(o.time - time) <= TIME_MATCH_EPS
+  );
+  const firstIntervalTier = tg.tiers.findIndex((tr) => tr.kind === 'intervalTier');
+  const fallbackTierIdx = firstIntervalTier >= 0 ? firstIntervalTier : 0;
+  const resolved = resolveBoundaryStyle(styleDoc, tg, fallbackTierIdx, time);
+  if (!sharedOv) return resolved;
+  const palette = getPalette(styleDoc.paletteId);
+  const swId = sharedOv.style.swatchId ?? resolved.swatchId;
+  const sw = swId ? palette.swatches.find((s) => s.id === swId) ?? null : null;
+  const strokeColor = styleDoc.bwPrintMode
+    ? sw && !sharedOv.style.strokeColor
+      ? sw.bwStroke
+      : '#141414'
+    : sharedOv.style.strokeColor ?? sw?.stroke ?? resolved.strokeColor;
+  return {
+    swatchId: swId,
+    strokeColor,
+    strokeWidth: sharedOv.style.strokeWidth ?? resolved.strokeWidth,
+    strokeDash: sharedOv.style.strokeDash ?? resolved.strokeDash,
+    extendToAcoustic: sharedOv.style.extendToAcoustic ?? resolved.extendToAcoustic,
+    hasCustom: true
+  };
+}
+
+function extractBoundaryBrushPatch(
+  styleDoc: StyleDocument,
+  tg: TextGrid,
+  tierIndex: number | null,
+  time: number
+): BoundaryStylePatch | null {
+  const resolved = resolveBoundaryStyleForFloating(styleDoc, tg, tierIndex, time);
+  if (!resolved.hasCustom) return null;
+  const ov = styleDoc.boundaryOverrides.find(
+    (o) => o.tierIndex === tierIndex && Math.abs(o.time - time) <= TIME_MATCH_EPS
+  );
+  const patch: BoundaryStylePatch = {};
+  if (resolved.swatchId) {
+    patch.swatchId = resolved.swatchId;
+  }
+  if (ov?.style.strokeColor !== undefined) {
+    patch.strokeColor = ov.style.strokeColor;
+  } else if (!resolved.swatchId) {
+    patch.strokeColor = resolved.strokeColor;
+  }
+  if (resolved.strokeWidth !== 1) patch.strokeWidth = resolved.strokeWidth;
+  if (resolved.strokeDash !== 'solid') patch.strokeDash = resolved.strokeDash;
+  if (resolved.extendToAcoustic) patch.extendToAcoustic = true;
+  return Object.keys(patch).length > 0 ? patch : null;
+}
+
+function extractPointBrushPatch(
+  styleDoc: StyleDocument,
+  tg: TextGrid,
+  tierIndex: number,
+  itemIndex: number
+): PointStylePatch | null {
+  const resolved = resolvePointStyle(styleDoc, tg, tierIndex, itemIndex);
+  if (!resolved.hasCustom) return null;
+  const ov = styleDoc.pointOverrides.find(
+    (o) => o.tierIndex === tierIndex && o.itemIndex === itemIndex
+  );
+  const patch: PointStylePatch = {};
+  if (resolved.swatchId) {
+    patch.swatchId = resolved.swatchId;
+  }
+  if (ov?.style.color !== undefined) {
+    patch.color = ov.style.color;
+  } else if (!resolved.swatchId) {
+    patch.color = resolved.color;
+  }
+  if (resolved.shape !== 'circle') patch.shape = resolved.shape;
+  if (resolved.size !== 4) patch.size = resolved.size;
+  if (ov?.style.stemColor !== undefined) patch.stemColor = ov.style.stemColor;
+  if (resolved.stemDash !== 'solid') patch.stemDash = resolved.stemDash;
+  if (ov?.style.textColor !== undefined) patch.textColor = ov.style.textColor;
+  if (resolved.fontWeight !== 'normal') patch.fontWeight = resolved.fontWeight;
+  return Object.keys(patch).length > 0 ? patch : null;
+}
 
 function round6(t: number): number {
   return Number(t.toFixed(6));
@@ -322,8 +480,11 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
     const smartSplitUseAcoustic = useEditorStore((s) => s.smartSplitUseAcoustic);
     const setSmartSplitUseAcoustic = useEditorStore((s) => s.setSmartSplitUseAcoustic);
     const setSelection = useEditorStore((s) => s.setSelection);
+    const sidebarOpen = useEditorStore((s) => s.sidebarOpen);
+    const sidebarTab = useEditorStore((s) => s.sidebarTab);
     const setSidebarTab = useEditorStore((s) => s.setSidebarTab);
     const setSidebarOpen = useEditorStore((s) => s.setSidebarOpen);
+    const toggleSidebarTab = useEditorStore((s) => s.toggleSidebarTab);
     const commitTgMutation = useEditorStore((s) => s.commitTgMutation);
     const showToast = useEditorStore((s) => s.showToast);
 
@@ -353,6 +514,14 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
     const moveTier = useEditorStore((s) => s.moveTier);
     const clearTierText = useEditorStore((s) => s.clearTierText);
     const removeTierWithUndoToast = useEditorStore((s) => s.removeTierWithUndoToast);
+
+    const styleDoc = useEditorStore((s) => s.styleDoc);
+    const setIntervalStyle = useEditorStore((s) => s.setIntervalStyle);
+    const setMultiIntervalStyle = useEditorStore((s) => s.setMultiIntervalStyle);
+    const setBoundaryStyle = useEditorStore((s) => s.setBoundaryStyle);
+    const setPointStyle = useEditorStore((s) => s.setPointStyle);
+    const clearSelectionStyle = useEditorStore((s) => s.clearSelectionStyle);
+    const setStyleBrush = useEditorStore((s) => s.setStyleBrush);
 
     const rootLocalRef = useRef<HTMLDivElement | null>(null);
     const setCombinedRef = useCallback(
@@ -464,6 +633,13 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
       setSidebarOpen(true);
     }, [setSidebarTab, setSidebarOpen]);
 
+    const isStyleSidebarOpen = sidebarOpen && sidebarTab === 'style';
+
+    const toggleStyleSidebar = useCallback(() => {
+      setOpenPop(null);
+      toggleSidebarTab('style');
+    }, [toggleSidebarTab]);
+
     const isCompact = floatingBarDensity === 'compact';
     const isNumeric = floatingBarDensity === 'numeric';
 
@@ -479,6 +655,147 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
       },
       [floatingBarConfig]
     );
+
+    const activePalette = useMemo(() => getPalette(styleDoc.paletteId), [styleDoc.paletteId]);
+
+    const renderQuickStyleAnchor = (cfg: {
+      kind: 'interval' | 'multi' | 'boundary' | 'point';
+      activeSwatchId: string | null;
+      hasCustom: boolean;
+      dotFill: string | null;
+      dotStroke: string | null;
+      onPickSwatch: (sw: SwatchSpec) => void;
+      onPickBrush: () => void;
+      onClear: () => void;
+      boundaryExtend?: { value: boolean; onToggle: () => void };
+    }) => {
+      const isBw = styleDoc.bwPrintMode || activePalette.id === 'journal-bw';
+      const isLineOrPoint = cfg.kind === 'boundary' || cfg.kind === 'point';
+      const titleText =
+        cfg.kind === 'multi'
+          ? '批量涂色'
+          : cfg.kind === 'boundary'
+            ? '边界样式'
+            : cfg.kind === 'point'
+              ? '标点样式'
+              : '区间涂色';
+
+      return (
+        <div className="fb-arch-anchor">
+          <button
+            type="button"
+            className={`fb-arch-btn is-icon fb-style-trigger ${openPop === 'style' ? 'is-open' : ''}`}
+            title="涂色与样式快选"
+            aria-expanded={openPop === 'style'}
+            onClick={() => togglePop('style')}
+          >
+            <span
+              className={`fb-style-dot ${cfg.hasCustom ? '' : 'is-empty'}`}
+              style={
+                cfg.hasCustom
+                  ? {
+                      backgroundColor: cfg.dotFill || 'transparent',
+                      borderColor: cfg.dotStroke || cfg.dotFill || '#69665E'
+                    }
+                  : undefined
+              }
+              aria-hidden="true"
+            />
+          </button>
+          <AnchoredPopover open={openPop === 'style'} alignRight className="fb-style-pop">
+            <div className="fb-style-head">
+              <span>{titleText}</span>
+              {isBw && <span className="fb-style-bw-tag">黑白底纹</span>}
+            </div>
+            <div className="fb-style-swatch-row">
+              {activePalette.swatches.map((sw) => {
+                const customLabel = styleDoc.swatchLabels[sw.id]?.trim();
+                const baseLabel = customLabel ? `${customLabel}（${sw.name}）` : sw.name;
+                const tip = isBw
+                  ? `${baseLabel} · 黑白底纹：${PATTERN_LABEL_ZH[sw.bwPattern]}`
+                  : baseLabel;
+                const bgCol = isBw
+                  ? isLineOrPoint
+                    ? sw.bwStroke
+                    : sw.bwGray
+                  : isLineOrPoint
+                    ? sw.stroke
+                    : sw.fill;
+                const bdCol = isBw ? sw.bwStroke : sw.stroke;
+                const patClass =
+                  !isLineOrPoint && isBw && sw.bwPattern !== 'none' ? `pat-${sw.bwPattern}` : '';
+                const isActive = cfg.activeSwatchId === sw.id;
+                return (
+                  <button
+                    key={sw.id}
+                    type="button"
+                    className={`fb-style-swatch ${patClass} ${isActive ? 'is-active' : ''}`}
+                    style={{
+                      backgroundColor: bgCol,
+                      borderColor: bdCol
+                    }}
+                    title={tip}
+                    aria-label={tip}
+                    onClick={() => cfg.onPickSwatch(sw)}
+                  />
+                );
+              })}
+            </div>
+            {styleDoc.bwPrintMode && (
+              <div className="fb-style-bw-note">
+                黑白印刷模式已开启，色槽自动映射灰度与矢量底纹
+              </div>
+            )}
+            {cfg.boundaryExtend && (
+              <>
+                <div className="fb-arch-pop-div" />
+                <button
+                  type="button"
+                  className="fb-arch-pop-toggle-row fb-style-toggle-btn"
+                  onClick={cfg.boundaryExtend.onToggle}
+                >
+                  <span>向上贯穿声学区</span>
+                  <span
+                    className={`fb-arch-pop-check ${cfg.boundaryExtend.value ? 'is-on' : ''}`}
+                  >
+                    {cfg.boundaryExtend.value && <UiIcon name="check" size={10} />}
+                  </span>
+                </button>
+              </>
+            )}
+            <div className="fb-arch-pop-div" />
+            <div className="fb-style-foot">
+              <button
+                type="button"
+                className="fb-style-foot-btn"
+                onClick={cfg.onPickBrush}
+              >
+                <UiIcon name="formatBrush" size={12} />
+                <span>格式刷吸取</span>
+              </button>
+              <button
+                type="button"
+                className="fb-style-foot-btn is-clear"
+                disabled={!cfg.hasCustom}
+                onClick={cfg.onClear}
+              >
+                <UiIcon name="clear" size={12} />
+                <span>清除样式</span>
+              </button>
+            </div>
+            <button
+              type="button"
+              className={`fb-style-more-btn${isStyleSidebarOpen ? ' is-active' : ''}`}
+              aria-pressed={isStyleSidebarOpen}
+              onClick={toggleStyleSidebar}
+            >
+              <UiIcon name="stylePalette" size={12} />
+              <span>{isStyleSidebarOpen ? '收起样式面板' : '打开样式面板…'}</span>
+            </button>
+          </AnchoredPopover>
+        </div>
+      );
+    };
 
     const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (isComposingEvent(e)) return;
@@ -1338,10 +1655,67 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
         }
       };
 
+      const multiResolvedList = multiAnalysis.items.map((it) =>
+        resolveIntervalStyle(styleDoc, tg, it.tierIndex, it.itemIndex)
+      );
+      const multiPrimaryRef =
+        selection.kind === 'interval'
+          ? { tierIndex: selection.tierIndex, itemIndex: selection.itemIndex }
+          : multiAnalysis.items[0] ?? null;
+      const multiPrimaryStyle = multiPrimaryRef
+        ? resolveIntervalStyle(styleDoc, tg, multiPrimaryRef.tierIndex, multiPrimaryRef.itemIndex)
+        : null;
+      const multiHasCustom = multiResolvedList.some((r) => r.hasCustom);
+      const multiCommonSwatchId =
+        multiResolvedList.length > 0 &&
+        multiResolvedList[0].swatchId &&
+        multiResolvedList.every((r) => r.swatchId === multiResolvedList[0].swatchId)
+          ? multiResolvedList[0].swatchId
+          : null;
+      const multiDotSource =
+        (multiPrimaryStyle?.hasCustom ? multiPrimaryStyle : null) ??
+        multiResolvedList.find((r) => r.hasCustom) ??
+        null;
+
       bodyContent = (
         <>
           {multiVisible.map((id) => renderMultiAction(id))}
           {multiVisible.length > 0 && <div className="fb-arch-sep" />}
+
+          {renderQuickStyleAnchor({
+            kind: 'multi',
+            activeSwatchId: multiCommonSwatchId,
+            hasCustom: multiHasCustom,
+            dotFill: multiDotSource ? multiDotSource.fill : null,
+            dotStroke: multiDotSource ? multiDotSource.borderColor : null,
+            onPickSwatch: (sw) => {
+              setMultiIntervalStyle(multiAnalysis.items, { swatchId: sw.id });
+            },
+            onPickBrush: () => {
+              const srcRef =
+                multiPrimaryRef &&
+                resolveIntervalStyle(styleDoc, tg, multiPrimaryRef.tierIndex, multiPrimaryRef.itemIndex)
+                  .hasCustom
+                  ? multiPrimaryRef
+                  : multiAnalysis.items.find(
+                      (it) => resolveIntervalStyle(styleDoc, tg, it.tierIndex, it.itemIndex).hasCustom
+                    ) ?? null;
+              const patch = srcRef
+                ? extractIntervalBrushPatch(styleDoc, tg, srcRef.tierIndex, srcRef.itemIndex)
+                : null;
+              if (!patch) {
+                showToast('所选区间尚未设置自定义样式');
+                return;
+              }
+              setStyleBrush({ kind: 'interval', patch, sticky: false });
+              setOpenPop(null);
+              showToast('已吸取区间样式，点击目标区间即可应用');
+            },
+            onClear: () => {
+              clearSelectionStyle();
+              setOpenPop(null);
+            }
+          })}
 
           <div className="fb-arch-anchor">
             <button
@@ -2088,6 +2462,8 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
         }
       };
 
+      const ivStyle = resolveIntervalStyle(styleDoc, tg, ti, ii);
+
       bodyContent = (
         <>
           {isNumeric && (
@@ -2126,6 +2502,31 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
 
           {ivVisible.map((id) => renderIntervalAction(id))}
           {ivVisible.length > 0 && <div className="fb-arch-sep" />}
+
+          {renderQuickStyleAnchor({
+            kind: 'interval',
+            activeSwatchId: ivStyle.swatchId,
+            hasCustom: ivStyle.hasCustom,
+            dotFill: ivStyle.hasCustom ? ivStyle.fill : null,
+            dotStroke: ivStyle.hasCustom ? ivStyle.borderColor : null,
+            onPickSwatch: (sw) => {
+              setIntervalStyle(ti, ii, { swatchId: sw.id });
+            },
+            onPickBrush: () => {
+              const patch = extractIntervalBrushPatch(styleDoc, tg, ti, ii);
+              if (!patch) {
+                showToast('当前区间尚未设置自定义样式');
+                return;
+              }
+              setStyleBrush({ kind: 'interval', patch, sticky: false });
+              setOpenPop(null);
+              showToast('已吸取区间样式，点击目标区间即可应用');
+            },
+            onClear: () => {
+              clearSelectionStyle();
+              setOpenPop(null);
+            }
+          })}
 
           <div className="fb-arch-anchor">
             <button
@@ -2645,6 +3046,8 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
       };
 
       const bndOverflowItems = bndHidden.filter((id) => id !== 'bnd-delete');
+      const bndTierForStyle = isSpine ? null : selection.tierIndex;
+      const bndStyle = resolveBoundaryStyleForFloating(styleDoc, tg, bndTierForStyle, t);
 
       bodyContent = (
         <>
@@ -2673,6 +3076,39 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
 
           {bndVisible.map((id) => renderBoundaryAction(id))}
           {bndVisible.length > 0 && <div className="fb-arch-sep" />}
+
+          {renderQuickStyleAnchor({
+            kind: 'boundary',
+            activeSwatchId: bndStyle.swatchId,
+            hasCustom: bndStyle.hasCustom,
+            dotFill: bndStyle.hasCustom ? bndStyle.strokeColor : null,
+            dotStroke: bndStyle.hasCustom ? bndStyle.strokeColor : null,
+            onPickSwatch: (sw) => {
+              setBoundaryStyle(bndTierForStyle, t, { swatchId: sw.id });
+            },
+            boundaryExtend: {
+              value: bndStyle.extendToAcoustic,
+              onToggle: () => {
+                setBoundaryStyle(bndTierForStyle, t, {
+                  extendToAcoustic: !bndStyle.extendToAcoustic
+                });
+              }
+            },
+            onPickBrush: () => {
+              const patch = extractBoundaryBrushPatch(styleDoc, tg, bndTierForStyle, t);
+              if (!patch) {
+                showToast('当前边界尚未设置自定义样式');
+                return;
+              }
+              setStyleBrush({ kind: 'boundary', patch, sticky: false });
+              setOpenPop(null);
+              showToast('已吸取边界样式，点击目标边界或时刻即可应用');
+            },
+            onClear: () => {
+              clearSelectionStyle();
+              setOpenPop(null);
+            }
+          })}
 
           <div className="fb-arch-anchor">
             <button
@@ -3254,6 +3690,7 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
       const ptOverflowNodes = ptHidden
         .map((id) => renderPointOverflowItem(id))
         .filter((node) => node !== null);
+      const ptStyle = resolvePointStyle(styleDoc, tg, ti, pi);
 
       bodyContent = (
         <>
@@ -3278,6 +3715,31 @@ export const FloatingActionBar = forwardRef<HTMLDivElement, FloatingActionBarPro
 
           {ptVisible.map((id) => renderPointAction(id))}
           {ptVisible.length > 0 && <div className="fb-arch-sep" />}
+
+          {renderQuickStyleAnchor({
+            kind: 'point',
+            activeSwatchId: ptStyle.swatchId,
+            hasCustom: ptStyle.hasCustom,
+            dotFill: ptStyle.hasCustom ? ptStyle.color : null,
+            dotStroke: ptStyle.hasCustom ? ptStyle.color : null,
+            onPickSwatch: (sw) => {
+              setPointStyle(ti, pi, { swatchId: sw.id });
+            },
+            onPickBrush: () => {
+              const patch = extractPointBrushPatch(styleDoc, tg, ti, pi);
+              if (!patch) {
+                showToast('当前标点尚未设置自定义样式');
+                return;
+              }
+              setStyleBrush({ kind: 'point', patch, sticky: false });
+              setOpenPop(null);
+              showToast('已吸取标点样式，点击目标标点即可应用');
+            },
+            onClear: () => {
+              clearSelectionStyle();
+              setOpenPop(null);
+            }
+          })}
 
           <div className="fb-arch-anchor">
             <button

@@ -42,9 +42,32 @@ import {
 import { analyzeMultiSelection } from '../utils/multiSelection';
 import { formatAlignMicroFeedback } from '../utils/qaDiagnostics';
 import { inferSmartSplit, type SmartSplitCandidate } from '../utils/smartSplit';
+import { PALETTES, getPalette } from '../style/palettes';
+import {
+  TIME_MATCH_EPS,
+  resolveBoundaryStyle,
+  resolveIntervalStyle,
+  resolvePointStyle,
+  resolveTierStyle
+} from '../style/resolveStyle';
+import type {
+  BoundaryStylePatch,
+  IntervalStylePatch,
+  PatternKind,
+  PointShape,
+  PointStylePatch,
+  StyleBrush
+} from '../style/types';
 import { getElementRectScale } from '../utils/uiScale';
 import { ChevronIcon, UiIcon } from './Icons';
+import {
+  PATTERN_OPTIONS,
+  POINT_SHAPE_OPTIONS,
+  PointShapeIcon,
+  SwatchVisualFill
+} from './sidebar/styleVisuals';
 import type { ExportActionKind } from './Topbar';
+import '../styles/stylePanel.css';
 
 export interface RibbonContextActions {
   audioBuffer: AudioBuffer | null;
@@ -90,7 +113,8 @@ type RibbonPopoutMenuId =
   | 'smart-split'
   | 'copy-interval-tier'
   | 'project-boundary'
-  | 'derive-point-tier';
+  | 'derive-point-tier'
+  | 'style-palette';
 
 interface PopoutPos {
   left: number;
@@ -286,6 +310,23 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
   const isDirty = useEditorStore((s) => s.isDirty);
   const toggleCorpusSidebar = useEditorStore((s) => s.toggleCorpusSidebar);
   const setCorpusOptions = useEditorStore((s) => s.setCorpusOptions);
+
+  // Appearance & Style state / actions
+  const styleDoc = useEditorStore((s) => s.styleDoc);
+  const styleBrush = useEditorStore((s) => s.styleBrush);
+  const setStylePalette = useEditorStore((s) => s.setStylePalette);
+  const setStyleBwPrintMode = useEditorStore((s) => s.setStyleBwPrintMode);
+  const setStyleShowLegend = useEditorStore((s) => s.setStyleShowLegend);
+  const setIntervalStyle = useEditorStore((s) => s.setIntervalStyle);
+  const setMultiIntervalStyle = useEditorStore((s) => s.setMultiIntervalStyle);
+  const setBoundaryStyle = useEditorStore((s) => s.setBoundaryStyle);
+  const setPointStyle = useEditorStore((s) => s.setPointStyle);
+  const setTierStyle = useEditorStore((s) => s.setTierStyle);
+  const clearSelectionStyle = useEditorStore((s) => s.clearSelectionStyle);
+  const setStyleBrush = useEditorStore((s) => s.setStyleBrush);
+  const clearStyleBrush = useEditorStore((s) => s.clearStyleBrush);
+
+  const activePalette = useMemo(() => getPalette(styleDoc.paletteId), [styleDoc.paletteId]);
 
   const activeTab = useMemo(() => tabs.find((t) => t.id === activeTabId) ?? null, [tabs, activeTabId]);
   const activeCorpus = activeTab?.kind === 'corpus' ? (activeTab.corpus ?? null) : null;
@@ -612,6 +653,9 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setOpenMenu(null);
+        if (useEditorStore.getState().styleBrush) {
+          useEditorStore.getState().clearStyleBrush();
+        }
       }
     };
     const onResize = () => {
@@ -1286,7 +1330,7 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
                   sidebarOpen && sidebarTab === 'history' ? 'ribbon-soft-active' : ''
                 }`}
                 aria-pressed={sidebarOpen && sidebarTab === 'history'}
-                title="打开 / 收起操作历史面板 (Alt+3)"
+                title="打开 / 收起操作历史面板 (Alt+4)"
                 onMouseDown={preventBlur}
                 onClick={() => toggleSidebarTab('history')}
               >
@@ -1336,7 +1380,7 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
                   sidebarOpen && sidebarTab === 'settings' ? 'ribbon-soft-active' : ''
                 }`}
                 aria-pressed={sidebarOpen && sidebarTab === 'settings'}
-                title="在右侧边栏打开画布排版与声学图谱 (Alt+4)"
+                title="在右侧边栏打开画布排版与声学图谱 (Alt+5)"
                 onMouseDown={preventBlur}
                 onClick={() => toggleSidebarTab('settings')}
               >
@@ -1404,7 +1448,7 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
                     sidebarOpen && sidebarTab === 'tiers' ? 'ribbon-soft-active' : ''
                   }`}
                   aria-pressed={sidebarOpen && sidebarTab === 'tiers'}
-                  title="打开 / 收起层管理面板 (Alt+2)"
+                  title="打开 / 收起层管理面板 (Alt+3)"
                   onMouseDown={preventBlur}
                   onClick={() => toggleSidebarTab('tiers')}
                 >
@@ -1628,6 +1672,97 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
 
         <div className="ribbon-group">
           <div className="ribbon-group-body">
+            <button
+              type="button"
+              className={`ribbon-big-btn ipa-ctrl-noblur ${
+                styleDoc.bwPrintMode ? 'ribbon-soft-active' : ''
+              }`}
+              aria-pressed={styleDoc.bwPrintMode}
+              title="一键预览黑白期刊印刷效果（彩色自动映射为灰度与矢量底纹）"
+              onMouseDown={preventBlur}
+              onClick={() => setStyleBwPrintMode(!styleDoc.bwPrintMode)}
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                aria-hidden="true"
+              >
+                <rect x="2.5" y="2.5" width="15" height="15" />
+                <line x1="2.5" y1="8.5" x2="8.5" y2="2.5" />
+                <line x1="2.5" y1="14.5" x2="14.5" y2="2.5" />
+                <line x1="5.5" y1="17.5" x2="17.5" y2="5.5" />
+                <line x1="11.5" y1="17.5" x2="17.5" y2="11.5" />
+              </svg>
+              <span>黑白底纹</span>
+            </button>
+
+            <div className="ribbon-stack">
+              <div className="ribbon-row">
+                <button
+                  type="button"
+                  className={`ribbon-sm-btn rb-palette-trigger ipa-ctrl-noblur ${
+                    openMenu === 'style-palette' ? 'is-menu-open' : ''
+                  }`}
+                  aria-expanded={openMenu === 'style-palette'}
+                  title={`当前学术色板：${activePalette.name}（点击切换 4 套配色方案）`}
+                  onMouseDown={preventBlur}
+                  onClick={(e) => togglePopoutMenu('style-palette', e.currentTarget)}
+                >
+                  <span className="rb-palette-mini-strip" aria-hidden="true">
+                    {activePalette.swatches.slice(0, 4).map((sw) => (
+                      <span
+                        key={sw.id}
+                        className="rb-palette-mini-bar"
+                        style={{
+                          background: styleDoc.bwPrintMode ? sw.bwGray : sw.fill,
+                          borderColor: styleDoc.bwPrintMode ? sw.bwStroke : sw.stroke
+                        }}
+                      />
+                    ))}
+                  </span>
+                  <span>{activePalette.name}</span>
+                  <ChevronIcon size={10} />
+                </button>
+              </div>
+              <div className="ribbon-row">
+                <button
+                  type="button"
+                  className={`ribbon-sm-btn ipa-ctrl-noblur ${
+                    styleDoc.showLegendInExport ? 'ribbon-soft-active' : ''
+                  }`}
+                  aria-pressed={styleDoc.showLegendInExport}
+                  title="在画布与导出图像底部预览并包含样式图例"
+                  onMouseDown={preventBlur}
+                  onClick={() => setStyleShowLegend(!styleDoc.showLegendInExport)}
+                >
+                  <UiIcon name="legend" size={13} />
+                  <span>样式图例</span>
+                </button>
+                <button
+                  type="button"
+                  className={`ribbon-sm-btn ipa-ctrl-noblur ${
+                    sidebarOpen && sidebarTab === 'style' ? 'ribbon-soft-active' : ''
+                  }`}
+                  aria-pressed={sidebarOpen && sidebarTab === 'style'}
+                  title="打开 / 收起样式面板 (Alt+2)"
+                  onMouseDown={preventBlur}
+                  onClick={() => toggleSidebarTab('style')}
+                >
+                  <UiIcon name="stylePalette" size={13} />
+                  <span>样式面板</span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="ribbon-group-label">学术外观</div>
+        </div>
+
+        <div className="ribbon-group">
+          <div className="ribbon-group-body">
             <div className="ribbon-stack">
               <div className="ribbon-row">
                 <button
@@ -1652,7 +1787,7 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
                     sidebarOpen && sidebarTab === 'settings' ? 'ribbon-soft-active' : ''
                   }`}
                   aria-pressed={sidebarOpen && sidebarTab === 'settings'}
-                  title="打开 / 收起画布与声学面板 (Alt+4)"
+                  title="打开 / 收起画布与声学面板 (Alt+5)"
                   onClick={() => toggleSidebarTab('settings')}
                 >
                   <UiIcon name="waveform" size={13} />
@@ -1736,7 +1871,7 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
                   preferencesOpen &&
                   (preferencesSection === 'floating' || preferencesSection === 'shortcuts')
                 }
-                title="自定义悬浮条按钮与快捷键 (Alt+5)"
+                title="自定义悬浮条按钮与快捷键 (Alt+6)"
                 onClick={() => setPreferencesOpen(true, 'floating')}
               >
                 <UiIcon name="customize" size={13} />
@@ -1748,7 +1883,7 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
                   sidebarOpen && sidebarTab === 'history' ? 'ribbon-soft-active' : ''
                 }`}
                 aria-pressed={sidebarOpen && sidebarTab === 'history'}
-                title="操作历史记录 (Alt+3)"
+                title="操作历史记录 (Alt+4)"
                 onClick={() => toggleSidebarTab('history')}
               >
                 <UiIcon name="history" size={13} />
@@ -2010,6 +2145,197 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
         </div>
       </>
     );
+  };
+
+  // --- Shared Contextual Appearance Ribbon Group ---
+  const renderContextualAppearanceGroup = (opts: {
+    activeSwatchId: string | null;
+    swatchVariant?: 'fill' | 'line';
+    onPickSwatch: (swatchId: string) => void;
+    quickControl: React.ReactNode;
+    brushKind: StyleBrush['kind'];
+    buildBrush: (sticky: boolean) => StyleBrush;
+    hasCustom: boolean;
+  }) => {
+    const isBrushActive = styleBrush?.kind === opts.brushKind;
+    const isBrushSticky = Boolean(isBrushActive && styleBrush?.sticky);
+
+    return (
+      <div className="ribbon-group">
+        <div className="ribbon-group-body">
+          <div className="ribbon-stack">
+            <div className="ribbon-row">
+              <div
+                className="rb-swatch-strip ipa-ctrl-noblur"
+                role="group"
+                aria-label="学术色槽快选"
+                onMouseDown={preventBlur}
+              >
+                {activePalette.swatches.map((sw) => {
+                  const selected = opts.activeSwatchId === sw.id;
+                  const customLabel = styleDoc.swatchLabels[sw.id]?.trim();
+                  const tip = customLabel ? `${sw.name} · ${customLabel}` : sw.name;
+                  return (
+                    <button
+                      key={`rb-sw-${sw.id}`}
+                      type="button"
+                      className={`rb-swatch-dot${selected ? ' is-active' : ''}`}
+                      title={tip}
+                      aria-label={tip}
+                      aria-pressed={selected}
+                      onClick={() => opts.onPickSwatch(sw.id)}
+                    >
+                      <SwatchVisualFill
+                        swatch={sw}
+                        bwMode={styleDoc.bwPrintMode}
+                        paletteId={styleDoc.paletteId}
+                        variant={opts.swatchVariant ?? 'fill'}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="ribbon-row">
+              {opts.quickControl}
+              <button
+                type="button"
+                className={`ribbon-sm-btn rb-brush-btn ipa-ctrl-noblur${
+                  isBrushSticky ? ' is-sticky' : isBrushActive ? ' is-active' : ''
+                }`}
+                aria-pressed={isBrushActive}
+                title="单击吸取样式单次刷；双击锁定连续刷；再次点击或按 Esc 退出"
+                onMouseDown={preventBlur}
+                onClick={(e) => {
+                  if (e.detail >= 2) return;
+                  if (styleBrush) {
+                    clearStyleBrush();
+                    return;
+                  }
+                  setStyleBrush(opts.buildBrush(false));
+                  showToast('已开启格式刷：点击画布中同类对象应用样式（双击可锁定连续刷）');
+                }}
+                onDoubleClick={() => {
+                  setStyleBrush(opts.buildBrush(true));
+                  showToast('已锁定连续格式刷：可连续刷入多个对象，按 Esc 退出');
+                }}
+              >
+                <UiIcon name="formatBrush" size={13} />
+                <span>{isBrushSticky ? '连续刷' : '格式刷'}</span>
+              </button>
+              <button
+                type="button"
+                className="ribbon-sm-btn ipa-ctrl-noblur"
+                disabled={!opts.hasCustom}
+                title={opts.hasCustom ? '清除当前选中对象的自定义外观' : '当前对象为默认样式'}
+                onMouseDown={preventBlur}
+                onClick={() => clearSelectionStyle()}
+              >
+                <UiIcon name="clear" size={13} />
+                <span>清除样式</span>
+              </button>
+              <button
+                type="button"
+                className={`ribbon-sm-btn ipa-ctrl-noblur ${
+                  sidebarOpen && sidebarTab === 'style' ? 'ribbon-soft-active' : ''
+                }`}
+                aria-pressed={sidebarOpen && sidebarTab === 'style'}
+                title="打开 / 收起样式面板 (Alt+2)"
+                onMouseDown={preventBlur}
+                onClick={() => toggleSidebarTab('style')}
+              >
+                <UiIcon name="stylePalette" size={13} />
+                <span>样式面板</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="ribbon-group-label">外观</div>
+      </div>
+    );
+  };
+
+  const cycleNextPattern = (cur: PatternKind): PatternKind => {
+    const idx = PATTERN_OPTIONS.findIndex((o) => o.kind === cur);
+    const next = PATTERN_OPTIONS[(idx + 1) % PATTERN_OPTIONS.length];
+    return next ? next.kind : 'none';
+  };
+
+  const cycleNextPointShape = (cur: PointShape): PointShape => {
+    const idx = POINT_SHAPE_OPTIONS.findIndex((o) => o.shape === cur);
+    const next = POINT_SHAPE_OPTIONS[(idx + 1) % POINT_SHAPE_OPTIONS.length];
+    return next ? next.shape : 'circle';
+  };
+
+  const extractRibbonIntervalPatch = (
+    ti: number,
+    ii: number,
+    resolved: ReturnType<typeof resolveIntervalStyle>
+  ): IntervalStylePatch => {
+    const existing = styleDoc.intervalOverrides.find(
+      (o) => o.tierIndex === ti && o.itemIndex === ii
+    );
+    if (existing) return { ...existing.style };
+    if (!resolved.hasCustom) return {};
+    const patch: IntervalStylePatch = {};
+    if (resolved.swatchId) patch.swatchId = resolved.swatchId;
+    else if (resolved.hasCustomFill) patch.fillColor = resolved.fill;
+    if (resolved.fillOpacity !== 1) patch.fillOpacity = resolved.fillOpacity;
+    if (resolved.pattern !== 'none') patch.pattern = resolved.pattern;
+    if (resolved.hasCustomBorder) {
+      if (!resolved.swatchId) patch.borderColor = resolved.borderColor;
+      if (resolved.borderWidth !== 1) patch.borderWidth = resolved.borderWidth;
+      if (resolved.borderDash !== 'solid') patch.borderDash = resolved.borderDash;
+    }
+    if (resolved.hasCustomText) {
+      if (!resolved.swatchId) patch.textColor = resolved.textColor;
+      if (resolved.fontWeight !== 'normal') patch.fontWeight = resolved.fontWeight;
+      if (resolved.fontStyle !== 'normal') patch.fontStyle = resolved.fontStyle;
+    }
+    return patch;
+  };
+
+  const extractRibbonBoundaryPatch = (
+    tierIdx: number | null,
+    time: number,
+    resolved: ReturnType<typeof resolveBoundaryStyle>
+  ): BoundaryStylePatch => {
+    const existing = styleDoc.boundaryOverrides.find(
+      (o) => o.tierIndex === tierIdx && Math.abs(o.time - time) <= TIME_MATCH_EPS
+    );
+    if (existing) return { ...existing.style };
+    if (!resolved.hasCustom) return {};
+    const patch: BoundaryStylePatch = {};
+    if (resolved.swatchId) patch.swatchId = resolved.swatchId;
+    else patch.strokeColor = resolved.strokeColor;
+    if (resolved.strokeWidth !== 1) patch.strokeWidth = resolved.strokeWidth;
+    if (resolved.strokeDash !== 'solid') patch.strokeDash = resolved.strokeDash;
+    if (resolved.extendToAcoustic) patch.extendToAcoustic = true;
+    return patch;
+  };
+
+  const extractRibbonPointPatch = (
+    ti: number,
+    pi: number,
+    resolved: ReturnType<typeof resolvePointStyle>
+  ): PointStylePatch => {
+    const existing = styleDoc.pointOverrides.find(
+      (o) => o.tierIndex === ti && o.itemIndex === pi
+    );
+    if (existing) return { ...existing.style };
+    if (!resolved.hasCustom) return {};
+    const patch: PointStylePatch = {};
+    if (resolved.swatchId) patch.swatchId = resolved.swatchId;
+    else {
+      patch.color = resolved.color;
+      patch.stemColor = resolved.stemColor;
+      patch.textColor = resolved.textColor;
+    }
+    if (resolved.shape !== 'circle') patch.shape = resolved.shape;
+    if (resolved.size !== 4) patch.size = resolved.size;
+    if (resolved.stemDash !== 'solid') patch.stemDash = resolved.stemDash;
+    if (resolved.fontWeight !== 'normal') patch.fontWeight = resolved.fontWeight;
+    return patch;
   };
 
   const renderIntervalCtxTab = () => {
@@ -2414,6 +2740,44 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
           </div>
           <div className="ribbon-group-label">试听与视图</div>
         </div>
+
+        {(() => {
+          const ivStyle = resolveIntervalStyle(styleDoc, tg, ti, ii);
+          const patOpt = PATTERN_OPTIONS.find((o) => o.kind === ivStyle.pattern);
+          return renderContextualAppearanceGroup({
+            activeSwatchId: ivStyle.swatchId,
+            swatchVariant: 'fill',
+            onPickSwatch: (swatchId) =>
+              setIntervalStyle(ti, ii, {
+                swatchId,
+                fillColor: undefined,
+                borderColor: undefined,
+                textColor: undefined
+              }),
+            quickControl: (
+              <button
+                type="button"
+                className={`ribbon-sm-btn ipa-ctrl-noblur ${
+                  ivStyle.pattern !== 'none' ? 'ribbon-soft-active' : ''
+                }`}
+                title={`点击循环切换矢量底纹（当前：${patOpt?.label ?? '无底纹'}）`}
+                onMouseDown={preventBlur}
+                onClick={() =>
+                  setIntervalStyle(ti, ii, { pattern: cycleNextPattern(ivStyle.pattern) })
+                }
+              >
+                <span>底纹: {patOpt?.shortLabel ?? '无'}</span>
+              </button>
+            ),
+            brushKind: 'interval',
+            buildBrush: (sticky) => ({
+              kind: 'interval',
+              patch: extractRibbonIntervalPatch(ti, ii, ivStyle),
+              sticky
+            }),
+            hasCustom: ivStyle.hasCustom
+          });
+        })()}
       </>
     );
   };
@@ -2676,6 +3040,58 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
           </div>
           <div className="ribbon-group-label">试听与视图</div>
         </div>
+
+        {(() => {
+          const primaryRef =
+            selection?.kind === 'interval'
+              ? { tierIndex: selection.tierIndex, itemIndex: selection.itemIndex }
+              : multiSelection[0];
+          const primaryStyle = primaryRef
+            ? resolveIntervalStyle(styleDoc, tg, primaryRef.tierIndex, primaryRef.itemIndex)
+            : null;
+          const curPattern: PatternKind = primaryStyle?.pattern ?? 'none';
+          const patOpt = PATTERN_OPTIONS.find((o) => o.kind === curPattern);
+          return renderContextualAppearanceGroup({
+            activeSwatchId: primaryStyle?.swatchId ?? null,
+            swatchVariant: 'fill',
+            onPickSwatch: (swatchId) =>
+              setMultiIntervalStyle(multiSelection, {
+                swatchId,
+                fillColor: undefined,
+                borderColor: undefined,
+                textColor: undefined
+              }),
+            quickControl: (
+              <button
+                type="button"
+                className={`ribbon-sm-btn ipa-ctrl-noblur ${
+                  curPattern !== 'none' ? 'ribbon-soft-active' : ''
+                }`}
+                title={`批量循环切换所选区间矢量底纹（当前：${patOpt?.label ?? '无底纹'}）`}
+                onMouseDown={preventBlur}
+                onClick={() =>
+                  setMultiIntervalStyle(multiSelection, { pattern: cycleNextPattern(curPattern) })
+                }
+              >
+                <span>底纹: {patOpt?.shortLabel ?? '无'}</span>
+              </button>
+            ),
+            brushKind: 'interval',
+            buildBrush: (sticky) => ({
+              kind: 'interval',
+              patch:
+                primaryRef && primaryStyle
+                  ? extractRibbonIntervalPatch(
+                      primaryRef.tierIndex,
+                      primaryRef.itemIndex,
+                      primaryStyle
+                    )
+                  : {},
+              sticky
+            }),
+            hasCustom: Boolean(primaryStyle?.hasCustom)
+          });
+        })()}
       </>
     );
   };
@@ -2932,6 +3348,47 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
           </div>
           <div className="ribbon-group-label">试听边界</div>
         </div>
+
+        {(() => {
+          const targetTierIndex = isBoundary ? selection.tierIndex : null;
+          const bndStyle = resolveBoundaryStyle(
+            styleDoc,
+            tg,
+            isBoundary ? selection.tierIndex : -1,
+            t
+          );
+          return renderContextualAppearanceGroup({
+            activeSwatchId: bndStyle.swatchId,
+            swatchVariant: 'line',
+            onPickSwatch: (swatchId) =>
+              setBoundaryStyle(targetTierIndex, t, { swatchId, strokeColor: undefined }),
+            quickControl: (
+              <button
+                type="button"
+                className={`ribbon-sm-btn ipa-ctrl-noblur ${
+                  bndStyle.extendToAcoustic ? 'ribbon-soft-active' : ''
+                }`}
+                aria-pressed={bndStyle.extendToAcoustic}
+                title="向上贯穿至波形与语谱图，绘制垂直对齐参考线"
+                onMouseDown={preventBlur}
+                onClick={() =>
+                  setBoundaryStyle(targetTierIndex, t, {
+                    extendToAcoustic: !bndStyle.extendToAcoustic
+                  })
+                }
+              >
+                <span>贯穿声学区</span>
+              </button>
+            ),
+            brushKind: 'boundary',
+            buildBrush: (sticky) => ({
+              kind: 'boundary',
+              patch: extractRibbonBoundaryPatch(targetTierIndex, t, bndStyle),
+              sticky
+            }),
+            hasCustom: bndStyle.hasCustom
+          });
+        })()}
       </>
     );
   };
@@ -3176,6 +3633,45 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
           </div>
           <div className="ribbon-group-label">试听与删除</div>
         </div>
+
+        {(() => {
+          const ptStyle = resolvePointStyle(styleDoc, tg, ti, pi);
+          const shapeOpt = POINT_SHAPE_OPTIONS.find((o) => o.shape === ptStyle.shape);
+          return renderContextualAppearanceGroup({
+            activeSwatchId: ptStyle.swatchId,
+            swatchVariant: 'line',
+            onPickSwatch: (swatchId) =>
+              setPointStyle(ti, pi, {
+                swatchId,
+                color: undefined,
+                stemColor: undefined,
+                textColor: undefined
+              }),
+            quickControl: (
+              <button
+                type="button"
+                className={`ribbon-sm-btn ipa-ctrl-noblur ${
+                  ptStyle.shape !== 'circle' ? 'ribbon-soft-active' : ''
+                }`}
+                title={`点击循环切换标点形状（当前：${shapeOpt?.label ?? '圆点'}）`}
+                onMouseDown={preventBlur}
+                onClick={() =>
+                  setPointStyle(ti, pi, { shape: cycleNextPointShape(ptStyle.shape) })
+                }
+              >
+                <PointShapeIcon shape={ptStyle.shape} size={12} />
+                <span>{shapeOpt?.label ?? '圆点'}</span>
+              </button>
+            ),
+            brushKind: 'point',
+            buildBrush: (sticky) => ({
+              kind: 'point',
+              patch: extractRibbonPointPatch(ti, pi, ptStyle),
+              sticky
+            }),
+            hasCustom: ptStyle.hasCustom
+          });
+        })()}
       </>
     );
   };
@@ -3419,6 +3915,72 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
           </div>
           <div className="ribbon-group-label">整理与显隐</div>
         </div>
+
+        {(() => {
+          const tierPatch = styleDoc.tierStyles[tier.name] ?? styleDoc.tierStyles[`#${ti}`] ?? null;
+          const resolvedTier = resolveTierStyle(styleDoc, tg, ti);
+          const activeSwatch = isIntervalTier
+            ? tierPatch?.intervalDefault?.swatchId ?? null
+            : tierPatch?.pointDefault?.swatchId ?? null;
+          const curPat: PatternKind = tierPatch?.intervalDefault?.pattern ?? 'none';
+          const patOpt = PATTERN_OPTIONS.find((o) => o.kind === curPat);
+          const curShape: PointShape = tierPatch?.pointDefault?.shape ?? 'circle';
+          const shapeOpt = POINT_SHAPE_OPTIONS.find((o) => o.shape === curShape);
+          const hasCustomTier = Boolean(
+            resolvedTier.hasCustom ||
+              tierPatch?.intervalDefault ||
+              tierPatch?.boundaryDefault ||
+              tierPatch?.pointDefault
+          );
+          return renderContextualAppearanceGroup({
+            activeSwatchId: activeSwatch,
+            swatchVariant: isIntervalTier ? 'fill' : 'line',
+            onPickSwatch: (swatchId) =>
+              setTierStyle(
+                ti,
+                isIntervalTier
+                  ? { intervalDefault: { swatchId } }
+                  : { pointDefault: { swatchId } }
+              ),
+            quickControl: isIntervalTier ? (
+              <button
+                type="button"
+                className={`ribbon-sm-btn ipa-ctrl-noblur ${
+                  curPat !== 'none' ? 'ribbon-soft-active' : ''
+                }`}
+                title={`点击循环切换本层默认底纹（当前：${patOpt?.label ?? '无底纹'}）`}
+                onMouseDown={preventBlur}
+                onClick={() =>
+                  setTierStyle(ti, { intervalDefault: { pattern: cycleNextPattern(curPat) } })
+                }
+              >
+                <span>底纹: {patOpt?.shortLabel ?? '无'}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={`ribbon-sm-btn ipa-ctrl-noblur ${
+                  curShape !== 'circle' ? 'ribbon-soft-active' : ''
+                }`}
+                title={`点击循环切换本层默认标点形状（当前：${shapeOpt?.label ?? '圆点'}）`}
+                onMouseDown={preventBlur}
+                onClick={() =>
+                  setTierStyle(ti, { pointDefault: { shape: cycleNextPointShape(curShape) } })
+                }
+              >
+                <PointShapeIcon shape={curShape} size={12} />
+                <span>{shapeOpt?.label ?? '圆点'}</span>
+              </button>
+            ),
+            brushKind: 'tier',
+            buildBrush: (sticky) => ({
+              kind: 'tier',
+              patch: tierPatch ? { ...tierPatch } : {},
+              sticky
+            }),
+            hasCustom: hasCustomTier
+          });
+        })()}
       </>
     );
   };
@@ -4157,6 +4719,58 @@ export const RibbonBar: React.FC<RibbonBarProps> = ({
             </button>
           </div>
         )}
+
+      {openMenu === 'style-palette' && popoutPos && (
+        <div
+          className="ribbon-popout-menu ipa-ctrl-noblur"
+          role="menu"
+          style={{ left: popoutPos.left, top: popoutPos.top }}
+          onMouseDown={preventBlur}
+        >
+          <div className="ribbon-menu-heading">选择学术配色方案</div>
+          {PALETTES.map((pal) => {
+            const isSelected = pal.id === styleDoc.paletteId;
+            return (
+              <button
+                key={`rb-pal-${pal.id}`}
+                type="button"
+                className={`rb-palette-opt${isSelected ? ' is-selected' : ''}`}
+                onClick={() => {
+                  setStylePalette(pal.id);
+                  setOpenMenu(null);
+                }}
+              >
+                <div className="rb-palette-menu-item">
+                  <div className="rb-palette-menu-top">
+                    <span className="btn-lead">
+                      <span className="rb-palette-mini-strip" aria-hidden="true">
+                        {pal.swatches.slice(0, 4).map((sw) => (
+                          <span
+                            key={sw.id}
+                            className="rb-palette-mini-bar"
+                            style={{
+                              background: sw.fill,
+                              borderColor: sw.stroke
+                            }}
+                          />
+                        ))}
+                      </span>
+                      <span>{pal.name}</span>
+                    </span>
+                    {isSelected && (
+                      <span className="ribbon-menu-check">
+                        <UiIcon name="check" size={12} />
+                        <span>当前</span>
+                      </span>
+                    )}
+                  </div>
+                  <span className="rb-palette-menu-desc">{pal.description}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

@@ -308,9 +308,11 @@
   color: var(--ink-muted);
 }
 
-.brand-icon {
+.brand-icon,
+.brand-lockup-svg {
   display: block;
   flex-shrink: 0;
+  pointer-events: none;
 }
 
 .doc-name {
@@ -402,12 +404,13 @@
 }
 
 /* Unified Button & Input Controls */
-button, input[type="text"], input[type="number"] {
+button, input[type="text"], input[type="number"], input[type="search"] {
   font-family: inherit;
   font-size: 12px;
   color: var(--ink);
   background: var(--bg-sheet);
   border: 1px solid var(--rule);
+  border-radius: 0;
   height: 28px;
   padding: 0 10px;
   outline: none;
@@ -417,6 +420,19 @@ button, input[type="text"], input[type="number"] {
     color 150ms var(--ease),
     transform 90ms var(--ease),
     opacity 150ms var(--ease);
+}
+
+input[type="search"] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input[type="search"]::-webkit-search-decoration,
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-results-button,
+input[type="search"]::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 input[type="number"]::-webkit-inner-spin-button,
@@ -430,12 +446,14 @@ input[type="number"] {
 }
 
 input[type="text"]:hover,
-input[type="number"]:hover {
+input[type="number"]:hover,
+input[type="search"]:hover {
   border-color: var(--rule-hover);
 }
 
 input[type="text"]:focus,
-input[type="number"]:focus {
+input[type="number"]:focus,
+input[type="search"]:focus {
   border-color: var(--ink);
   background: #FFFFFF;
 }
@@ -680,6 +698,223 @@ button.active:not(.sidebar-rail-btn):not(.export-tier-chip),
   font-size: 10.5px;
   color: var(--ink-faint);
   margin-left: 16px;
+}
+
+/* Reusable Portal CustomSelect (Unified with .select-trigger & .dropdown) */
+@keyframes tgSelectMenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tgSelectMenuInUp {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+button.tg-select-trigger {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 7px 0 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  background: var(--bg-sheet);
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+  transform: none;
+  box-shadow: none;
+  transition:
+    border-color 140ms var(--ease),
+    background-color 140ms var(--ease),
+    color 140ms var(--ease);
+}
+
+button.tg-select-trigger.is-compact {
+  height: 25px;
+  padding: 0 6px 0 7px;
+  font-size: 11.5px;
+}
+
+button.tg-select-trigger:hover:not(:disabled) {
+  border-color: var(--rule-hover);
+  background: var(--bg-sheet);
+}
+
+button.tg-select-trigger:active:not(:disabled) {
+  background: var(--bg-sheet);
+  transform: none;
+}
+
+button.tg-select-trigger:focus-visible {
+  border-color: var(--accent-blue);
+  background: #FFFFFF;
+  outline: none;
+}
+
+button.tg-select-trigger.is-open,
+button.tg-select-trigger.is-open:hover:not(:disabled) {
+  border-color: var(--ink);
+  background: var(--bg-sheet);
+  color: var(--ink);
+}
+
+button.tg-select-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.tg-select-trigger .tg-select-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.tg-select-trigger .tg-select-value.is-placeholder {
+  color: var(--ink-faint);
+}
+
+button.tg-select-trigger .chev {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  color: var(--ink-muted);
+  transition:
+    transform 160ms var(--ease),
+    color 140ms var(--ease);
+}
+
+button.tg-select-trigger.is-open .chev {
+  transform: rotate(180deg);
+  color: var(--ink);
+}
+
+.tg-select-menu {
+  position: fixed;
+  z-index: 2600;
+  background: var(--bg-sheet);
+  border: 1px solid var(--ink);
+  box-shadow:
+    0 8px 22px rgba(20, 20, 19, 0.14),
+    0 1px 4px rgba(20, 20, 19, 0.08);
+  padding: 3px 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  user-select: none;
+  animation: tgSelectMenuIn 140ms var(--ease);
+}
+
+.tg-select-menu.is-up {
+  animation: tgSelectMenuInUp 140ms var(--ease);
+}
+
+.tg-select-menu *,
+.tg-select-menu *::before,
+.tg-select-menu *::after {
+  box-sizing: border-box;
+}
+
+.tg-select-menu button.tg-select-option {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  width: 100%;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+  transform: none;
+  box-shadow: none;
+  transition: background-color 110ms var(--ease), color 110ms var(--ease);
+}
+
+.tg-select-menu.is-compact button.tg-select-option {
+  height: 27px;
+  min-height: 27px;
+  padding: 0 10px;
+  font-size: 11.5px;
+}
+
+.tg-select-menu button.tg-select-option:hover:not(:disabled),
+.tg-select-menu button.tg-select-option.is-focused:not(:disabled) {
+  background: var(--bg-hover);
+  border: none;
+}
+
+.tg-select-menu button.tg-select-option:active:not(:disabled) {
+  background: var(--bg-active);
+  transform: none;
+}
+
+.tg-select-menu button.tg-select-option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tg-select-menu button.tg-select-option.selected {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.tg-select-menu button.tg-select-option.selected::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  background: var(--ink);
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+
+.tg-select-option-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tg-select-option-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
+  flex-shrink: 0;
 }
 
 /* Playback / Transport Bar (Middle-Column Persistent Bottom Dock) */
@@ -6167,13 +6402,24 @@ kbd,
 }
 
 .cust-key-search {
+  appearance: none;
+  -webkit-appearance: none;
   width: 100%;
   height: 27px;
   padding: 0 8px;
   font-size: 12px;
   background: var(--bg-sheet);
   border: 1px solid var(--rule);
+  border-radius: 0;
   color: var(--ink);
+  outline: none;
+  transition:
+    border-color 140ms var(--ease),
+    background-color 140ms var(--ease);
+}
+
+.cust-key-search:hover {
+  border-color: var(--rule-hover);
 }
 
 .cust-key-search:focus {

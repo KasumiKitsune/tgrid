@@ -39,6 +39,12 @@
       "icons/icon.ico",
       "icons/icon.png"
     ],
+    "resources": {
+      "icons/doc-textgrid.ico": "icons/doc-textgrid.ico",
+      "icons/doc-collection.ico": "icons/doc-collection.ico",
+      "icons/doc-textgrid.icns": "doc-textgrid.icns",
+      "icons/doc-collection.icns": "doc-collection.icns"
+    },
     "fileAssociations": [
       {
         "ext": ["TextGrid", "textgrid"],
@@ -62,7 +68,8 @@
         "installMode": "both",
         "installerIcon": "icons/icon.ico",
         "headerImage": "installer/nsis-header.bmp",
-        "sidebarImage": "installer/nsis-sidebar.bmp"
+        "sidebarImage": "installer/nsis-sidebar.bmp",
+        "installerHooks": "installer/hooks.nsh"
       }
     },
     "macOS": {

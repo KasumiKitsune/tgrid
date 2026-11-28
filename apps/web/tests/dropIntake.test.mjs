@@ -224,3 +224,43 @@ test('dropIntake: entriesFromDroppedPaths filters missing paths and deduplicates
   assert.equal(formatFileSizeShort(512), '512 B');
   assert.equal(formatFileSizeShort(1536), '1.5 KB');
 });
+
+test('dropIntake: recognizes .tgstyle.json sidecars and .svg files cleanly', () => {
+  assert.equal(classifyExtension('001_ba.tgstyle.json'), 'style');
+  assert.equal(classifyExtension('001_ba.TGSTYLE.JSON'), 'style');
+  assert.equal(classifyExtension('.tgstyle.json'), 'unsupported');
+  assert.equal(classifyExtension('figure.svg'), 'svg');
+  assert.equal(classifyExtension('figure.SVG'), 'svg');
+
+  // TextGrid + matching .tgstyle.json pairs into 1 tab without unsupported items
+  const pairedStyle = analyzeDropIntake([
+    makeFileEntry('001_ba.TextGrid'),
+    makeFileEntry('001_ba.tgstyle.json', { size: 512 })
+  ]);
+  assert.equal(pairedStyle.decision, 'direct');
+  assert.equal(pairedStyle.unsupported.length, 0);
+  assert.equal(pairedStyle.estimatedNewTabs, 1);
+  assert.equal(pairedStyle.openUnits.length, 1);
+  assert.equal(pairedStyle.openUnits[0].styleSidecar?.name, '001_ba.tgstyle.json');
+  assert.equal(pairedStyle.standaloneStyleFiles.length, 0);
+
+  // Standalone .tgstyle.json passes directly to apply onto current tab (0 new tabs)
+  const standaloneStyle = analyzeDropIntake([
+    makeFileEntry('theme.tgstyle.json', { size: 640 })
+  ]);
+  assert.equal(standaloneStyle.decision, 'direct');
+  assert.equal(standaloneStyle.unsupported.length, 0);
+  assert.equal(standaloneStyle.estimatedNewTabs, 0);
+  assert.equal(standaloneStyle.openUnits.length, 0);
+  assert.equal(standaloneStyle.standaloneStyleFiles.length, 1);
+
+  // Standalone .svg passes directly as an svg open unit (1 new tab)
+  const svgDrop = analyzeDropIntake([
+    makeFileEntry('export_fig.svg', { size: 4096 })
+  ]);
+  assert.equal(svgDrop.decision, 'direct');
+  assert.equal(svgDrop.unsupported.length, 0);
+  assert.equal(svgDrop.svgCount, 1);
+  assert.equal(svgDrop.estimatedNewTabs, 1);
+  assert.equal(svgDrop.openUnits[0].kind, 'svg');
+});

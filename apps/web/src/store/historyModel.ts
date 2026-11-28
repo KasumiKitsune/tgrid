@@ -1,6 +1,8 @@
 import type { IconName } from '@tgrid/icons';
 import type { TextGrid, Tier } from '../bridge/types';
 import type { EditorSelection } from '../render/renderScoreSvg';
+import type { StyleDocument } from '../style/types.ts';
+import { cloneStyleDocument } from '../style/palettes.ts';
 
 export type HistoryActionType =
   // 1. 文本与标注
@@ -58,7 +60,13 @@ export type HistoryActionType =
   | 'qa-fix-gap'
   | 'qa-fix-overlap'
   | 'qa-fix-ood'
-  | 'qa-trim-space';
+  | 'qa-trim-space'
+  // 7. 样式与主题
+  | 'style-edit'
+  | 'style-theme'
+  | 'style-rule'
+  | 'style-clear'
+  | 'style-brush';
 
 /** 合并规则描述：同 key 且在时间窗口内的连续微调自动合并为一条记录 */
 export interface HistoryCoalesceSpec {
@@ -87,6 +95,7 @@ export interface HistoryStateSnapshot {
   selection: EditorSelection;
   hiddenTierIndices: number[];
   playRange: { start: number; end: number } | null;
+  styleDoc?: StyleDocument;
 }
 
 export type BaselineKind = 'open' | 'blank' | 'sample' | 'cleared';
@@ -260,12 +269,16 @@ export function cloneTier(tier: Tier): Tier {
 }
 
 export function cloneSnapshot(snap: HistoryStateSnapshot): HistoryStateSnapshot {
-  return {
+  const cloned: HistoryStateSnapshot = {
     tg: snap.tg,
     selection: snap.selection ? { ...snap.selection } : null,
     hiddenTierIndices: [...snap.hiddenTierIndices],
     playRange: snap.playRange ? { ...snap.playRange } : null
   };
+  if (snap.styleDoc !== undefined) {
+    cloned.styleDoc = cloneStyleDocument(snap.styleDoc);
+  }
+  return cloned;
 }
 
 export function produceTgMutation(

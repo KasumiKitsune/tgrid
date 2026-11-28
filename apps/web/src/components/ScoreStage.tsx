@@ -598,6 +598,14 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     const transformAlignedBlock = useEditorStore((s) => s.transformAlignedBlock);
     const lastHistoryNav = useEditorStore((s) => s.lastHistoryNav);
     const showToast = useEditorStore((s) => s.showToast);
+    const styleDoc = useEditorStore((s) => s.styleDoc);
+    const styleBrush = useEditorStore((s) => s.styleBrush);
+    const setStyleBrush = useEditorStore((s) => s.setStyleBrush);
+    const clearStyleBrush = useEditorStore((s) => s.clearStyleBrush);
+    const setIntervalStyle = useEditorStore((s) => s.setIntervalStyle);
+    const setBoundaryStyle = useEditorStore((s) => s.setBoundaryStyle);
+    const setPointStyle = useEditorStore((s) => s.setPointStyle);
+    const setTierStyle = useEditorStore((s) => s.setTierStyle);
     const [splitEqualDialog, setSplitEqualDialog] = useState<SplitEqualDialogState | null>(null);
     const [smartSplitBar, setSmartSplitBar] = useState<SmartSplitBarState | null>(null);
     const smartSplitRunSeqRef = useRef(0);
@@ -1546,7 +1554,9 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         showPlayhead,
         dragPreview,
         intervalDragPreview,
-        screenSpecUrls: specUrls
+        screenSpecUrls: specUrls,
+        styleDoc,
+        showStyleLegendPreview: styleDoc.showLegendInExport
       });
     }, [
       tg,
@@ -1558,7 +1568,8 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       maxFreq,
       f0RangeOverride,
       mode,
-      specUrls
+      specUrls,
+      styleDoc
     ]);
 
     // Fast overlay-only updates for playhead, selection, and boundary/interval drag
@@ -1615,7 +1626,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       return () => {
         nodesToCloak.forEach((n) => n.classList.remove('editing-cloak'));
       };
-    }, [inlineTarget, tg, layout, specUrls, mode]);
+    }, [inlineTarget, tg, layout, specUrls, mode, styleDoc]);
 
     // Auto-resize inline <textarea> height cleanly as multi-line content grows
     useLayoutEffect(() => {
@@ -3052,11 +3063,16 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         const mod = e.ctrlKey || e.metaKey;
         const lower = e.key.toLowerCase();
 
-        // Layered Escape: spacePan -> ctxMenu -> inline -> playRange -> selection (one layer per press)
+        // Layered Escape: spacePan -> styleBrush -> ctxMenu -> inline -> playRange -> selection (one layer per press)
         if (e.key === 'Escape' && !mod && !e.altKey && !e.shiftKey) {
           if (spacePanRef.current.held) {
             e.preventDefault();
             exitSpacePan(false);
+            return;
+          }
+          if (styleBrush) {
+            e.preventDefault();
+            clearStyleBrush();
             return;
           }
           if (ctxMenu) {
@@ -3860,17 +3876,18 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         // Stop here for any other Mod+ shortcut (handled in App or browser)
         if (mod) return;
 
-        // Structural Alt+1..5 -> right sidebar tabs (inspector / tiers / history / settings / customize)
+        // Structural Alt+1..6 -> right sidebar tabs (inspector / style / tiers / history / settings / customize)
         if (e.altKey && !e.shiftKey) {
           if (
             e.code === 'Digit1' ||
             e.code === 'Digit2' ||
             e.code === 'Digit3' ||
             e.code === 'Digit4' ||
-            e.code === 'Digit5'
+            e.code === 'Digit5' ||
+            e.code === 'Digit6'
           ) {
             e.preventDefault();
-            if (e.code === 'Digit5') {
+            if (e.code === 'Digit6') {
               useEditorStore.getState().setPreferencesOpen(true, 'floating');
               return;
             }
@@ -3878,10 +3895,12 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               e.code === 'Digit1'
                 ? 'inspector'
                 : e.code === 'Digit2'
-                  ? 'tiers'
+                  ? 'style'
                   : e.code === 'Digit3'
-                    ? 'history'
-                    : 'settings';
+                    ? 'tiers'
+                    : e.code === 'Digit4'
+                      ? 'history'
+                      : 'settings';
             setSidebarTab(tab);
             setSidebarOpen(true);
             return;
@@ -4435,7 +4454,9 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       applyPastedTextToSelection,
       showToast,
       clearHoverGuide,
-      exitSpacePan
+      exitSpacePan,
+      styleBrush,
+      clearStyleBrush
     ]);
 
     const svgPointFromEvent = useCallback((e: { clientX: number; clientY: number }) => {
@@ -6093,6 +6114,94 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
       altKeyDownRef.current = e.altKey;
 
       const el = (e.target as Element).closest('[data-role]');
+
+      // Format brush (styleBrush) click-to-apply interception
+      if (styleBrush) {
+        e.preventDefault();
+        if (!el) return;
+        const brushRole = el.getAttribute('data-role');
+        const brushBandIdx = parseInt(el.getAttribute('data-band') || '0', 10);
+        const brushBand = layoutRef.current.bands[brushBandIdx];
+
+        if (styleBrush.kind === 'interval') {
+          if (brushRole === 'interval') {
+            const ti = parseInt(el.getAttribute('data-tier') || '0', 10);
+            const ii = parseInt(el.getAttribute('data-idx') || '0', 10);
+            if (tg.tiers[ti]?.intervals[ii]) {
+              setIntervalStyle(ti, ii, styleBrush.patch, { label: '格式刷涂色' });
+              if (!styleBrush.sticky) clearStyleBrush();
+            }
+          } else {
+            showToast('当前格式刷仅适用于区间，按 Esc 可退出');
+          }
+          return;
+        }
+
+        if (styleBrush.kind === 'boundary') {
+          if (brushRole === 'boundary') {
+            const ti = parseInt(el.getAttribute('data-tier') || '0', 10);
+            const time = parseFloat(el.getAttribute('data-time') || 'NaN');
+            if (Number.isFinite(time) && tg.tiers[ti]) {
+              setBoundaryStyle(ti, time, styleBrush.patch);
+              if (!styleBrush.sticky) clearStyleBrush();
+            }
+          } else if (brushRole === 'spine-tick') {
+            const time = parseFloat(el.getAttribute('data-time') || 'NaN');
+            if (Number.isFinite(time)) {
+              setBoundaryStyle(null, time, styleBrush.patch);
+              if (!styleBrush.sticky) clearStyleBrush();
+            }
+          } else if (brushRole === 'spec-area' && brushBand) {
+            const ptSpec = svgPointFromEvent(e);
+            const hit = findNearbySpecBoundary(
+              tg,
+              selection,
+              lastActiveTierIndex,
+              brushBand,
+              ptSpec.x,
+              hiddenTierIndices
+            );
+            if (hit) {
+              setBoundaryStyle(hit.tierIndex, hit.time, styleBrush.patch);
+              if (!styleBrush.sticky) clearStyleBrush();
+            } else {
+              showToast('当前格式刷仅适用于边界，按 Esc 可退出');
+            }
+          } else {
+            showToast('当前格式刷仅适用于边界，按 Esc 可退出');
+          }
+          return;
+        }
+
+        if (styleBrush.kind === 'point') {
+          if (brushRole === 'point') {
+            const ti = parseInt(el.getAttribute('data-tier') || '0', 10);
+            const pi = parseInt(el.getAttribute('data-idx') || '0', 10);
+            if (tg.tiers[ti]?.points[pi]) {
+              setPointStyle(ti, pi, styleBrush.patch);
+              if (!styleBrush.sticky) clearStyleBrush();
+            }
+          } else {
+            showToast('当前格式刷仅适用于标点，按 Esc 可退出');
+          }
+          return;
+        }
+
+        if (styleBrush.kind === 'tier') {
+          if (brushRole === 'tier-header') {
+            const ti = parseInt(el.getAttribute('data-tier') || '0', 10);
+            if (tg.tiers[ti]) {
+              setTierStyle(ti, styleBrush.patch);
+              if (!styleBrush.sticky) clearStyleBrush();
+            }
+          } else {
+            showToast('当前格式刷仅适用于层级标签，按 Esc 可退出');
+          }
+          return;
+        }
+        return;
+      }
+
       if (!el) {
         lastBlockAnchorRef.current = null;
         setSelection(null);
@@ -7696,7 +7805,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
     };
 
     const handleSvgDoubleClick = (e: React.MouseEvent<SVGSVGElement>) => {
-      if (spacePanRef.current.held) {
+      if (spacePanRef.current.held || styleBrush) {
         e.preventDefault();
         return;
       }
@@ -8873,6 +8982,51 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         }}
       >
         {topBanner}
+        {styleBrush && (
+          <div className="fb-brush-banner" role="status" aria-live="polite">
+            <span className="fb-brush-banner-dot" aria-hidden="true" />
+            <span className="fb-brush-banner-text">
+              {styleBrush.sticky
+                ? `格式刷已锁定：连续点击目标${
+                    styleBrush.kind === 'interval'
+                      ? '区间'
+                      : styleBrush.kind === 'boundary'
+                        ? '边界'
+                        : styleBrush.kind === 'point'
+                          ? '标点'
+                          : '层级标签'
+                  }应用样式（按 Esc 退出）`
+                : `格式刷已就绪：点击目标${
+                    styleBrush.kind === 'interval'
+                      ? '区间'
+                      : styleBrush.kind === 'boundary'
+                        ? '边界'
+                        : styleBrush.kind === 'point'
+                          ? '标点'
+                          : '层级标签'
+                  }应用样式（按 Esc 退出）`}
+            </span>
+            <button
+              type="button"
+              className="fb-brush-banner-btn"
+              onClick={() =>
+                setStyleBrush({
+                  ...styleBrush,
+                  sticky: !styleBrush.sticky
+                })
+              }
+            >
+              {styleBrush.sticky ? '改为单次' : '锁定连涂'}
+            </button>
+            <button
+              type="button"
+              className="fb-brush-banner-btn is-exit"
+              onClick={() => clearStyleBrush()}
+            >
+              退出
+            </button>
+          </div>
+        )}
         {showBlankQuickStart && activeTab && (
           <div className="blank-quickstart-strip" role="status">
             <div className="blank-quickstart-content">
@@ -8900,7 +9054,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
         <main
           ref={stageRef}
           id="stage"
-          className="stage"
+          className={`stage${styleBrush ? ' is-style-brush' : ''}`}
           onPointerDownCapture={handleStagePointerDownCapture}
           onClickCapture={(e) => {
             if (spacePanRef.current.held || suppressNextStageClickRef.current) {
@@ -8910,7 +9064,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
             }
           }}
           onClick={(e) => {
-            if (e.target === stageRef.current) {
+            if (e.target === stageRef.current && !styleBrush) {
               setCtxMenu(null);
               if (inlineTarget) closeInline(true);
               setSelection(null);
@@ -8935,7 +9089,7 @@ export const ScoreStage = forwardRef<ScoreStageHandle, ScoreStageProps>(
               width={layout.width}
               height={layout.height}
               viewBox={`0 0 ${layout.width} ${layout.height}`}
-              className={`${mode === 'edit' ? 'mode-edit' : ''} cue-${cueMode} ${focusClass}`}
+              className={`${mode === 'edit' ? 'mode-edit' : ''} cue-${cueMode} ${focusClass}${styleBrush ? ' is-style-brush' : ''}`}
               onPointerDown={handleSvgPointerDown}
               onPointerMove={handleSvgPointerMove}
               onPointerLeave={() => {

@@ -17,6 +17,7 @@ import {
   type ExportRenderOutput
 } from '../render/exporter';
 import { formatPraatDouble } from '../layout/richText';
+import { buildStyleLegendItems } from '../style/resolveStyle';
 import { CloseIcon, UiIcon } from './Icons';
 import { ScrubNumberInput } from './ScrubNumberInput';
 
@@ -58,10 +59,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
   const maxFreq = useEditorStore((s) => s.maxFreq);
   const f0RangeMode = useEditorStore((s) => s.f0RangeMode);
   const f0RangeCustom = useEditorStore((s) => s.f0RangeCustom);
+  const styleDoc = useEditorStore((s) => s.styleDoc);
   const showToast = useEditorStore((s) => s.showToast);
 
   const [prefs, setPrefs] = useState<ExportPrefs>(() => loadExportPrefs());
   const [selectedTiers, setSelectedTiers] = useState<number[]>([]);
+  const [bwPrintMode, setBwPrintMode] = useState<boolean>(() => Boolean(styleDoc?.bwPrintMode));
+  const [showStyleLegend, setShowStyleLegend] = useState<boolean>(() => Boolean(styleDoc?.showLegendInExport));
+  const [embedProjectMetadata, setEmbedProjectMetadata] = useState<boolean>(true);
   const [advOpen, setAdvOpen] = useState(false);
   const [previewOut, setPreviewOut] = useState<ExportRenderOutput | null>(null);
   const [rendering, setRendering] = useState(false);
@@ -149,9 +154,21 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
         return next;
       });
     }
+    setBwPrintMode(Boolean(styleDoc?.bwPrintMode));
+    setShowStyleLegend(Boolean(styleDoc?.showLegendInExport));
     setZoom(1);
     setPan({ x: 0, y: 0 });
-  }, [open, docKey, tg.tiers, exportPresetRange, clearExportPresetRange, viewDomain, hasSelectionRange]);
+  }, [open, docKey, tg.tiers, styleDoc, exportPresetRange, clearExportPresetRange, viewDomain, hasSelectionRange]);
+
+  const effectivePreviewStyleDoc = useMemo(() => {
+    if (!styleDoc) return null;
+    return bwPrintMode === styleDoc.bwPrintMode ? styleDoc : { ...styleDoc, bwPrintMode };
+  }, [styleDoc, bwPrintMode]);
+
+  const styleLegendItemsCount = useMemo(() => {
+    if (!effectivePreviewStyleDoc) return 0;
+    return buildStyleLegendItems(effectivePreviewStyleDoc, tg).length;
+  }, [effectivePreviewStyleDoc, tg]);
 
   const updatePrefs = (patch: Partial<ExportPrefs>, clearPreset = true) => {
     setPrefs((prev) => {
@@ -189,7 +206,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
       cueMode,
       tierOrder,
       maxFreq,
-      f0RangeOverride: resolveF0RangeOverride(f0RangeMode, f0RangeCustom)
+      f0RangeOverride: resolveF0RangeOverride(f0RangeMode, f0RangeCustom),
+      styleDoc,
+      bwPrintMode,
+      showStyleLegend: styleLegendItemsCount > 0 && showStyleLegend,
+      embedProjectMetadata: (overridePrefs || prefs).format === 'svg' && embedProjectMetadata
     }),
     [
       tg,
@@ -212,7 +233,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
       tierOrder,
       maxFreq,
       f0RangeMode,
-      f0RangeCustom
+      f0RangeCustom,
+      styleDoc,
+      bwPrintMode,
+      showStyleLegend,
+      styleLegendItemsCount,
+      embedProjectMetadata
     ]
   );
 
@@ -511,6 +537,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
                   });
                   setPrefs(next);
                   saveExportPrefs(next);
+                  if (pid === 'journal') {
+                    setBwPrintMode(true);
+                  } else if (pid === 'slides') {
+                    setBwPrintMode(false);
+                  } else if (pid === 'screen') {
+                    setBwPrintMode(Boolean(styleDoc?.bwPrintMode));
+                    setShowStyleLegend(Boolean(styleDoc?.showLegendInExport));
+                  }
                 }}
               >
                 {lbl}
@@ -905,6 +939,50 @@ export const ExportModal: React.FC<ExportModalProps> = ({ audioBuffer }) => {
                     English
                   </button>
                 </div>
+              </div>
+            </div>
+
+            {/* 5.8 Style & Academic Export */}
+            <div className="export-group">
+              <span className="export-group-title">样式与学术出图</span>
+              <div className="export-check-list">
+                <label className="export-check">
+                  <input
+                    type="checkbox"
+                    checked={bwPrintMode}
+                    onChange={(e) => setBwPrintMode(e.target.checked)}
+                  />
+                  <span>黑白印刷模式（自动套用矢量底纹）</span>
+                </label>
+                <div className="export-sub-row" style={{ minHeight: 'auto' }}>
+                  <label className={`export-check ${styleLegendItemsCount === 0 ? 'is-disabled' : ''}`}>
+                    <input
+                      type="checkbox"
+                      disabled={styleLegendItemsCount === 0}
+                      checked={styleLegendItemsCount > 0 && showStyleLegend}
+                      onChange={(e) => setShowStyleLegend(e.target.checked)}
+                    />
+                    <span>底部附加样式图例</span>
+                  </label>
+                  <span className="export-btn-sub">
+                    {styleLegendItemsCount > 0 ? `共 ${styleLegendItemsCount} 项` : '暂无可用条目'}
+                  </span>
+                </div>
+                {prefs.format === 'svg' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <label className="export-check">
+                      <input
+                        type="checkbox"
+                        checked={embedProjectMetadata}
+                        onChange={(e) => setEmbedProjectMetadata(e.target.checked)}
+                      />
+                      <span>在 SVG 中嵌入工程数据（拖回可还原编辑）</span>
+                    </label>
+                    <p className="export-font-hint" style={{ margin: 0, paddingLeft: 20 }}>
+                      仅增约数 KB，浏览器与排版软件均安全忽略。
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 

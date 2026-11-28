@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="apps/web/public/icon.svg" width="96" height="96" alt="T·Grid Logo" />
+  <img src="docs/pictures/logo.svg" width="300" alt="T·Grid Logo" />
   <h1>T·Grid — TextGrid Editor</h1>
   <p>面向语言学与语音学研究的现代 <strong>Praat TextGrid / Collection</strong> 可视化标注编辑器与出版级插图导出工具</p>
 
