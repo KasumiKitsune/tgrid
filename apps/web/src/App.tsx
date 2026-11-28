@@ -4861,10 +4861,15 @@ export function App() {
       if (shown) return;
       shown = true;
       try {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        await getCurrentWindow().show();
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('reveal_main_window');
       } catch {
-        // ignore
+        try {
+          const { getCurrentWindow } = await import('@tauri-apps/api/window');
+          await getCurrentWindow().show();
+        } catch {
+          // ignore
+        }
       }
     };
 

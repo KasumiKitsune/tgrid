@@ -1027,6 +1027,29 @@ fn write_clipboard_text(text: String) -> Result<(), String> {
     native_clipboard::write_text(&text)
 }
 
+#[tauri::command]
+fn reveal_main_window(window: tauri::WebviewWindow) {
+    let _ = window.show();
+    let _ = window.set_focus();
+    // Windows frameless window (decorations: false + visible: false) can fail to
+    // initialize non-client drag/hit-test bounds until the first WM_SIZE/WM_NCCALCSIZE.
+    // A 1-physical-pixel nudge and immediate restore forces the OS to recalculate bounds.
+    #[cfg(target_os = "windows")]
+    {
+        if !window.is_maximized().unwrap_or(false) {
+            if let Ok(size) = window.inner_size() {
+                if size.width > 10 && size.height > 10 {
+                    let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
+                        size.width + 1,
+                        size.height,
+                    )));
+                    let _ = window.set_size(tauri::Size::Physical(size));
+                }
+            }
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1075,7 +1098,8 @@ pub fn run() {
             open_external_url,
             get_launch_file_arg,
             read_clipboard_text,
-            write_clipboard_text
+            write_clipboard_text,
+            reveal_main_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running T·Grid - TextGrid Editor");

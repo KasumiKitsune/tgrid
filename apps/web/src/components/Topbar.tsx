@@ -416,6 +416,16 @@ export const Topbar: React.FC<TopbarProps> = ({
         <div
           className="titlebar"
           data-tauri-drag-region=""
+          onMouseDown={(e) => {
+            if (e.button !== 0 || e.detail !== 1) return;
+            const target = e.target as HTMLElement | null;
+            if (!target) return;
+            if (target.closest('button, a, input, [role="tab"], .tab-item, .tab-add-btn, .win-btn')) return;
+            if (target.hasAttribute('data-tauri-drag-region')) return;
+            void import('@tauri-apps/api/window')
+              .then(({ getCurrentWindow }) => getCurrentWindow().startDragging())
+              .catch(() => {});
+          }}
           onDoubleClick={(e) => {
             if ((e.target as HTMLElement).closest('button, .tab-item, .tabstrip-area')) return;
             void handleToggleMaximize();
